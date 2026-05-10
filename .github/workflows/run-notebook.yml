@@ -73,9 +73,19 @@ jobs:
           KAGGLE_USERNAME_4: ${{ secrets.KAGGLE_USERNAME_4 }}
           KAGGLE_USERNAME_5: ${{ secrets.KAGGLE_USERNAME_5 }}
           KAGGLE_USERNAME_6: ${{ secrets.KAGGLE_USERNAME_6 }}
+          KAGGLE_KEY_1: ${{ secrets.KAGGLE_KEY_1 }}
+          KAGGLE_KEY_2: ${{ secrets.KAGGLE_KEY_2 }}
+          KAGGLE_KEY_3: ${{ secrets.KAGGLE_KEY_3 }}
+          KAGGLE_KEY_4: ${{ secrets.KAGGLE_KEY_4 }}
+          KAGGLE_KEY_5: ${{ secrets.KAGGLE_KEY_5 }}
+          KAGGLE_KEY_6: ${{ secrets.KAGGLE_KEY_6 }}
         run: |
           ACCOUNT_NUM=${{ github.event.client_payload.kaggle_account }}
           USERNAME_VAR="KAGGLE_USERNAME_${ACCOUNT_NUM}"
+          KEY_VAR="KAGGLE_KEY_${ACCOUNT_NUM}"
+          
+          export KAGGLE_USERNAME="${!USERNAME_VAR}"
+          export KAGGLE_KEY="${!KEY_VAR}"
           KAGGLE_USER="${!USERNAME_VAR}"
 
           echo "📓 Notebook: ${NOTEBOOK}"
