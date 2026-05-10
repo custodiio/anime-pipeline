@@ -116,12 +116,13 @@ class PipelineController:
         try:
             tmp_dir = tempfile.mkdtemp()
             config_path = os.path.join(tmp_dir, "videorender-project.json")
-            srt_path = os.path.join(tmp_dir, "traducao.srt")
+            srt_path = os.path.join(tmp_dir, "omni_output.srt")
             existing_ass = os.path.join(tmp_dir, "legendas_existente.ass")
 
             # Baixar config do VideoRender
             has_config = self.drive.baixar("KAGGLE/PIPELINE/OMNI/videorender-project.json", config_path)
-            has_srt = self.drive.baixar("KAGGLE/PIPELINE/OMNI/traducao.srt", srt_path)
+            # SRT padronizado copiado pelo verificar_e_avancar
+            has_srt = self.drive.baixar("KAGGLE/PIPELINE/OMNI/omni_output.srt", srt_path)
 
             if not has_srt or not os.path.exists(srt_path):
                 print(f"[{project_id}] AVISO: traducao.srt não encontrado. Pulando geração de ASS.")
@@ -316,15 +317,39 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt2_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt2_enhanced.mp4")
 
             # Copiar output do Omni para a pasta padrão do pipeline
+            # O Omni salva como: KAGGLE/AUDIO_DUB/OUTPUT/{safe_anime}_{modo_folder}.mp3/.srt
+            # Ex: Naruto_Completo.mp3, Naruto_Completo.srt  OU  Naruto_Short.mp3, Naruto_Short.srt
             print(f"[{project_id}] Copiando output do Omni para PIPELINE/OMNI...")
             arquivos_out = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
-            mp3_completo = next((a for a in arquivos_out if a['name'].endswith('_Completo.mp3') or a['name'].endswith('.mp3')), None)
-            srt_completo = next((a for a in arquivos_out if a['name'].endswith('_Completo.srt') or a['name'].endswith('.srt')), None)
 
-            if mp3_completo:
-                self.drive.copiar_arquivo(f"KAGGLE/AUDIO_DUB/OUTPUT/{mp3_completo['name']}", "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3")
-            if srt_completo:
-                self.drive.copiar_arquivo(f"KAGGLE/AUDIO_DUB/OUTPUT/{srt_completo['name']}", "KAGGLE/PIPELINE/OMNI/traducao.srt")
+            # Preferir _Completo se existir, senão pegar qualquer .mp3/.srt
+            mp3_file = (
+                next((a for a in arquivos_out if '_Completo.mp3' in a['name']), None) or
+                next((a for a in arquivos_out if a['name'].endswith('.mp3')), None)
+            )
+            srt_file = (
+                next((a for a in arquivos_out if '_Completo.srt' in a['name']), None) or
+                next((a for a in arquivos_out if a['name'].endswith('.srt')), None)
+            )
+
+            if mp3_file:
+                self.drive.copiar_arquivo(
+                    f"KAGGLE/AUDIO_DUB/OUTPUT/{mp3_file['name']}",
+                    "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3"
+                )
+                print(f"[{project_id}] MP3 copiado: {mp3_file['name']}")
+            else:
+                print(f"[{project_id}] AVISO: Nenhum .mp3 encontrado em AUDIO_DUB/OUTPUT!")
+
+            if srt_file:
+                # Salvar com nome padronizado para o converter_json_para_ass encontrar
+                self.drive.copiar_arquivo(
+                    f"KAGGLE/AUDIO_DUB/OUTPUT/{srt_file['name']}",
+                    "KAGGLE/PIPELINE/OMNI/omni_output.srt"
+                )
+                print(f"[{project_id}] SRT copiado: {srt_file['name']}")
+            else:
+                print(f"[{project_id}] AVISO: Nenhum .srt encontrado em AUDIO_DUB/OUTPUT!")
 
             print(f"[{project_id}] Tudo pronto -> Gerar ASS e disparar Render")
             self.converter_json_para_ass(project_id)
