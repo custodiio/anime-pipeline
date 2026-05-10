@@ -195,34 +195,42 @@ print("Arquivos prontos!")'''),
 MASK = f"{BASE_PATH}/mask.png"
 OUTPUT = f"{BASE_PATH}/pt1_limpo.mp4"
 
-cap = cv2.VideoCapture(INPUT)
-W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-FPS = cap.get(cv2.CAP_PROP_FPS)
-TOTAL = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-mask_np = cv2.imread(MASK, cv2.IMREAD_GRAYSCALE)
-mask_np = cv2.resize(mask_np, (W, H))
-_, mask_bin = cv2.threshold(mask_np, 10, 255, cv2.THRESH_BINARY)
+import cv2, numpy as np
 
-pipe = subprocess.Popen([
-    "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
-    "-s", f"{W}x{H}", "-pix_fmt", "bgr24", "-r", str(FPS), "-i", "pipe:0",
-    "-c:v", "h264_nvenc", "-preset", "p2", "-b:v", "5M", "-c:a", "copy", OUTPUT
-], stdin=subprocess.PIPE)
+# Se mask não existe, copiar direto sem processamento
+if not os.path.exists(MASK):
+    print("  Mask nao encontrada, copiando video sem watermark removal...")
+    shutil.copy2(INPUT, OUTPUT)
+    count = 0
+else:
+    cap = cv2.VideoCapture(INPUT)
+    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    FPS = cap.get(cv2.CAP_PROP_FPS)
+    TOTAL = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    mask_np = cv2.imread(MASK, cv2.IMREAD_GRAYSCALE)
+    mask_np = cv2.resize(mask_np, (W, H))
+    _, mask_bin = cv2.threshold(mask_np, 10, 255, cv2.THRESH_BINARY)
 
-count = 0
-while True:
-    ret, frame = cap.read()
-    if not ret: break
-    out = cv2.inpaint(frame, mask_bin, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-    pipe.stdin.write(out.tobytes())
-    count += 1
-    if count % 500 == 0:
-        print(f"  Frame {count}/{TOTAL} ({count/TOTAL*100:.1f}%)")
+    pipe = subprocess.Popen([
+        "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
+        "-s", f"{W}x{H}", "-pix_fmt", "bgr24", "-r", str(FPS), "-i", "pipe:0",
+        "-c:v", "h264_nvenc", "-preset", "p2", "-b:v", "5M", "-c:a", "copy", OUTPUT
+    ], stdin=subprocess.PIPE)
 
-cap.release()
-pipe.stdin.close()
-pipe.wait()
+    count = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret: break
+        out = cv2.inpaint(frame, mask_bin, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+        pipe.stdin.write(out.tobytes())
+        count += 1
+        if count % 500 == 0:
+            print(f"  Frame {count}/{TOTAL} ({count/TOTAL*100:.1f}%)")
+
+    cap.release()
+    pipe.stdin.close()
+    pipe.wait()
 print(f"  {count} frames processados")'''),
 
     ("Upload Resultado", '''salvar_no_drive(f"{BASE_PATH}/pt1_limpo.mp4", f"{DRIVE_WATERMARK}/pt1_limpo.mp4")'''),
@@ -243,34 +251,42 @@ print("Arquivos prontos!")'''),
 MASK = f"{BASE_PATH}/mask.png"
 OUTPUT = f"{BASE_PATH}/pt2_limpo.mp4"
 
-cap = cv2.VideoCapture(INPUT)
-W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-FPS = cap.get(cv2.CAP_PROP_FPS)
-TOTAL = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-mask_np = cv2.imread(MASK, cv2.IMREAD_GRAYSCALE)
-mask_np = cv2.resize(mask_np, (W, H))
-_, mask_bin = cv2.threshold(mask_np, 10, 255, cv2.THRESH_BINARY)
+import cv2, numpy as np
 
-pipe = subprocess.Popen([
-    "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
-    "-s", f"{W}x{H}", "-pix_fmt", "bgr24", "-r", str(FPS), "-i", "pipe:0",
-    "-c:v", "h264_nvenc", "-preset", "p2", "-b:v", "5M", "-c:a", "copy", OUTPUT
-], stdin=subprocess.PIPE)
+# Se mask não existe, copiar direto sem processamento
+if not os.path.exists(MASK):
+    print("  Mask nao encontrada, copiando video sem watermark removal...")
+    shutil.copy2(INPUT, OUTPUT)
+    count = 0
+else:
+    cap = cv2.VideoCapture(INPUT)
+    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    FPS = cap.get(cv2.CAP_PROP_FPS)
+    TOTAL = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    mask_np = cv2.imread(MASK, cv2.IMREAD_GRAYSCALE)
+    mask_np = cv2.resize(mask_np, (W, H))
+    _, mask_bin = cv2.threshold(mask_np, 10, 255, cv2.THRESH_BINARY)
 
-count = 0
-while True:
-    ret, frame = cap.read()
-    if not ret: break
-    out = cv2.inpaint(frame, mask_bin, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-    pipe.stdin.write(out.tobytes())
-    count += 1
-    if count % 500 == 0:
-        print(f"  Frame {count}/{TOTAL} ({count/TOTAL*100:.1f}%)")
+    pipe = subprocess.Popen([
+        "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
+        "-s", f"{W}x{H}", "-pix_fmt", "bgr24", "-r", str(FPS), "-i", "pipe:0",
+        "-c:v", "h264_nvenc", "-preset", "p2", "-b:v", "5M", "-c:a", "copy", OUTPUT
+    ], stdin=subprocess.PIPE)
 
-cap.release()
-pipe.stdin.close()
-pipe.wait()
+    count = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret: break
+        out = cv2.inpaint(frame, mask_bin, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+        pipe.stdin.write(out.tobytes())
+        count += 1
+        if count % 500 == 0:
+            print(f"  Frame {count}/{TOTAL} ({count/TOTAL*100:.1f}%)")
+
+    cap.release()
+    pipe.stdin.close()
+    pipe.wait()
 print(f"  {count} frames processados")'''),
 
     ("Upload Resultado", '''salvar_no_drive(f"{BASE_PATH}/pt2_limpo.mp4", f"{DRIVE_WATERMARK}/pt2_limpo.mp4")'''),
