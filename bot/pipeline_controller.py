@@ -40,10 +40,16 @@ class PipelineController:
 
         try:
             update_step(pid, "step_upload", "running", "Limpando Drive...")
+            # Limpa pasta ATIVO e os JSONs de sessão do AUDIO_DUB
             self.drive.limpar_pasta_ativo()
+            self.drive.limpar_audio_dub_cache()
 
+            # O áudio vai para KAGGLE/AUDIO_DUB/INPUT/anime_audio.mp3
+            # (caminho que o notebook Omni espera)
+            self.drive.salvar(audio_path, "KAGGLE/AUDIO_DUB/INPUT/anime_audio.mp3")
+
+            # O vídeo original também vai para ATIVO (para referência)
             self.drive.salvar(video_path, f"{DRIVE_ATIVO}/video_original.mp4")
-            self.drive.salvar(audio_path, f"{DRIVE_ATIVO}/audio_original.mp3")
             if mask_path and os.path.exists(mask_path):
                 self.drive.salvar(mask_path, f"{DRIVE_ATIVO}/mask.png")
 
@@ -210,6 +216,8 @@ class PipelineController:
     def verificar_e_avancar(self, project_id):
         """
         Verifica o status atual do projeto e avanca para a proxima etapa.
+        Fluxo:
+          config_ready -> Watermark (se ativo) -> Enhancer (se ativo) -> aguarda Omni -> Render -> Merge
         """
         project = get_project(project_id)
         if not project:
@@ -227,46 +235,48 @@ class PipelineController:
         w_ok = (w1 in ["done", "skipped"]) and (w2 in ["done", "skipped"])
         e_ok = (e1 in ["done", "skipped"]) and (e2 in ["done", "skipped"])
 
-        # 1. Se Config Ready -> Disparar Watermark (se pendente)
+        # 1. Config salva -> disparar Watermark (se pendente e não skipped)
         if conf == "done" and w1 == "pending":
             print(f"[{project_id}] Config concluída -> Disparando Watermark")
             self.disparar_watermark(project_id)
             return
 
-        # 2. Se Watermark Ok e Config Ready -> Disparar Enhancer (se pendente)
-        if conf == "done" and w_ok and e1 == "pending":
+        # 2. Watermark concluído/skipped -> disparar Enhancer (independe de conf)
+        #    Copiar vídeos para a pasta correta se Watermark foi pulado
+        if w_ok and e1 == "pending":
             if w1 == "skipped":
                 print(f"[{project_id}] Watermark pulado, copiando vídeo original para limpo...")
                 self.drive.copiar_arquivo("KAGGLE/PIPELINE/ATIVO/video_pt1.mp4", "KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4")
                 self.drive.copiar_arquivo("KAGGLE/PIPELINE/ATIVO/video_pt2.mp4", "KAGGLE/PIPELINE/WATERMARK/pt2_limpo.mp4")
-            
+
             print(f"[{project_id}] Watermark concluído/pulado -> Disparando Enhancer")
             self.disparar_enhancer(project_id)
             return
 
-        # 3. Se Omni Ok e Config Ready e VideoProcessing Ok -> Disparar Render
+        # 3. Watermark+Enhancer ok e Omni ok e Config ok -> disparar Render
         if conf == "done" and w_ok and e_ok and omni == "done" and r1 == "pending":
             if e1 == "skipped":
                 print(f"[{project_id}] Enhancer pulado, copiando vídeo limpo para enhanced...")
                 self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt1_enhanced.mp4")
                 self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt2_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt2_enhanced.mp4")
-                
-            print(f"[{project_id}] Baixando SRT e Audio final do Omni...")
+
+            # Copiar output do Omni para a pasta padrão do pipeline
+            print(f"[{project_id}] Copiando output do Omni para PIPELINE/OMNI...")
             arquivos_out = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
-            mp3_completo = next((a for a in arquivos_out if a['name'].endswith('_Completo.mp3')), None)
-            srt_completo = next((a for a in arquivos_out if a['name'].endswith('_Completo.srt')), None)
-            
+            mp3_completo = next((a for a in arquivos_out if a['name'].endswith('_Completo.mp3') or a['name'].endswith('.mp3')), None)
+            srt_completo = next((a for a in arquivos_out if a['name'].endswith('_Completo.srt') or a['name'].endswith('.srt')), None)
+
             if mp3_completo:
                 self.drive.copiar_arquivo(f"KAGGLE/AUDIO_DUB/OUTPUT/{mp3_completo['name']}", "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3")
             if srt_completo:
                 self.drive.copiar_arquivo(f"KAGGLE/AUDIO_DUB/OUTPUT/{srt_completo['name']}", "KAGGLE/PIPELINE/OMNI/traducao.srt")
-                
+
             print(f"[{project_id}] Tudo pronto -> Gerar ASS e disparar Render")
             self.converter_json_para_ass(project_id)
             self.disparar_render(project_id)
             return
 
-        # Merge
+        # 4. Render concluído -> disparar Merge
         if r1 == "done" and r2 == "done" and project["step_merge"] == "pending":
             print(f"[{project_id}] Render concluído -> Disparando Merge")
             self.disparar_merge(project_id)
