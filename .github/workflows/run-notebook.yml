@@ -30,8 +30,6 @@ jobs:
 
       - name: Configure Kaggle Account
         env:
-          TASK: ${{ github.event.client_payload.task }}
-          # Contas Kaggle (secrets do GitHub)
           KAGGLE_USERNAME_1: ${{ secrets.KAGGLE_USERNAME_1 }}
           KAGGLE_KEY_1: ${{ secrets.KAGGLE_KEY_1 }}
           KAGGLE_USERNAME_2: ${{ secrets.KAGGLE_USERNAME_2 }}
@@ -55,7 +53,10 @@ jobs:
           echo "{\"username\":\"${!USERNAME_VAR}\",\"key\":\"${!KEY_VAR}\"}" > ~/.kaggle/kaggle.json
           chmod 600 ~/.kaggle/kaggle.json
 
-      - name: Push & Run Notebook
+          # Salvar para reutilizar no próximo step
+          echo "KAGGLE_USER=${!USERNAME_VAR}" >> $GITHUB_ENV
+
+      - name: Inject Secrets & Push Notebook
         env:
           NOTEBOOK: ${{ github.event.client_payload.notebook }}
           PROJECT_ID: ${{ github.event.client_payload.project_id }}
@@ -67,65 +68,15 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          KAGGLE_USERNAME_1: ${{ secrets.KAGGLE_USERNAME_1 }}
-          KAGGLE_USERNAME_2: ${{ secrets.KAGGLE_USERNAME_2 }}
-          KAGGLE_USERNAME_3: ${{ secrets.KAGGLE_USERNAME_3 }}
-          KAGGLE_USERNAME_4: ${{ secrets.KAGGLE_USERNAME_4 }}
-          KAGGLE_USERNAME_5: ${{ secrets.KAGGLE_USERNAME_5 }}
-          KAGGLE_USERNAME_6: ${{ secrets.KAGGLE_USERNAME_6 }}
-          KAGGLE_KEY_1: ${{ secrets.KAGGLE_KEY_1 }}
-          KAGGLE_KEY_2: ${{ secrets.KAGGLE_KEY_2 }}
-          KAGGLE_KEY_3: ${{ secrets.KAGGLE_KEY_3 }}
-          KAGGLE_KEY_4: ${{ secrets.KAGGLE_KEY_4 }}
-          KAGGLE_KEY_5: ${{ secrets.KAGGLE_KEY_5 }}
-          KAGGLE_KEY_6: ${{ secrets.KAGGLE_KEY_6 }}
         run: |
-          ACCOUNT_NUM=${{ github.event.client_payload.kaggle_account }}
-          USERNAME_VAR="KAGGLE_USERNAME_${ACCOUNT_NUM}"
-          KEY_VAR="KAGGLE_KEY_${ACCOUNT_NUM}"
-          
-          RAW_USER="${!USERNAME_VAR}"
-          RAW_KEY="${!KEY_VAR}"
-          
-          export KAGGLE_USERNAME=$(echo "$RAW_USER" | tr -d '\r' | xargs)
-          export KAGGLE_KEY=$(echo "$RAW_KEY" | tr -d '\r' | xargs)
-          KAGGLE_USER=$KAGGLE_USERNAME
-
           echo "📓 Notebook: ${NOTEBOOK}"
           echo "👤 Conta: ${KAGGLE_USER}"
           echo "🆔 Projeto: ${PROJECT_ID}"
 
           cd notebooks/
 
-          # 💉 INJEÇÃO DIRETA DOS SECRETS E PROJECT_ID NO CÓDIGO FONTE
-          python -c "
-          import json, os
-          file = f'{os.environ[\"NOTEBOOK\"]}.ipynb'
-          with open(file, 'r', encoding='utf-8') as f: nb = json.load(f)
-          
-          secrets = {
-              'DATABASE_URL': os.environ.get('DATABASE_URL', ''),
-              'DRIVE_REFRESH_TOKEN': os.environ.get('DRIVE_REFRESH_TOKEN', ''),
-              'DRIVE_CLIENT_ID': os.environ.get('DRIVE_CLIENT_ID', ''),
-              'DRIVE_CLIENT_SECRET': os.environ.get('DRIVE_CLIENT_SECRET', ''),
-              'HF_TOKEN': os.environ.get('HF_TOKEN', ''),
-              'GEMINI_API_KEY': os.environ.get('GEMINI_API_KEY', ''),
-              'OPENAI_API_KEY': os.environ.get('OPENAI_API_KEY', ''),
-              'PIPELINE_PROJECT_ID': os.environ.get('PROJECT_ID', '')
-          }
-          
-          for cell in nb['cells']:
-              if cell['cell_type'] == 'code':
-                  src = ''.join(cell['source'])
-                  for k, v in secrets.items():
-                      safe_val = json.dumps(v)
-                      src = src.replace(f'_get(\"{k}\")', safe_val)
-                      src = src.replace(f\"_get('{k}')\", safe_val)
-                  cell['source'] = [src]
-                  
-          with open(file, 'w', encoding='utf-8') as f: json.dump(nb, f, ensure_ascii=False, indent=1)
-          "
-          echo "✅ Segredos injetados no notebook!"
+          # 💉 Injetar secrets no notebook (script Python dedicado)
+          python ../inject_secrets.py
 
           # Criar kernel-metadata.json
           cat > kernel-metadata.json << EOF
@@ -144,10 +95,10 @@ jobs:
           }
           EOF
 
-          # Push e executar
-          kaggle kernels push -p .
+          # Push com T4 x2 forçado
+          kaggle kernels push -p . --accelerator NvidiaTeslaT4
 
-          echo "✅ Notebook enviado para execução!"
+          echo "✅ Notebook enviado para execução com T4!"
           echo "⏳ Monitorando status..."
 
           # Monitorar execução
