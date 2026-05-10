@@ -37,7 +37,7 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
         self.end_headers()
 
     def do_OPTIONS(self):
@@ -108,22 +108,61 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": "Vídeo não encontrado na pasta uploads/"}).encode())
                 return
 
-            # Servir o arquivo de vídeo
+            # Servir o arquivo de vídeo com suporte a Range requests
             file_size = os.path.getsize(video_file)
-            self.send_response(200)
-            self.send_header("Content-Type", "video/mp4")
-            self.send_header("Content-Length", str(file_size))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-            self.end_headers()
-
-            with open(video_file, "rb") as f:
-                while True:
-                    chunk = f.read(65536)
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
+            
+            # Verificar se é Range request (necessário para <video>)
+            range_header = self.headers.get("Range")
+            if range_header:
+                # Parse range: bytes=START-END
+                range_match = range_header.replace("bytes=", "").split("-")
+                start = int(range_match[0]) if range_match[0] else 0
+                end = int(range_match[1]) if range_match[1] else file_size - 1
+                end = min(end, file_size - 1)
+                content_length = end - start + 1
+                
+                self.send_response(206)  # Partial Content
+                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Length", str(content_length))
+                self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
+                self.end_headers()
+                
+                try:
+                    with open(video_file, "rb") as f:
+                        f.seek(start)
+                        remaining = content_length
+                        while remaining > 0:
+                            chunk_size = min(65536, remaining)
+                            chunk = f.read(chunk_size)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            remaining -= len(chunk)
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                    pass  # Browser cancelou a conexão (normal)
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Length", str(file_size))
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
+                self.end_headers()
+                
+                try:
+                    with open(video_file, "rb") as f:
+                        while True:
+                            chunk = f.read(65536)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                    pass  # Browser cancelou a conexão (normal)
 
         elif path == "/upload":
             self.send_response(200)

@@ -142,6 +142,10 @@ def cell_end(idx, status="done", msg=""):
 
 def report_step(status, msg=""):
     print(f"\nNOTEBOOK FINALIZADO: {STEP_NAME} -> {status}")
+    if PROJECT_ID and PIPELINE_WEBHOOK_URL:
+        try:
+            http_requests.post(f"{PIPELINE_WEBHOOK_URL}/webhook/status", json={"project_id": PROJECT_ID, "step": STEP_NAME, "status": status, "message": msg}, timeout=15)
+        except: pass
     if not PROJECT_ID: return
     _db_exec(f"UPDATE pipeline_projects SET {STEP_NAME}=%s,current_step=%s,updated_at=NOW() WHERE id=%s::uuid", (status, STEP_NAME.replace("step_",""), PROJECT_ID))
     _db_exec("INSERT INTO pipeline_logs (project_id,step,status,message) VALUES (%s::uuid,%s,%s,%s)", (PROJECT_ID, STEP_NAME, status, msg))

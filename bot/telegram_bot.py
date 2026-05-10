@@ -303,12 +303,10 @@ async def cmd_sessao(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     session_link = get_session_link(token)
 
     await update.message.reply_text(
-        f"🎬 *Sessão VideoRender*\n\n"
-        f"Projeto: *{project['project_name']}*\n"
+        f"🎬 Sessão VideoRender\n\n"
+        f"Projeto: {project['project_name']}\n"
         f"⏰ Válida por 2 horas\n\n"
-        f"[Abrir Editor]({session_link})",
-        parse_mode="Markdown",
-        disable_web_page_preview=True
+        f"🔗 {session_link}"
     )
 
 
@@ -409,20 +407,18 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             active_sessions[token] = {"project_id": pid, "chat_id": chat_id, "created_at": time.time()}
             session_link = get_session_link(token)
 
+            # Dispara o Omni ANTES de enviar a mensagem (pra não bloquear se a msg falhar)
+            controller.disparar_omni_imediatamente(pid)
+
             await query.message.reply_text(
                 f"✅ Upload e Divisão Concluídos!\n\n"
                 f"🔄 Disparando a Dublagem (Omni)...\n\n"
-                f"⚙️ *Sessão de Configuração de Legenda:*\n"
+                f"⚙️ Sessão de Configuração de Legenda:\n"
                 f"Configure o estilo da legenda (com um texto placeholder).\n"
-                f"Se quiser remover marca d'água, adicione a máscara na tela de config.\n"
-                f"[Abrir VideoRender]({session_link})\n\n"
-                f"📊 Use /status para acompanhar.",
-                parse_mode="Markdown", disable_web_page_preview=True
+                f"Se quiser remover marca d'água, adicione a máscara na tela de config.\n\n"
+                f"🎬 Abrir VideoRender:\n{session_link}\n\n"
+                f"📊 Use /status para acompanhar."
             )
-
-            # Dispara APENAS O OMNI agora. Watermark e Enhancer serão disparados
-            # depois que a config for salva.
-            controller.disparar_omni_imediatamente(pid)
             
             # Removemos a config após iniciar
             user_uploads.pop(chat_id, None)
@@ -449,8 +445,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             active_sessions[token] = {"project_id": pid, "chat_id": chat_id, "created_at": time.time()}
             session_link = get_session_link(token)
             await query.message.reply_text(
-                f"[Abrir VideoRender]({session_link})",
-                parse_mode="Markdown", disable_web_page_preview=True
+                f"🎬 Abrir VideoRender:\n{session_link}"
             )
 
     elif data == "confirm_config":
@@ -654,20 +649,18 @@ def notificar_omni_concluido(project_id, chat_id, project_name):
     session_link = get_session_link(token)
     
     msg = (
-        f"✅ *Omni-Anime-Ver Concluído!*\n\n"
-        f"O projeto *{project_name}* teve suas legendas e marcações extraídas com sucesso.\n\n"
-        f"🎨 *Próximo passo:*\n"
-        f"Preciso que você configure o visual da renderização.\n"
-        f"[Abrir VideoRender]({session_link})\n\n"
-        f"Ao terminar, clique em 'Salvar no Pipeline'."
+        f"✅ Omni-Anime-Ver Concluído!\n\n"
+        f"O projeto {project_name} teve suas legendas e marcações extraídas com sucesso.\n\n"
+        f"🎨 Próximo passo:\n"
+        f"Configure o visual da renderização.\n"
+        f"Ao terminar, clique em 'Salvar no Pipeline'.\n\n"
+        f"🔗 {session_link}"
     )
     
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    requests.post(url, json={
+    api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    requests.post(api_url, json={
         "chat_id": chat_id,
-        "text": msg,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": True
+        "text": msg
     })
 
 def main():
