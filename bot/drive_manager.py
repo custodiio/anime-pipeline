@@ -214,9 +214,10 @@ class DriveManager:
         print(f"  Projeto anterior arquivado em: {arquivo_pasta_path}")
 
     def limpar_audio_dub_cache(self):
-        """Apaga os JSONs de cache do AUDIO_DUB para forçar reprocessamento no Omni."""
+        """Apaga os JSONs de cache e outputs do AUDIO_DUB para forçar reprocessamento no Omni."""
         if not self.service:
             return
+        # JSONs de cache do processamento Omni
         ARQUIVOS_CACHE = [
             "KAGGLE/AUDIO_DUB/transcricao_raw.json",
             "KAGGLE/AUDIO_DUB/traducao_simplificada.json",
@@ -231,6 +232,19 @@ class DriveManager:
                     print(f"  Cache removido: {caminho}")
             except Exception as e:
                 print(f"  Erro ao remover cache {caminho}: {e}")
+
+        # Limpar pasta de OUTPUT (mp3/srt de projetos anteriores)
+        for pasta in ["KAGGLE/AUDIO_DUB/OUTPUT", "KAGGLE/AUDIO_DUB/INPUT"]:
+            try:
+                arqs = self.listar_arquivos(pasta)
+                for arq in arqs:
+                    try:
+                        self.service.files().delete(fileId=arq["id"]).execute()
+                        print(f"  Output antigo removido: {pasta}/{arq['name']}")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
 
 def split_video(input_path, output_dir):

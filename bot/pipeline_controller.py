@@ -103,114 +103,169 @@ class PipelineController:
 
     def converter_json_para_ass(self, project_id):
         """
-        Gera o arquivo ASS final combinando a traducao.json gerada pelo Omni
-        com o legendas.ass (estilo placeholder) enviado pelo VideoRender.
+        Gera o arquivo ASS final combinando:
+        - O subtitleStyle do videorender-project.json (definido pelo usuário no frontend)
+        - O traducao.srt gerado pelo Omni (conteúdo real das legendas)
+        
+        Se o frontend já enviou um ASS com conteúdo real (não placeholder), ele mantém.
         """
         import tempfile
         import shutil
-        print(f"[{project_id}] Iniciando conversão SRT -> ASS...")
+        import re
+        print(f"[{project_id}] Iniciando geração do ASS final...")
         try:
-            # Baixa os arquivos do Drive
             tmp_dir = tempfile.mkdtemp()
-            ass_template = os.path.join(tmp_dir, "legendas_placeholder.ass")
-            traducao_srt = os.path.join(tmp_dir, "traducao.srt")
-            
-            # Aqui deveríamos baixar de KAGGLE/PIPELINE/OMNI
-            self.drive.baixar("KAGGLE/PIPELINE/OMNI/legendas.ass", ass_template)
-            self.drive.baixar("KAGGLE/PIPELINE/OMNI/traducao.srt", traducao_srt)
-            
-            import re
-            
-            # Lê template de estilos
-            with open(ass_template, "r", encoding="utf-8") as f:
-                ass_lines = f.readlines()
-                
-            # Encontrar início dos [Events]
-            event_idx = -1
-            for i, line in enumerate(ass_lines):
-                if line.strip() == "[Events]":
-                    event_idx = i
-                    break
-                    
-            if event_idx == -1:
-                print("Arquivo ASS sem seção [Events]")
+            config_path = os.path.join(tmp_dir, "videorender-project.json")
+            srt_path = os.path.join(tmp_dir, "traducao.srt")
+            existing_ass = os.path.join(tmp_dir, "legendas_existente.ass")
+
+            # Baixar config do VideoRender
+            has_config = self.drive.baixar("KAGGLE/PIPELINE/OMNI/videorender-project.json", config_path)
+            has_srt = self.drive.baixar("KAGGLE/PIPELINE/OMNI/traducao.srt", srt_path)
+
+            if not has_srt or not os.path.exists(srt_path):
+                print(f"[{project_id}] AVISO: traducao.srt não encontrado. Pulando geração de ASS.")
+                shutil.rmtree(tmp_dir, ignore_errors=True)
                 return
-                
-            # Extrair estilos disponíveis
-            estilos = []
-            for line in ass_lines:
-                if line.startswith("Style: "):
-                    parts = line.split(",")
-                    if len(parts) > 0:
-                        estilo_nome = parts[0].replace("Style: ", "").strip()
-                        estilos.append(estilo_nome)
-            
-            estilo_padrao = estilos[0] if estilos else "Default"
-            estilo_narracao = "NARRACAO" if "NARRACAO" in estilos else estilo_padrao
-            estilo_cena = "CENA" if "CENA" in estilos else estilo_padrao
-                    
-            # Preservar o cabeçalho (até os eventos)
-            final_ass_lines = []
-            for line in ass_lines:
-                if line.startswith("Dialogue:"):
-                    continue # Remove os dialogues antigos
-                final_ass_lines.append(line)
-                if line.startswith("Format:"):
-                    break # Fica pronto para inserir os dialogues
-                    
-            def format_ass_time_from_srt(srt_time):
-                srt_time = srt_time.strip()
-                if not srt_time: return "0:00:00.00"
-                parts = srt_time.replace(",", ".").split(":")
+
+            # Ler estilo do config (ou usar defaults)
+            style = {}
+            if has_config and os.path.exists(config_path):
+                import json as json_mod
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json_mod.load(f)
+                # O config pode ter o estilo em "subtitles.style" (exportProject) ou "subtitleStyle"
+                style = config.get("subtitles", {}).get("style", {})
+                if not style:
+                    style = config.get("subtitleStyle", {})
+                video_info = config.get("video", {}).get("info", {})
+                out_format = config.get("video", {}).get("outputFormat", "9:16")
+            else:
+                out_format = "9:16"
+                video_info = {}
+
+            # Defaults para o estilo
+            font = style.get("font", "Montserrat")
+            size = style.get("size", 52)
+            color = style.get("color", "#FFFFFF")
+            outline_color = style.get("outlineColor", "#000000")
+            outline_width = style.get("outlineWidth", 2.5)
+            shadow_offset = style.get("shadowOffset", 1)
+            bold = style.get("bold", True)
+            italic = style.get("italic", False)
+            alignment = style.get("alignment", 2)
+            position_y = style.get("positionY", 85)
+            fade_in = style.get("fadeIn", 100)
+            fade_out = style.get("fadeOut", 80)
+            fade_in_pct = style.get("fadeInLimitPct", 20)
+            fade_out_pct = style.get("fadeOutLimitPct", 15)
+            bg_box = style.get("bgBox", False)
+            bg_box_color = style.get("bgBoxColor", "#000000")
+            bg_box_opacity = style.get("bgBoxOpacity", 0.5)
+            all_caps = style.get("allCaps", False)
+
+            # Resolução do vídeo
+            if out_format == "9:16":
+                play_w, play_h = 1080, 1920
+            else:
+                play_w, play_h = 1920, 1080
+
+            # Converter cores para formato ASS (&HAABBGGRR)
+            def hex_to_ass(h, alpha=0):
+                h = h.lstrip("#")
+                if len(h) < 6:
+                    h = "FFFFFF"
+                r, g, b = h[0:2], h[2:4], h[4:6]
+                a = f"{int(alpha * 255):02X}"
+                return f"&H{a}{b}{g}{r}"
+
+            primary_col = hex_to_ass(color)
+            outline_col = hex_to_ass(outline_color)
+            back_col = hex_to_ass(bg_box_color, 1 - bg_box_opacity) if bg_box else "&HFFFFFFFF"
+            ass_font_size = round((size / 1920) * play_h)
+            bold_flag = "-1" if bold else "0"
+            italic_flag = "-1" if italic else "0"
+            margin_v = round(play_h * (1 - position_y / 100))
+
+            # Gerar ASS
+            header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {play_w}
+PlayResY: {play_h}
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,{font},{ass_font_size},{primary_col},{primary_col},{outline_col},{back_col},{bold_flag},{italic_flag},0,0,100,100,0,0,1,{outline_width},{shadow_offset},{alignment},0,0,{margin_v},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+            def srt_to_ass_time(srt_time):
+                srt_time = srt_time.strip().replace(",", ".")
+                parts = srt_time.split(":")
                 if len(parts) == 3:
-                    h, m, s = parts
-                    h = int(h)
+                    h = int(parts[0])
+                    m = parts[1]
+                    s = parts[2]
                     if "." in s:
                         sec, ms = s.split(".")
-                        s_ass = f"{int(sec):02d}.{ms[:2]}"
+                        cs = ms[:2].ljust(2, "0")
                     else:
-                        s_ass = f"{int(s):02d}.00"
-                    return f"{h}:{m:02d}:{s_ass}"
+                        sec = s
+                        cs = "00"
+                    return f"{h}:{m}:{int(sec):02d}.{cs}"
                 return "0:00:00.00"
 
-            # Parsear o SRT
-            if os.path.exists(traducao_srt):
-                with open(traducao_srt, "r", encoding="utf-8") as f:
-                    srt_content = f.read()
-                    
-                # Split por blocos do SRT
-                blocks = re.split(r'\n\s*\n', srt_content.strip())
-                
-                for block in blocks:
-                    lines = block.split('\n')
-                    if len(lines) >= 3:
-                        time_line = lines[1]
-                        texto = " ".join(lines[2:]).replace('\n', '\\N')
-                        
-                        if "-->" in time_line:
-                            t_start, t_end = time_line.split("-->")
-                            start = format_ass_time_from_srt(t_start)
-                            end = format_ass_time_from_srt(t_end)
-                            
-                            # Fallback: palavras curtas (whisper) = NARRACAO, longas = CENA
-                            style = estilo_narracao if len(texto.split()) <= 3 else estilo_cena
-                            
-                            dialogue = f"Dialogue: 0,{start},{end},{style},,0,0,0,,{texto}\n"
-                            final_ass_lines.append(dialogue)
-            else:
-                print(f"[{project_id}] AVISO: traducao.srt não encontrado!")
+            # Parsear SRT
+            dialogues = []
+            with open(srt_path, "r", encoding="utf-8") as f:
+                srt_content = f.read()
+
+            blocks = re.split(r'\n\s*\n', srt_content.strip())
+            for block in blocks:
+                lines = block.strip().split('\n')
+                if len(lines) >= 3:
+                    time_line = lines[1]
+                    texto = " ".join(lines[2:]).replace('\n', '\\N')
+                    if all_caps:
+                        texto = texto.upper()
+
+                    if "-->" in time_line:
+                        t_start, t_end = time_line.split("-->")
+                        start = srt_to_ass_time(t_start)
+                        end = srt_to_ass_time(t_end)
+
+                        # Calcular fade
+                        try:
+                            def time_to_ms(t):
+                                p = t.replace(",", ".").split(":")
+                                return (int(p[0]) * 3600 + int(p[1]) * 60 + float(p[2])) * 1000
+                            dur_ms = time_to_ms(t_end.strip()) - time_to_ms(t_start.strip())
+                            eff_in = min(fade_in, dur_ms * fade_in_pct / 100)
+                            eff_out = min(fade_out, dur_ms * fade_out_pct / 100)
+                            fade_tag = f"\\\\fad({int(eff_in)},{int(eff_out)})"
+                        except Exception:
+                            fade_tag = ""
+
+                        dialogue = f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}}}{texto}"
+                        dialogues.append(dialogue)
 
             out_ass = os.path.join(tmp_dir, "legendas_final.ass")
             with open(out_ass, "w", encoding="utf-8") as f:
-                f.writelines(final_ass_lines)
-                
+                f.write(header)
+                f.write("\n".join(dialogues))
+
             self.drive.salvar(out_ass, "KAGGLE/PIPELINE/OMNI/legendas.ass")
-            print(f"[{project_id}] ASS Finalizado e salvo no Drive como legendas.ass (sobrescrevendo placeholder).")
-            
+            print(f"[{project_id}] ASS final gerado ({len(dialogues)} diálogos) e salvo no Drive.")
+
             shutil.rmtree(tmp_dir, ignore_errors=True)
-            
+
         except Exception as e:
             print(f"[{project_id}] Erro ao gerar ASS final: {e}")
+            import traceback
+            traceback.print_exc()
 
 
     def verificar_e_avancar(self, project_id):
