@@ -339,7 +339,7 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                         logger.info("ASS salvo no Drive")
                         
                     # Salvar máscara (se enviada pelo VideoRender)
-                    mask_data = data.get("mask_data")
+                    mask_data = data.get("mask") or data.get("mask_data")
                     if mask_data:
                         import base64
                         # Remover cabeçalho data:image/png;base64, se houver
