@@ -121,6 +121,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "  /cells `[notebook]` — Tracking por célula\n"
         "  /sessao — Gera link do VideoRender\n"
         "  /config — Confirma config (dispara render)\n"
+        "  /upload — Obter link para upload local de arquivos\n"
         "  /cancel — Cancela projeto ativo\n"
         "  /myid — Mostra seu User ID\n\n"
         "📦 *Envio de arquivos:*\n"
@@ -128,7 +129,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "  2. Envie o *áudio* (original do vídeo)\n"
         "  3. Use `/novo Nome do Anime`\n\n"
         "💻 *Para vídeos gigantes (>20MB):*\n"
-        "  Coloque o vídeo e áudio na pasta `uploads` do seu PC e use:\n"
+        "  Use o comando `/upload` para receber o link do painel web,\n"
+        "  faça o upload dos arquivos e depois use:\n"
         "  `/usar_local Nome do Anime`",
         parse_mode="Markdown"
     )
@@ -139,6 +141,20 @@ async def cmd_myid(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Mostra o User ID do Telegram."""
     uid = update.effective_user.id
     await update.message.reply_text(f"🆔 Seu User ID: `{uid}`", parse_mode="Markdown")
+
+
+@authorized
+async def cmd_upload(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Gera link para upload local de arquivos grandes."""
+    upload_url = os.getenv("WEBHOOK_UPLOAD_URL", "http://localhost:8080/upload")
+    await update.message.reply_text(
+        f"📂 *Upload Local*\n\n"
+        f"Use o link abaixo no seu navegador para enviar vídeos maiores que 20MB:\n"
+        f"👉 {upload_url}\n\n"
+        f"Após o upload, inicie o projeto com:\n"
+        f"`/usar_local Nome do Anime`",
+        parse_mode="Markdown"
+    )
 
 
 @authorized
@@ -692,6 +708,7 @@ def main():
     app.add_handler(CommandHandler("cells", cmd_cells))
     app.add_handler(CommandHandler("sessao", cmd_sessao))
     app.add_handler(CommandHandler("config", cmd_config))
+    app.add_handler(CommandHandler("upload", cmd_upload))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("myid", cmd_myid))
 
