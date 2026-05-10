@@ -126,8 +126,10 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "📦 *Envio de arquivos:*\n"
         "  1. Envie o *vídeo* (com marca d'água)\n"
         "  2. Envie o *áudio* (original do vídeo)\n"
-        "  3. (Opcional) Envie a *máscara* (.png)\n"
-        "  4. Use `/novo Nome do Anime`",
+        "  3. Use `/novo Nome do Anime`\n\n"
+        "💻 *Para vídeos gigantes (>20MB):*\n"
+        "  Coloque o vídeo e áudio na pasta `uploads` do seu PC e use:\n"
+        "  `/usar_local Nome do Anime`",
         parse_mode="Markdown"
     )
 
@@ -165,50 +167,82 @@ async def cmd_novo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     project_name = " ".join(ctx.args) if ctx.args else f"Projeto_{chat_id[:6]}"
+    
+    # Prepara o estado temporário
+    user_uploads[chat_id]["name"] = project_name
+    user_uploads[chat_id]["local"] = False
+    user_uploads[chat_id]["watermark"] = True
+    user_uploads[chat_id]["enhancer"] = False
+    
+    await send_config_menu(update, chat_id)
 
-    await update.message.reply_text(
-        f"🚀 Iniciando projeto: *{project_name}*\n"
-        f"📤 Fazendo upload e dividindo vídeo...",
-        parse_mode="Markdown"
+@authorized
+async def cmd_usar_local(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Inicia o projeto pegando os arquivos direto da pasta uploads local."""
+    chat_id = str(update.effective_chat.id)
+    active = get_active_project(chat_id)
+    if active:
+        await update.message.reply_text("⚠️ Já existe um projeto ativo. Use /cancel primeiro.")
+        return
+
+    uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
+    
+    files = os.listdir(uploads_dir)
+    videos = [f for f in files if any(f.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov"])]
+    audios = [f for f in files if any(f.lower().endswith(ext) for ext in [".mp3", ".wav", ".m4a", ".aac"])]
+    
+    if not videos or not audios:
+        await update.message.reply_text(
+            f"❌ Arquivos não encontrados!\n"
+            f"Coloque 1 vídeo e 1 áudio na pasta:\n`{uploads_dir}`\n"
+            f"E tente novamente."
+        )
+        return
+
+    video_path = os.path.join(uploads_dir, videos[0])
+    audio_path = os.path.join(uploads_dir, audios[0])
+    project_name = " ".join(ctx.args) if ctx.args else f"Projeto_{chat_id[:6]}"
+
+    if chat_id not in user_uploads:
+        user_uploads[chat_id] = {}
+        
+    user_uploads[chat_id]["video"] = video_path
+    user_uploads[chat_id]["audio"] = audio_path
+    user_uploads[chat_id]["name"] = project_name
+    user_uploads[chat_id]["local"] = True
+    user_uploads[chat_id]["watermark"] = True
+    user_uploads[chat_id]["enhancer"] = False
+
+    await send_config_menu(update, chat_id)
+
+
+async def send_config_menu(update, chat_id, query=None):
+    """Envia ou atualiza o menu de configurações do projeto."""
+    opts = user_uploads.get(chat_id)
+    if not opts:
+        return
+
+    wm_text = "✅ Remover Marca d'água" if opts["watermark"] else "❌ Remover Marca d'água"
+    enhancer_text = "✅ Aumentar Qualidade" if opts["enhancer"] else "❌ Aumentar Qualidade"
+
+    buttons = [
+        [InlineKeyboardButton(wm_text, callback_data="toggle_wm")],
+        [InlineKeyboardButton(enhancer_text, callback_data="toggle_enhancer")],
+        [InlineKeyboardButton("▶️ Iniciar Projeto", callback_data="start_project")]
+    ]
+    markup = InlineKeyboardMarkup(buttons)
+    
+    text = (
+        f"⚙️ *Configurações Iniciais*\n"
+        f"Projeto: `{opts['name']}`\n\n"
+        f"Selecione quais processos opcionais deseja executar antes da dublagem:"
     )
 
-    try:
-        project = await controller.iniciar_projeto(
-            project_name=project_name,
-            chat_id=chat_id,
-            video_path=uploads["video"],
-            audio_path=uploads["audio"],
-            mask_path=uploads.get("mask"),
-        )
-        pid = str(project["id"])
-
-        # Gerar sessão VideoRender automaticamente
-        token = gerar_session_token(pid)
-        active_sessions[token] = {
-            "project_id": pid,
-            "chat_id": chat_id,
-            "created_at": time.time()
-        }
-
-        session_link = get_session_link(token)
-
-        await update.message.reply_text(
-            f"✅ Projeto criado!\n\n"
-            f"🔄 Disparando:\n"
-            f"  • Watermark Remover (PT1 + PT2)\n"
-            f"  • Omni-Anime-Ver\n\n"
-            f"⚙️ *Configure o vídeo quando o Omni terminar:*\n"
-            f"[Abrir VideoRender]({session_link})\n\n"
-            f"📊 Use /status para acompanhar.",
-            parse_mode="Markdown",
-            disable_web_page_preview=True
-        )
-
-        controller.disparar_watermark_e_omni(pid)
-        user_uploads.pop(chat_id, None)
-
-    except Exception as e:
-        await update.message.reply_text(f"❌ Erro ao iniciar projeto:\n`{e}`", parse_mode="Markdown")
+    if query:
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=markup)
+    else:
+        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=markup)
 
 
 @authorized
@@ -336,7 +370,67 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = str(query.message.chat.id)
     data = query.data
 
-    if data == "refresh_status":
+    if data == "toggle_wm":
+        if chat_id in user_uploads:
+            user_uploads[chat_id]["watermark"] = not user_uploads[chat_id]["watermark"]
+            await send_config_menu(None, chat_id, query)
+            
+    elif data == "toggle_enhancer":
+        if chat_id in user_uploads:
+            user_uploads[chat_id]["enhancer"] = not user_uploads[chat_id]["enhancer"]
+            await send_config_menu(None, chat_id, query)
+            
+    elif data == "start_project":
+        if chat_id not in user_uploads:
+            await query.edit_message_text("❌ Sessão expirada. Envie os arquivos novamente.")
+            return
+            
+        opts = user_uploads[chat_id]
+        
+        await query.edit_message_text(
+            f"🚀 Iniciando projeto: *{opts['name']}*\n"
+            f"📤 Fazendo upload e dividindo vídeo...",
+            parse_mode="Markdown"
+        )
+
+        try:
+            # Informar ao controller as opções selecionadas
+            project = await controller.iniciar_projeto(
+                project_name=opts["name"],
+                chat_id=chat_id,
+                video_path=opts["video"],
+                audio_path=opts["audio"],
+                mask_path=opts.get("mask"),
+                opts=opts  # Passar as configs para o controller registrar
+            )
+            pid = str(project["id"])
+
+            token = gerar_session_token(pid)
+            active_sessions[token] = {"project_id": pid, "chat_id": chat_id, "created_at": time.time()}
+            session_link = get_session_link(token)
+
+            await query.message.reply_text(
+                f"✅ Upload e Divisão Concluídos!\n\n"
+                f"🔄 Disparando a Dublagem (Omni)...\n\n"
+                f"⚙️ *Sessão de Configuração de Legenda:*\n"
+                f"Configure o estilo da legenda (com um texto placeholder).\n"
+                f"Se quiser remover marca d'água, adicione a máscara na tela de config.\n"
+                f"[Abrir VideoRender]({session_link})\n\n"
+                f"📊 Use /status para acompanhar.",
+                parse_mode="Markdown", disable_web_page_preview=True
+            )
+
+            # Dispara APENAS O OMNI agora. Watermark e Enhancer serão disparados
+            # depois que a config for salva.
+            controller.disparar_omni_imediatamente(pid)
+            
+            # Removemos a config após iniciar
+            user_uploads.pop(chat_id, None)
+
+        except Exception as e:
+            await query.message.reply_text(f"❌ Erro ao iniciar projeto:\n`{e}`", parse_mode="Markdown")
+
+    elif data == "refresh_status":
         project = get_active_project(chat_id)
         if project:
             status_text = format_status(project)
@@ -388,20 +482,49 @@ async def handle_video(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not any(file_name.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov", ".webm"]):
         return
 
-    await message.reply_text(f"⬇️ Baixando vídeo: `{file_name}`...", parse_mode="Markdown")
+    msg = await message.reply_text(f"⬇️ Baixando vídeo: `{file_name}`...", parse_mode="Markdown")
 
     temp_dir = tempfile.mkdtemp(prefix="anime_pipeline_")
     local_path = os.path.join(temp_dir, file_name)
 
-    tg_file = await ctx.bot.get_file(file_obj.file_id)
-    await tg_file.download_to_drive(local_path)
+    try:
+        if file_obj.file_size and file_obj.file_size > 20 * 1024 * 1024:
+            await msg.edit_text("❌ *Erro*: O Telegram limita o download de bots a 20MB. Por favor, envie um vídeo menor ou compactado.", parse_mode="Markdown")
+            return
+
+        tg_file = await ctx.bot.get_file(file_obj.file_id)
+        
+        import httpx
+        import time
+        async with httpx.AsyncClient() as client:
+            async with client.stream("GET", tg_file.file_path) as response:
+                response.raise_for_status()
+                total_size = int(response.headers.get("Content-Length", file_obj.file_size or 0))
+                downloaded = 0
+                last_update = time.time()
+                
+                with open(local_path, "wb") as f:
+                    async for chunk in response.aiter_bytes(chunk_size=8192 * 4):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        now = time.time()
+                        if total_size and (now - last_update > 2.0):
+                            percent = (downloaded / total_size) * 100
+                            try:
+                                await msg.edit_text(f"⬇️ Baixando vídeo: `{file_name}`\n⏳ *{percent:.1f}%* ({downloaded//1024//1024}MB / {total_size//1024//1024}MB)", parse_mode="Markdown")
+                            except Exception:
+                                pass
+                            last_update = now
+    except Exception as e:
+        await msg.edit_text(f"❌ Erro ao baixar vídeo: `{e}`", parse_mode="Markdown")
+        return
 
     if chat_id not in user_uploads:
         user_uploads[chat_id] = {}
     user_uploads[chat_id]["video"] = local_path
 
     has_audio = user_uploads[chat_id].get("audio")
-    await message.reply_text(
+    await msg.edit_text(
         f"✅ Vídeo recebido: `{file_name}`\n"
         f"{'📦 Pronto! Use /novo <nome> para iniciar.' if has_audio else '📎 Agora envie o *áudio* original.'}",
         parse_mode="Markdown"
@@ -424,22 +547,53 @@ async def handle_audio(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if "audio" not in mime:
             return
 
-    await message.reply_text(f"⬇️ Baixando áudio: `{file_name}`...", parse_mode="Markdown")
+    msg = await message.reply_text(f"⬇️ Baixando áudio: `{file_name}`...", parse_mode="Markdown")
 
     temp_dir = tempfile.mkdtemp(prefix="anime_pipeline_")
     local_path = os.path.join(temp_dir, file_name)
 
-    tg_file = await ctx.bot.get_file(file_obj.file_id)
-    await tg_file.download_to_drive(local_path)
+    try:
+        if file_obj.file_size and file_obj.file_size > 20 * 1024 * 1024:
+            await msg.edit_text("❌ *Erro*: O Telegram limita o download de bots a 20MB. Por favor, envie um áudio menor ou compactado.", parse_mode="Markdown")
+            return
+
+        tg_file = await ctx.bot.get_file(file_obj.file_id)
+        
+        import httpx
+        import time
+        async with httpx.AsyncClient() as client:
+            async with client.stream("GET", tg_file.file_path) as response:
+                response.raise_for_status()
+                total_size = int(response.headers.get("Content-Length", file_obj.file_size or 0))
+                downloaded = 0
+                last_update = time.time()
+                
+                with open(local_path, "wb") as f:
+                    async for chunk in response.aiter_bytes(chunk_size=8192 * 4):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        now = time.time()
+                        if total_size and (now - last_update > 2.0):
+                            percent = (downloaded / total_size) * 100
+                            try:
+                                await msg.edit_text(f"⬇️ Baixando áudio: `{file_name}`\n⏳ *{percent:.1f}%* ({downloaded//1024//1024}MB / {total_size//1024//1024}MB)", parse_mode="Markdown")
+                            except Exception:
+                                pass
+                            last_update = now
+    except Exception as e:
+        await msg.edit_text(f"❌ Erro ao baixar áudio: `{e}`", parse_mode="Markdown")
+        return
 
     if chat_id not in user_uploads:
         user_uploads[chat_id] = {}
     user_uploads[chat_id]["audio"] = local_path
 
     has_video = user_uploads[chat_id].get("video")
-    await message.reply_text(
+    msg_ready = "📦 Pronto! Use /novo <nome> para iniciar."
+    msg_wait = "📎 Agora envie o *vídeo* com marca d'água."
+    await msg.edit_text(
         f"✅ Áudio recebido: `{file_name}`\n"
-        f"{'📦 Pronto! Use /novo <nome> para iniciar.' if has_video else '📎 Agora envie o *vídeo* com marca d\\'água.'}",
+        f"{msg_ready if has_video else msg_wait}",
         parse_mode="Markdown"
     )
 
@@ -523,9 +677,9 @@ def main():
         return
 
     if not AUTHORIZED_USERS:
-        print("⚠️  AUTHORIZED_TELEGRAM_USERS não configurado! Bot aberto a todos.")
+        print("AVISO: AUTHORIZED_TELEGRAM_USERS nao configurado! Bot aberto a todos.")
     else:
-        print(f"🔒 Usuários autorizados: {AUTHORIZED_USERS}")
+        print(f"Usuarios autorizados: {AUTHORIZED_USERS}")
 
     init_db()
 
@@ -540,6 +694,7 @@ def main():
     # Comandos
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("novo", cmd_novo))
+    app.add_handler(CommandHandler("usar_local", cmd_usar_local))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("cells", cmd_cells))
     app.add_handler(CommandHandler("sessao", cmd_sessao))
@@ -557,7 +712,13 @@ def main():
     ))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🤖 Bot Telegram iniciado! Ctrl+C para parar.")
+    print("Bot Telegram iniciado! Ctrl+C para parar.")
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     app.run_polling(drop_pending_updates=True)
 
 

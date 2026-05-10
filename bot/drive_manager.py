@@ -146,6 +146,28 @@ class DriveManager:
         ).execute()
         return results.get("files", [])
 
+    def copiar_arquivo(self, caminho_origem, caminho_destino):
+        """Copia um arquivo no Drive de um caminho para outro."""
+        try:
+            arq_id = self._buscar_id(caminho_origem)
+            if not arq_id:
+                print(f"Origem não encontrada: {caminho_origem}")
+                return False
+                
+            dir_dest, nome_dest = caminho_destino.rsplit("/", 1)
+            dir_dest_id = self._garantir_pasta(dir_dest)
+            
+            body = {
+                'name': nome_dest,
+                'parents': [dir_dest_id]
+            }
+            self.service.files().copy(fileId=arq_id, body=body).execute()
+            print(f"  Copiado: {caminho_origem} -> {caminho_destino}")
+            return True
+        except Exception as e:
+            print(f"Erro ao copiar {caminho_origem} para {caminho_destino}: {e}")
+            return False
+
     def mover_arquivo(self, file_id, nova_pasta_id):
         """Move um arquivo para outra pasta."""
         if not self.service:
