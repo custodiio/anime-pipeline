@@ -698,7 +698,21 @@ def main():
 
     controller.on_omni_done = notificar_omni_concluido
 
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    async def post_init(application: Application):
+        await application.bot.set_my_commands([
+            BotCommand("start", "Mensagem de boas-vindas"),
+            BotCommand("novo", "Inicia novo projeto"),
+            BotCommand("status", "Status do projeto ativo"),
+            BotCommand("cells", "Tracking por célula"),
+            BotCommand("sessao", "Gera link do VideoRender"),
+            BotCommand("config", "Confirma config (dispara render)"),
+            BotCommand("upload", "Obter link para upload local"),
+            BotCommand("cancel", "Cancela projeto ativo"),
+            BotCommand("usar_local", "Iniciar projeto com arquivos do PC"),
+        ])
+        print("Comandos do Telegram registrados no menu azul!")
+
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
     # Comandos
     app.add_handler(CommandHandler("start", cmd_start))
