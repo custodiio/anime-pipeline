@@ -98,6 +98,12 @@ def gerar_session_token(project_id: str) -> str:
     token = hashlib.sha256(raw.encode()).hexdigest()[:24]
     return token
 
+def get_session_link(token: str) -> str:
+    videorender_url = os.getenv("VIDEORENDER_URL", "http://localhost:5173")
+    webhook_url = os.getenv("PIPELINE_WEBHOOK_URL", "")
+    api_param = f"&api={webhook_url}" if webhook_url else ""
+    return f"{videorender_url}/?session={token}{api_param}"
+
 
 # ═══════════════════════════════════════════════════════════════════
 # 📋 COMANDOS
@@ -184,8 +190,7 @@ async def cmd_novo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "created_at": time.time()
         }
 
-        videorender_url = os.getenv("VIDEORENDER_URL", "http://localhost:5173")
-        session_link = f"{videorender_url}/?session={token}"
+        session_link = get_session_link(token)
 
         await update.message.reply_text(
             f"✅ Projeto criado!\n\n"
@@ -261,8 +266,7 @@ async def cmd_sessao(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "created_at": time.time()
     }
 
-    videorender_url = os.getenv("VIDEORENDER_URL", "http://localhost:5173")
-    session_link = f"{videorender_url}/?session={token}"
+    session_link = get_session_link(token)
 
     await update.message.reply_text(
         f"🎬 *Sessão VideoRender*\n\n"
@@ -349,8 +353,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pid = str(project["id"])
             token = gerar_session_token(pid)
             active_sessions[token] = {"project_id": pid, "chat_id": chat_id, "created_at": time.time()}
-            videorender_url = os.getenv("VIDEORENDER_URL", "http://localhost:5173")
-            session_link = f"{videorender_url}/?session={token}"
+            session_link = get_session_link(token)
             await query.message.reply_text(
                 f"[Abrir VideoRender]({session_link})",
                 parse_mode="Markdown", disable_web_page_preview=True
@@ -480,9 +483,38 @@ def validar_sessao(token: str):
     return session
 
 
+import requests
+
 # ═══════════════════════════════════════════════════════════════════
 # 🚀 INICIALIZAÇÃO
 # ═══════════════════════════════════════════════════════════════════
+
+def notificar_omni_concluido(project_id, chat_id, project_name):
+    """Callback chamado pelo PipelineController quando o Omni termina."""
+    token = gerar_session_token(project_id)
+    active_sessions[token] = {
+        "project_id": project_id,
+        "chat_id": chat_id,
+        "created_at": time.time()
+    }
+    session_link = get_session_link(token)
+    
+    msg = (
+        f"✅ *Omni-Anime-Ver Concluído!*\n\n"
+        f"O projeto *{project_name}* teve suas legendas e marcações extraídas com sucesso.\n\n"
+        f"🎨 *Próximo passo:*\n"
+        f"Preciso que você configure o visual da renderização.\n"
+        f"[Abrir VideoRender]({session_link})\n\n"
+        f"Ao terminar, clique em 'Salvar no Pipeline'."
+    )
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    requests.post(url, json={
+        "chat_id": chat_id,
+        "text": msg,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": True
+    })
 
 def main():
     """Inicia o bot."""
@@ -496,6 +528,12 @@ def main():
         print(f"🔒 Usuários autorizados: {AUTHORIZED_USERS}")
 
     init_db()
+
+    from bot.webhook_server import start_webhook_server, set_session_validator
+    set_session_validator(validar_sessao)
+    start_webhook_server()
+
+    controller.on_omni_done = notificar_omni_concluido
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 

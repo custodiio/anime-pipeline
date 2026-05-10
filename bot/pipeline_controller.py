@@ -111,6 +111,14 @@ class PipelineController:
             self.disparar_render(project_id)
             return
 
+        # Omni done -> waiting_config
+        if (project["step_omni"] == "done" and project["status"] == "running"):
+            print(f"  Omni concluido -> Aguardando config")
+            mark_project_waiting_config(project_id, "")
+            if hasattr(self, 'on_omni_done') and self.on_omni_done:
+                self.on_omni_done(project_id, project["chat_id"], project["project_name"])
+            return
+
         # Render pt1 + pt2 done -> disparar Merge
         if (project["step_render_pt1"] == "done" and
             project["step_render_pt2"] == "done" and
