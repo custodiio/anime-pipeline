@@ -1,0 +1,116 @@
+name: Run Kaggle Notebook
+
+on:
+  repository_dispatch:
+    types:
+      - run-wm-pt1
+      - run-wm-pt2
+      - run-enhancer-pt1
+      - run-enhancer-pt2
+      - run-omni
+      - run-render-pt1
+      - run-render-pt2
+      - run-merge
+
+jobs:
+  run-notebook:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Kaggle CLI
+        run: pip install kaggle
+
+      - name: Configure Kaggle Account
+        env:
+          TASK: ${{ github.event.client_payload.task }}
+          # Contas Kaggle (secrets do GitHub)
+          KAGGLE_USERNAME_1: ${{ secrets.KAGGLE_USERNAME_1 }}
+          KAGGLE_KEY_1: ${{ secrets.KAGGLE_KEY_1 }}
+          KAGGLE_USERNAME_2: ${{ secrets.KAGGLE_USERNAME_2 }}
+          KAGGLE_KEY_2: ${{ secrets.KAGGLE_KEY_2 }}
+          KAGGLE_USERNAME_3: ${{ secrets.KAGGLE_USERNAME_3 }}
+          KAGGLE_KEY_3: ${{ secrets.KAGGLE_KEY_3 }}
+          KAGGLE_USERNAME_4: ${{ secrets.KAGGLE_USERNAME_4 }}
+          KAGGLE_KEY_4: ${{ secrets.KAGGLE_KEY_4 }}
+          KAGGLE_USERNAME_5: ${{ secrets.KAGGLE_USERNAME_5 }}
+          KAGGLE_KEY_5: ${{ secrets.KAGGLE_KEY_5 }}
+          KAGGLE_USERNAME_6: ${{ secrets.KAGGLE_USERNAME_6 }}
+          KAGGLE_KEY_6: ${{ secrets.KAGGLE_KEY_6 }}
+        run: |
+          ACCOUNT_NUM=${{ github.event.client_payload.kaggle_account }}
+          echo "🔑 Usando conta Kaggle #${ACCOUNT_NUM}"
+
+          USERNAME_VAR="KAGGLE_USERNAME_${ACCOUNT_NUM}"
+          KEY_VAR="KAGGLE_KEY_${ACCOUNT_NUM}"
+
+          mkdir -p ~/.kaggle
+          echo "{\"username\":\"${!USERNAME_VAR}\",\"key\":\"${!KEY_VAR}\"}" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+
+      - name: Push & Run Notebook
+        env:
+          NOTEBOOK: ${{ github.event.client_payload.notebook }}
+          PROJECT_ID: ${{ github.event.client_payload.project_id }}
+          ACCOUNT_NUM: ${{ github.event.client_payload.kaggle_account }}
+        run: |
+          ACCOUNT_NUM=${{ github.event.client_payload.kaggle_account }}
+          USERNAME_VAR="KAGGLE_USERNAME_${ACCOUNT_NUM}"
+          KAGGLE_USER="${!USERNAME_VAR}"
+
+          echo "📓 Notebook: ${NOTEBOOK}"
+          echo "👤 Conta: ${KAGGLE_USER}"
+          echo "🆔 Projeto: ${PROJECT_ID}"
+
+          # Push notebook para o Kaggle
+          cd notebooks/
+
+          # Criar kernel-metadata.json
+          cat > kernel-metadata.json << EOF
+          {
+            "id": "${KAGGLE_USER}/${NOTEBOOK}",
+            "title": "${NOTEBOOK}",
+            "code_file": "${NOTEBOOK}.ipynb",
+            "language": "python",
+            "kernel_type": "notebook",
+            "is_private": true,
+            "enable_gpu": true,
+            "enable_internet": true,
+            "dataset_sources": [],
+            "competition_sources": [],
+            "kernel_sources": []
+          }
+          EOF
+
+          # Push e executar
+          kaggle kernels push -p .
+
+          echo "✅ Notebook enviado para execução!"
+          echo "⏳ Monitorando status..."
+
+          # Monitorar execução
+          for i in $(seq 1 120); do
+            sleep 30
+            STATUS=$(kaggle kernels status "${KAGGLE_USER}/${NOTEBOOK}" 2>/dev/null | tail -1 || echo "unknown")
+            echo "  [$(date +%H:%M:%S)] Status: ${STATUS}"
+            
+            if echo "$STATUS" | grep -q "complete"; then
+              echo "🎉 Notebook concluído com sucesso!"
+              exit 0
+            fi
+            
+            if echo "$STATUS" | grep -q "error\|cancel"; then
+              echo "❌ Notebook falhou: ${STATUS}"
+              exit 1
+            fi
+          done
+
+          echo "⏰ Timeout (60 min)"
+          exit 1

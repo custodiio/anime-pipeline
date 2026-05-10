@@ -1,0 +1,406 @@
+"""
+Database Manager — Azure PostgreSQL
+Gerencia o status do pipeline com tracking granular por célula.
+"""
+
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from datetime import datetime, timezone
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+def _get_conn():
+    """Cria conexão com o banco de dados."""
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+
+
+def init_db():
+    """Cria as tabelas se não existirem."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        -- Tabela principal de projetos
+        CREATE TABLE IF NOT EXISTS pipeline_projects (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            project_name TEXT NOT NULL,
+            telegram_chat_id TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            
+            status TEXT DEFAULT 'pending'
+                CHECK (status IN ('pending','running','paused','waiting_config','completed','error')),
+            current_step TEXT,
+            
+            -- Status por etapa (cada uma: pending/running/done/error)
+            step_upload TEXT DEFAULT 'pending',
+            step_split TEXT DEFAULT 'pending',
+            step_omni TEXT DEFAULT 'pending',
+            step_watermark_pt1 TEXT DEFAULT 'pending',
+            step_watermark_pt2 TEXT DEFAULT 'pending',
+            step_enhancer_pt1 TEXT DEFAULT 'pending',
+            step_enhancer_pt2 TEXT DEFAULT 'pending',
+            step_session_created TEXT DEFAULT 'pending',
+            step_config_ready TEXT DEFAULT 'pending',
+            step_render_pt1 TEXT DEFAULT 'pending',
+            step_render_pt2 TEXT DEFAULT 'pending',
+            step_merge TEXT DEFAULT 'pending',
+            
+            -- Metadados
+            drive_folder_path TEXT,
+            session_url TEXT,
+            error_message TEXT,
+            
+            started_at TIMESTAMPTZ,
+            completed_at TIMESTAMPTZ
+        );
+
+        -- Tabela de log genérico
+        CREATE TABLE IF NOT EXISTS pipeline_logs (
+            id SERIAL PRIMARY KEY,
+            project_id UUID REFERENCES pipeline_projects(id) ON DELETE CASCADE,
+            step TEXT NOT NULL,
+            status TEXT NOT NULL,
+            message TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- Tabela de tracking granular por CÉLULA de notebook
+        CREATE TABLE IF NOT EXISTS pipeline_cell_tracking (
+            id SERIAL PRIMARY KEY,
+            project_id UUID REFERENCES pipeline_projects(id) ON DELETE CASCADE,
+            notebook TEXT NOT NULL,         -- ex: 'watermark-remover-pt-1'
+            cell_index INTEGER NOT NULL,    -- número da célula (0, 1, 2...)
+            cell_name TEXT,                 -- nome descritivo (ex: 'Setup', 'Processamento', 'Upload')
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending','running','done','error')),
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ,
+            duration_seconds FLOAT,
+            message TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- Index para busca rápida
+        CREATE INDEX IF NOT EXISTS idx_cell_tracking_project 
+            ON pipeline_cell_tracking(project_id, notebook);
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("✅ Banco de dados inicializado (com tracking por célula).")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# PROJETOS
+# ═══════════════════════════════════════════════════════════════════
+
+def create_project(project_name: str, chat_id: str) -> dict:
+    """Cria um novo projeto no pipeline."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO pipeline_projects (project_name, telegram_chat_id, status, current_step, started_at)
+        VALUES (%s, %s, 'running', 'upload', NOW())
+        RETURNING *
+    """, (project_name, chat_id))
+    project = dict(cur.fetchone())
+    conn.commit()
+    cur.close()
+    conn.close()
+    return project
+
+
+def update_step(project_id: str, step: str, status: str, message: str = ""):
+    """
+    Atualiza o status de uma etapa do pipeline.
+    step: ex: 'step_watermark_pt1', 'step_omni'
+    status: 'pending', 'running', 'done', 'error'
+    """
+    conn = _get_conn()
+    cur = conn.cursor()
+
+    cur.execute(f"""
+        UPDATE pipeline_projects 
+        SET {step} = %s, 
+            current_step = %s,
+            updated_at = NOW()
+        WHERE id = %s::uuid
+    """, (status, step.replace("step_", ""), project_id))
+
+    if status == "error":
+        cur.execute("""
+            UPDATE pipeline_projects 
+            SET status = 'error', error_message = %s
+            WHERE id = %s::uuid
+        """, (message, project_id))
+
+    # Log
+    cur.execute("""
+        INSERT INTO pipeline_logs (project_id, step, status, message)
+        VALUES (%s::uuid, %s, %s, %s)
+    """, (project_id, step, status, message))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_project(project_id: str) -> dict:
+    """Busca um projeto pelo ID."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pipeline_projects WHERE id = %s::uuid", (project_id,))
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(result) if result else None
+
+
+def get_active_project(chat_id: str) -> dict:
+    """Busca o projeto ativo (mais recente não-completed) para um chat."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM pipeline_projects 
+        WHERE telegram_chat_id = %s 
+            AND status NOT IN ('completed', 'error')
+        ORDER BY created_at DESC
+        LIMIT 1
+    """, (chat_id,))
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(result) if result else None
+
+
+def get_project_logs(project_id: str) -> list:
+    """Busca os logs de um projeto."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM pipeline_logs 
+        WHERE project_id = %s::uuid 
+        ORDER BY created_at ASC
+    """, (project_id,))
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [dict(r) for r in results]
+
+
+def mark_project_completed(project_id: str):
+    """Marca o projeto como concluído."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE pipeline_projects 
+        SET status = 'completed', completed_at = NOW(), updated_at = NOW()
+        WHERE id = %s::uuid
+    """, (project_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def mark_project_waiting_config(project_id: str, session_url: str):
+    """Marca o projeto como esperando config do usuário."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE pipeline_projects 
+        SET status = 'waiting_config', 
+            session_url = %s,
+            step_session_created = 'done',
+            updated_at = NOW()
+        WHERE id = %s::uuid
+    """, (session_url, project_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TRACKING GRANULAR POR CÉLULA
+# ═══════════════════════════════════════════════════════════════════
+
+def cell_start(project_id: str, notebook: str, cell_index: int, cell_name: str = ""):
+    """
+    Marca o INÍCIO de uma célula de notebook.
+    Chamar no começo de cada célula do notebook.
+    
+    Exemplo no notebook:
+        cell_start(PROJECT_ID, "watermark-remover-pt-1", 0, "Setup e Download")
+    """
+    conn = _get_conn()
+    cur = conn.cursor()
+
+    # Verifica se já existe registro para essa célula
+    cur.execute("""
+        SELECT id FROM pipeline_cell_tracking 
+        WHERE project_id = %s::uuid AND notebook = %s AND cell_index = %s
+    """, (project_id, notebook, cell_index))
+    existing = cur.fetchone()
+
+    if existing:
+        cur.execute("""
+            UPDATE pipeline_cell_tracking 
+            SET status = 'running', started_at = NOW(), finished_at = NULL, 
+                duration_seconds = NULL, cell_name = %s, message = ''
+            WHERE id = %s
+        """, (cell_name, existing["id"]))
+    else:
+        cur.execute("""
+            INSERT INTO pipeline_cell_tracking 
+                (project_id, notebook, cell_index, cell_name, status, started_at)
+            VALUES (%s::uuid, %s, %s, %s, 'running', NOW())
+        """, (project_id, notebook, cell_index, cell_name))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def cell_end(project_id: str, notebook: str, cell_index: int, 
+             status: str = "done", message: str = ""):
+    """
+    Marca o FIM de uma célula de notebook.
+    Chamar no final de cada célula do notebook.
+    
+    Exemplo no notebook:
+        cell_end(PROJECT_ID, "watermark-remover-pt-1", 0, "done", "Setup concluído em 16s")
+    """
+    conn = _get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE pipeline_cell_tracking 
+        SET status = %s, 
+            finished_at = NOW(),
+            duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at)),
+            message = %s
+        WHERE project_id = %s::uuid AND notebook = %s AND cell_index = %s
+    """, (status, message, project_id, notebook, cell_index))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_cell_tracking(project_id: str, notebook: str = None) -> list:
+    """
+    Busca o tracking de células de um projeto.
+    Se notebook for especificado, filtra por notebook.
+    """
+    conn = _get_conn()
+    cur = conn.cursor()
+
+    if notebook:
+        cur.execute("""
+            SELECT * FROM pipeline_cell_tracking 
+            WHERE project_id = %s::uuid AND notebook = %s
+            ORDER BY cell_index ASC
+        """, (project_id, notebook))
+    else:
+        cur.execute("""
+            SELECT * FROM pipeline_cell_tracking 
+            WHERE project_id = %s::uuid 
+            ORDER BY notebook, cell_index ASC
+        """, (project_id,))
+
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [dict(r) for r in results]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FORMATAÇÃO
+# ═══════════════════════════════════════════════════════════════════
+
+def format_status(project: dict) -> str:
+    """Formata o status do projeto para exibição no Telegram."""
+    if not project:
+        return "❌ Nenhum projeto ativo."
+
+    ICONS = {
+        "pending": "⏳",
+        "running": "🔄",
+        "done": "✅",
+        "error": "❌"
+    }
+
+    steps = [
+        ("step_upload", "Upload & Preparação"),
+        ("step_split", "Divisão em 2 partes"),
+        ("step_omni", "Omni-Anime-Ver"),
+        ("step_watermark_pt1", "Watermark PT1"),
+        ("step_watermark_pt2", "Watermark PT2"),
+        ("step_enhancer_pt1", "Enhancer PT1"),
+        ("step_enhancer_pt2", "Enhancer PT2"),
+        ("step_session_created", "Sessão VideoRender"),
+        ("step_config_ready", "Config Pronta"),
+        ("step_render_pt1", "Render PT1"),
+        ("step_render_pt2", "Render PT2"),
+        ("step_merge", "Merge Final"),
+    ]
+
+    lines = [
+        f"📽️ *{project['project_name']}*",
+        f"📊 Status: *{project['status'].upper()}*",
+        "",
+    ]
+
+    for key, label in steps:
+        s = project.get(key, "pending")
+        icon = ICONS.get(s, "❓")
+        lines.append(f"  {icon} {label}")
+
+    if project.get("error_message"):
+        lines.append(f"\n⚠️ Erro: {project['error_message']}")
+
+    if project.get("session_url"):
+        lines.append(f"\n🔗 Sessão: {project['session_url']}")
+
+    return "\n".join(lines)
+
+
+def format_cell_status(project_id: str, notebook: str = None) -> str:
+    """Formata o tracking de células para Telegram."""
+    cells = get_cell_tracking(project_id, notebook)
+    if not cells:
+        return "📝 Nenhum tracking de célula encontrado."
+
+    ICONS = {
+        "pending": "⏳",
+        "running": "🔄",
+        "done": "✅",
+        "error": "❌"
+    }
+
+    current_nb = ""
+    lines = []
+
+    for cell in cells:
+        nb = cell["notebook"]
+        if nb != current_nb:
+            current_nb = nb
+            lines.append(f"\n📓 *{nb}*")
+
+        icon = ICONS.get(cell["status"], "❓")
+        name = cell.get("cell_name") or f"Célula {cell['cell_index']}"
+        dur = ""
+        if cell.get("duration_seconds"):
+            secs = int(cell["duration_seconds"])
+            if secs >= 60:
+                dur = f" ({secs // 60}m{secs % 60}s)"
+            else:
+                dur = f" ({secs}s)"
+        msg = f" — {cell['message']}" if cell.get("message") else ""
+        lines.append(f"  {icon} [{cell['cell_index']}] {name}{dur}{msg}")
+
+    return "\n".join(lines)
