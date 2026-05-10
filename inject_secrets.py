@@ -44,8 +44,12 @@ for cell in nb["cells"]:
         for key, value in secrets.items():
             safe_val = json.dumps(value)  # Escapa aspas e caracteres especiais
             old_line = line
+            # Padrão dos notebooks gerados por generate_notebooks.py
             line = line.replace(f'_get("{key}")', safe_val)
             line = line.replace(f"_get('{key}')", safe_val)
+            # Padrão do notebook omni (usa _ks em vez de _get)
+            line = line.replace(f'_ks("{key}")', safe_val)
+            line = line.replace(f"_ks('{key}')", safe_val)
             if line != old_line:
                 replaced_count += 1
         new_source.append(line)
