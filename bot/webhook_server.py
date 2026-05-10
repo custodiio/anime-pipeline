@@ -1,169 +1,200 @@
 """
 Webhook Server — Recebe notificações dos notebooks Kaggle
-Endpoints:
-  POST /webhook/status     — Atualização de step macro
-  POST /webhook/cell-start — Início de célula de notebook
-  POST /webhook/cell-end   — Fim de célula de notebook
-  POST /webhook/config-ready — Config do VideoRender pronta
-  GET  /health             — Health check
++ API de sessão para o VideoRender (salvar config no Drive).
 """
 
 import os
-from aiohttp import web
+import json
+import logging
+from http.server import HTTPServerRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
+import threading
 from dotenv import load_dotenv
-
-from bot.database import update_step, get_project, cell_start, cell_end
-from bot.pipeline_controller import PipelineController
 
 load_dotenv()
 
+from bot.database import update_step, cell_start_db, cell_end_db
+from bot.pipeline_controller import PipelineController
+
+logger = logging.getLogger(__name__)
+
 controller = PipelineController()
 
-# Telegram bot instance (setado externamente pelo main.py)
-telegram_bot = None
+# Referência para sessões ativas (importado do telegram_bot em runtime)
+_session_validator = None
+
+def set_session_validator(validator_func):
+    """Recebe a função validar_sessao do telegram_bot."""
+    global _session_validator
+    _session_validator = validator_func
 
 
-async def handle_status_update(request: web.Request) -> web.Response:
-    """
-    POST /webhook/status
-    Body: {"project_id", "step", "status", "message"}
-    """
-    try:
-        data = await request.json()
-        project_id = data.get("project_id")
-        step = data.get("step")
-        status = data.get("status")
-        message = data.get("message", "")
+class PipelineWebhookHandler(HTTPServerRequestHandler):
+    """Handler HTTP para webhooks e API de sessão."""
 
-        if not all([project_id, step, status]):
-            return web.json_response(
-                {"error": "Campos obrigatórios: project_id, step, status"}, status=400
-            )
+    def _set_headers(self, code=200, content_type="application/json"):
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.end_headers()
 
-        update_step(project_id, step, status, message)
-        print(f"📩 Webhook: {step} → {status}")
+    def do_OPTIONS(self):
+        """CORS preflight."""
+        self._set_headers(204)
 
-        # Verificar avanço automático
-        controller.verificar_e_avancar(project_id)
+    def _read_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        return json.loads(self.rfile.read(length)) if length else {}
 
-        # Notificar Telegram
-        await _notify_telegram(project_id, step, status, message)
+    def do_GET(self):
+        """Endpoints GET."""
+        parsed = urlparse(self.path)
+        path = parsed.path
 
-        return web.json_response({"ok": True})
-    except Exception as e:
-        print(f"❌ Erro: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        if path == "/health":
+            self._set_headers(200)
+            self.wfile.write(json.dumps({"status": "ok"}).encode())
+
+        elif path == "/api/session/validate":
+            # GET /api/session/validate?token=xxx
+            params = parse_qs(parsed.query)
+            token = params.get("token", [""])[0]
+
+            if not _session_validator:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": "Session system not initialized"}).encode())
+                return
+
+            session = _session_validator(token)
+            if session:
+                self._set_headers(200)
+                self.wfile.write(json.dumps({
+                    "valid": True,
+                    "project_id": session["project_id"],
+                }).encode())
+            else:
+                self._set_headers(401)
+                self.wfile.write(json.dumps({"valid": False, "error": "Sessão inválida ou expirada"}).encode())
+
+        else:
+            self._set_headers(404)
+            self.wfile.write(json.dumps({"error": "Not found"}).encode())
+
+    def do_POST(self):
+        """Endpoints POST."""
+        path = urlparse(self.path).path
+
+        try:
+            data = self._read_body()
+
+            # ── Webhook: Status macro do notebook ──
+            if path == "/webhook/status":
+                pid = data.get("project_id")
+                step = data.get("step")
+                status = data.get("status")
+                msg = data.get("message", "")
+
+                if pid and step and status:
+                    update_step(pid, step, status, msg)
+                    controller.verificar_e_avancar(pid)
+                    self._set_headers(200)
+                    self.wfile.write(json.dumps({"ok": True}).encode())
+                else:
+                    self._set_headers(400)
+                    self.wfile.write(json.dumps({"error": "Missing fields"}).encode())
+
+            # ── Webhook: Cell tracking ──
+            elif path == "/webhook/cell-start":
+                cell_start_db(data.get("project_id"), data.get("notebook"),
+                              data.get("cell_index"), data.get("cell_name", ""))
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"ok": True}).encode())
+
+            elif path == "/webhook/cell-end":
+                cell_end_db(data.get("project_id"), data.get("notebook"),
+                            data.get("cell_index"), data.get("status", "done"),
+                            data.get("message", ""))
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"ok": True}).encode())
+
+            # ── API: Salvar config do VideoRender no Drive ──
+            elif path == "/api/session/save-config":
+                token = data.get("token")
+                config = data.get("config")  # JSON do videorender-project
+                ass_content = data.get("ass")  # Conteúdo do .ass
+
+                if not _session_validator:
+                    self._set_headers(500)
+                    self.wfile.write(json.dumps({"error": "Session system not initialized"}).encode())
+                    return
+
+                session = _session_validator(token)
+                if not session:
+                    self._set_headers(401)
+                    self.wfile.write(json.dumps({"error": "Sessão inválida"}).encode())
+                    return
+
+                # Salvar config no Drive
+                try:
+                    from bot.drive_manager import DriveManager
+                    dm = DriveManager()
+
+                    # Salvar videorender-project.json
+                    if config:
+                        config_path = "/tmp/videorender-project.json"
+                        with open(config_path, "w", encoding="utf-8") as f:
+                            json.dump(config, f, ensure_ascii=False)
+                        dm.upload("KAGGLE/PIPELINE/OMNI/videorender-project.json", config_path)
+                        logger.info("Config salva no Drive")
+
+                    # Salvar legendas.ass
+                    if ass_content:
+                        ass_path = "/tmp/legendas.ass"
+                        with open(ass_path, "w", encoding="utf-8") as f:
+                            f.write(ass_content)
+                        dm.upload("KAGGLE/PIPELINE/OMNI/legendas.ass", ass_path)
+                        logger.info("ASS salvo no Drive")
+
+                    # Marcar config como pronta no banco
+                    update_step(session["project_id"], "step_config_ready", "done", "Config salva pelo VideoRender")
+
+                    self._set_headers(200)
+                    self.wfile.write(json.dumps({"ok": True, "message": "Config salva no Drive!"}).encode())
+
+                except Exception as e:
+                    logger.error(f"Erro ao salvar config: {e}")
+                    self._set_headers(500)
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+            else:
+                self._set_headers(404)
+                self.wfile.write(json.dumps({"error": "Not found"}).encode())
+
+        except Exception as e:
+            logger.error(f"Webhook error: {e}")
+            self._set_headers(500)
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+    def log_message(self, format, *args):
+        logger.info(f"[Webhook] {args[0]}")
 
 
-async def handle_cell_start(request: web.Request) -> web.Response:
-    """
-    POST /webhook/cell-start
-    Body: {"project_id", "notebook", "cell_index", "cell_name"}
-    """
-    try:
-        data = await request.json()
-        project_id = data.get("project_id")
-        notebook = data.get("notebook")
-        cell_index = data.get("cell_index")
-        cell_name = data.get("cell_name", "")
+def start_webhook_server(port=None):
+    """Inicia o servidor webhook em background."""
+    port = port or int(os.getenv("WEBHOOK_PORT", "8080"))
 
-        if not all([project_id, notebook, cell_index is not None]):
-            return web.json_response({"error": "Campos obrigatórios"}, status=400)
-
-        cell_start(project_id, notebook, cell_index, cell_name)
-        print(f"📩 Cell: {notebook}[{cell_index}] ▶️ {cell_name}")
-
-        return web.json_response({"ok": True})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
+    server = HTTPServer(("0.0.0.0", port), PipelineWebhookHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logger.info(f"Webhook server rodando na porta {port}")
+    return server
 
 
-async def handle_cell_end(request: web.Request) -> web.Response:
-    """
-    POST /webhook/cell-end
-    Body: {"project_id", "notebook", "cell_index", "status", "message"}
-    """
-    try:
-        data = await request.json()
-        project_id = data.get("project_id")
-        notebook = data.get("notebook")
-        cell_index = data.get("cell_index")
-        status = data.get("status", "done")
-        message = data.get("message", "")
-
-        if not all([project_id, notebook, cell_index is not None]):
-            return web.json_response({"error": "Campos obrigatórios"}, status=400)
-
-        cell_end(project_id, notebook, cell_index, status, message)
-        print(f"📩 Cell: {notebook}[{cell_index}] {'✅' if status == 'done' else '❌'} {message}")
-
-        # Se erro na célula, notificar Telegram
-        if status == "error":
-            await _notify_telegram(
-                project_id, 
-                f"{notebook} célula {cell_index}", 
-                "error", 
-                message
-            )
-
-        return web.json_response({"ok": True})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
-
-
-async def handle_config_ready(request: web.Request) -> web.Response:
-    """
-    POST /webhook/config-ready
-    Body: {"project_id"}
-    """
-    try:
-        data = await request.json()
-        project_id = data.get("project_id")
-        if not project_id:
-            return web.json_response({"error": "project_id obrigatório"}, status=400)
-
-        update_step(project_id, "step_config_ready", "done", "Config salva pelo usuário")
-        controller.verificar_e_avancar(project_id)
-
-        return web.json_response({"ok": True})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
-
-
-async def handle_health(request: web.Request) -> web.Response:
-    """GET /health"""
-    return web.json_response({"status": "ok", "service": "anime-pipeline-webhook"})
-
-
-async def _notify_telegram(project_id: str, step_label: str, status: str, message: str):
-    """Notifica o usuário via Telegram."""
-    if not telegram_bot:
-        return
-    project = get_project(project_id)
-    if not project:
-        return
-
-    chat_id = project["telegram_chat_id"]
-    label = step_label.replace("step_", "").replace("_", " ").title()
-    emoji = "✅" if status == "done" else ("❌" if status == "error" else "🔄")
-
-    try:
-        text = f"{emoji} *{label}*: {status}"
-        if message:
-            text += f"\n{message}"
-        await telegram_bot.send_message(
-            chat_id=int(chat_id), text=text, parse_mode="Markdown"
-        )
-    except Exception as e:
-        print(f"  ⚠️ Telegram notify falhou: {e}")
-
-
-def create_webhook_app() -> web.Application:
-    """Cria a aplicação web do webhook."""
-    app = web.Application()
-    app.router.add_post("/webhook/status", handle_status_update)
-    app.router.add_post("/webhook/cell-start", handle_cell_start)
-    app.router.add_post("/webhook/cell-end", handle_cell_end)
-    app.router.add_post("/webhook/config-ready", handle_config_ready)
-    app.router.add_get("/health", handle_health)
-    return app
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    port = int(os.getenv("WEBHOOK_PORT", "8080"))
+    print(f"Iniciando webhook server na porta {port}...")
+    server = HTTPServer(("0.0.0.0", port), PipelineWebhookHandler)
+    server.serve_forever()
