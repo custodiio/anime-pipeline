@@ -48,6 +48,10 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         return json.loads(self.rfile.read(length)) if length else {}
 
+    def do_HEAD(self):
+        """Endpoints HEAD."""
+        self.do_GET()
+
     def do_GET(self):
         """Endpoints GET."""
         parsed = urlparse(self.path)

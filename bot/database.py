@@ -92,7 +92,7 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
-    print("✅ Banco de dados inicializado (com tracking por célula).")
+    print("[OK] Banco de dados inicializado (com tracking por celula).")
 
 
 # ═══════════════════════════════════════════════════════════════════
