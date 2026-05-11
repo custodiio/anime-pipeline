@@ -103,33 +103,34 @@ jobs:
           echo "⏳ Monitorando status..."
 
           cat > report_status.py << 'EOF'
-import os, sys, psycopg2
-task = os.environ.get("TASK_KEY")
-pid = os.environ.get("PROJECT_ID")
-status = sys.argv[1]
-db_url = os.environ.get("DATABASE_URL")
+          import os, sys, psycopg2
+          task = os.environ.get("TASK_KEY")
+          pid = os.environ.get("PROJECT_ID")
+          status = sys.argv[1]
+          db_url = os.environ.get("DATABASE_URL")
 
-task_map = {
-    "wm-pt1": "step_watermark_pt1",
-    "wm-pt2": "step_watermark_pt2",
-    "enhancer-pt1": "step_enhancer_pt1",
-    "enhancer-pt2": "step_enhancer_pt2",
-    "omni": "step_omni",
-    "render-pt1": "step_render_pt1",
-    "render-pt2": "step_render_pt2",
-    "merge": "step_merge"
-}
-col = task_map.get(task)
-if col and db_url and pid:
-    try:
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
-        cur.execute(f"UPDATE pipeline_projects SET {col} = %s, current_step = %s, updated_at = NOW() WHERE id = %s::uuid", (status, col.replace("step_", ""), pid))
-        conn.commit()
-        print(f"Status macro {status} reportado para {col}")
-    except Exception as e:
-        print(f"Erro DB: {e}")
-EOF
+          task_map = {
+              "wm-pt1": "step_watermark_pt1",
+              "wm-pt2": "step_watermark_pt2",
+              "enhancer-pt1": "step_enhancer_pt1",
+              "enhancer-pt2": "step_enhancer_pt2",
+              "omni": "step_omni",
+              "render-pt1": "step_render_pt1",
+              "render-pt2": "step_render_pt2",
+              "merge": "step_merge"
+          }
+          col = task_map.get(task)
+          if col and db_url and pid:
+              try:
+                  conn = psycopg2.connect(db_url)
+                  cur = conn.cursor()
+                  cur.execute(f"UPDATE pipeline_projects SET {col} = %s, current_step = %s, updated_at = NOW() WHERE id = %s::uuid", (status, col.replace("step_", ""), pid))
+                  conn.commit()
+                  print(f"Status macro {status} reportado para {col}")
+              except Exception as e:
+                  print(f"Erro DB: {e}")
+          EOF
+          sed -i 's/^          //' report_status.py
 
           pip install psycopg2-binary > /dev/null 2>&1
           
