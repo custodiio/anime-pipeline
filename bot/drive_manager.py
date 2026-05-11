@@ -217,21 +217,21 @@ class DriveManager:
         """Apaga os JSONs de cache e outputs do AUDIO_DUB para forçar reprocessamento no Omni."""
         if not self.service:
             return
-        # JSONs de cache do processamento Omni
-        ARQUIVOS_CACHE = [
-            "KAGGLE/AUDIO_DUB/transcricao_raw.json",
-            "KAGGLE/AUDIO_DUB/traducao_simplificada.json",
-            "KAGGLE/AUDIO_DUB/identificacao_anime.json",
-            "KAGGLE/AUDIO_DUB/roteiro_short.json",
-        ]
-        for caminho in ARQUIVOS_CACHE:
-            try:
-                fid = self._buscar_id(caminho)
-                if fid:
-                    self.service.files().delete(fileId=fid).execute()
-                    print(f"  Cache removido: {caminho}")
-            except Exception as e:
-                print(f"  Erro ao remover cache {caminho}: {e}")
+        # Limpar arquivos soltos na raiz do AUDIO_DUB (transcrições, roteiros, guias)
+        try:
+            arqs_raiz = self.listar_arquivos("KAGGLE/AUDIO_DUB")
+            for arq in arqs_raiz:
+                # Evitar apagar as pastas INPUT, OUTPUT, CLONAGEM, etc
+                # Foca apenas em arquivos soltos que o omni gera (.json, .txt)
+                nome = arq["name"].lower()
+                if nome.endswith(".json") or nome.endswith(".txt"):
+                    try:
+                        self.service.files().delete(fileId=arq["id"]).execute()
+                        print(f"  Resquício removido da raiz: {arq['name']}")
+                    except Exception as e:
+                        print(f"  Erro ao remover {arq['name']}: {e}")
+        except Exception as e:
+            print(f"  Erro ao listar raiz AUDIO_DUB: {e}")
 
         # Limpar pasta de OUTPUT (mp3/srt de projetos anteriores)
         for pasta in ["KAGGLE/AUDIO_DUB/OUTPUT", "KAGGLE/AUDIO_DUB/INPUT"]:
