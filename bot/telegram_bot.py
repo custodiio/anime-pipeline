@@ -150,7 +150,7 @@ async def cmd_upload(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"📂 *Upload Local*\n\n"
         f"Use o link abaixo no seu navegador para enviar vídeos maiores que 20MB:\n"
-        f"👉 {upload_url}\n\n"
+        f"👉 [Acessar Painel de Upload]({upload_url})\n\n"
         f"Após o upload, inicie o projeto com:\n"
         f"`/usar_local Nome do Anime`",
         parse_mode="Markdown"
