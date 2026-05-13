@@ -55,7 +55,7 @@ class DriveManager:
         partes = caminho_no_drive.strip("/").split("/")
         parent_id = "root"
         for parte in partes:
-            query = f"name='{parte}' and '{parent_id}' in parents and trashed=false"
+            query = f"name='{parte.replace(\"'\", \"\\'\")}' and '{parent_id}' in parents and trashed=false"
             results = self.service.files().list(q=query, fields="files(id, mimeType)").execute()
             arquivos = results.get("files", [])
             if not arquivos:
@@ -68,7 +68,7 @@ class DriveManager:
         partes = caminho_pasta.strip("/").split("/")
         parent_id = "root"
         for pasta in partes:
-            query = f"name='{pasta}' and '{parent_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
+            query = f"name='{pasta.replace(\"'\", \"\\'\")}' and '{parent_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
             results = self.service.files().list(q=query, fields="files(id)").execute()
             existentes = results.get("files", [])
             if existentes:
@@ -115,7 +115,7 @@ class DriveManager:
             pasta_drive = "/".join(partes[:-1]) if len(partes) > 1 else ""
             parent_id = self._garantir_pasta(pasta_drive) if pasta_drive else "root"
 
-            query = f"name='{nome_arquivo}' and '{parent_id}' in parents and trashed=false"
+            query = f"name='{nome_arquivo.replace(\"'\", \"\\'\")}' and '{parent_id}' in parents and trashed=false"
             results = self.service.files().list(q=query, fields="files(id)").execute()
             existentes = results.get("files", [])
             media = MediaFileUpload(caminho_local, resumable=True)
@@ -225,8 +225,9 @@ class DriveManager:
                 # Foca apenas em arquivos soltos que o omni gera (.json, .txt)
                 nome = arq["name"].lower()
                 if nome.endswith(".json") or nome.endswith(".txt"):
+                    if "referencia" in arq["name"].lower() or "referência" in arq["name"].lower() or arq["name"].endswith(".wav"):
+                        continue
                     try:
-                        self.service.files().delete(fileId=arq["id"]).execute()
                         print(f"  Resquício removido da raiz: {arq['name']}")
                     except Exception as e:
                         print(f"  Erro ao remover {arq['name']}: {e}")
@@ -238,8 +239,9 @@ class DriveManager:
             try:
                 arqs = self.listar_arquivos(pasta)
                 for arq in arqs:
+                    if "referencia" in arq["name"].lower() or "referência" in arq["name"].lower() or arq["name"].endswith(".wav"):
+                        continue
                     try:
-                        self.service.files().delete(fileId=arq["id"]).execute()
                         print(f"  Output antigo removido: {pasta}/{arq['name']}")
                     except Exception:
                         pass
