@@ -82,8 +82,8 @@ jobs:
           # Criar kernel-metadata.json
           cat > kernel-metadata.json << EOF
           {
-            "id": "${KAGGLE_USER}/${NOTEBOOK}",
-            "title": "${NOTEBOOK}",
+            "id": "${KAGGLE_USER}/${NOTEBOOK}-v6",
+            "title": "${NOTEBOOK}-v6",
             "code_file": "${NOTEBOOK}.ipynb",
             "language": "python",
             "kernel_type": "notebook",
@@ -137,7 +137,7 @@ jobs:
           # Monitorar execução
           for i in $(seq 1 120); do
             sleep 30
-            STATUS=$(kaggle kernels status "${KAGGLE_USER}/${NOTEBOOK}" 2>/dev/null | tail -1 || echo "unknown")
+            STATUS=$(kaggle kernels status "${KAGGLE_USER}/${NOTEBOOK}-v6" 2>/dev/null | tail -1 || echo "unknown")
             echo "  [$(date +%H:%M:%S)] Status: ${STATUS}"
             
             if echo "$STATUS" | grep -qi "complete"; then
