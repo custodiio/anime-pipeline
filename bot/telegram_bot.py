@@ -20,7 +20,7 @@ from telegram.ext import (
 from dotenv import load_dotenv
 
 from bot.database import (
-    init_db, get_active_project, get_project,
+    init_db, get_active_project, get_project, get_running_projects,
     format_status, format_cell_status, update_step
 )
 from bot.pipeline_controller import PipelineController
@@ -408,8 +408,9 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
         try:
-            # Informar ao controller as opções selecionadas
-            project = await controller.iniciar_projeto(
+            # Informar ao controller as opções selecionadas (rodando em background para não bloquear o loop)
+            project = await asyncio.to_thread(
+                controller.iniciar_projeto,
                 project_name=opts["name"],
                 chat_id=chat_id,
                 video_path=opts["video"],
@@ -697,6 +698,25 @@ def main():
     start_webhook_server()
 
     controller.on_omni_done = notificar_omni_concluido
+
+    # Polling periódico via thread (não depende de job_queue extra)
+    import threading
+
+    def _pipeline_poll_loop():
+        """Thread que verifica o banco a cada 30s e avança o pipeline."""
+        while True:
+            try:
+                projects = get_running_projects()
+                for proj in projects:
+                    pid = str(proj["id"])
+                    controller.verificar_e_avancar(pid)
+            except Exception as e:
+                logger.error(f"Erro no polling do pipeline: {e}")
+            time.sleep(30)
+
+    poll_thread = threading.Thread(target=_pipeline_poll_loop, daemon=True)
+    poll_thread.start()
+    print("Pipeline polling ativo (30s via thread).")
 
     async def post_init(application: Application):
         await application.bot.set_my_commands([

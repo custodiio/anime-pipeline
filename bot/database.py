@@ -150,6 +150,21 @@ def update_step(project_id: str, step: str, status: str, message: str = ""):
     conn.close()
 
 
+def get_running_projects() -> list:
+    """Retorna todos os projetos com status ativo (running/waiting_config)."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM pipeline_projects
+        WHERE status IN ('running', 'waiting_config')
+        ORDER BY created_at DESC
+    """)
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [dict(r) for r in results]
+
+
 def get_project(project_id: str) -> dict:
     """Busca um projeto pelo ID."""
     conn = _get_conn()

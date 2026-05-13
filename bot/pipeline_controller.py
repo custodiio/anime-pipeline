@@ -19,7 +19,7 @@ class PipelineController:
     def __init__(self):
         self.drive = DriveManager()
 
-    async def iniciar_projeto(self, project_name, chat_id,
+    def iniciar_projeto(self, project_name, chat_id,
                                video_path, audio_path, mask_path=None, opts=None):
         """
         Etapa 1-3: Cria projeto, limpa Drive, faz upload e divide o video.
