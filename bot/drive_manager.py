@@ -237,14 +237,30 @@ class DriveManager:
         except Exception as e:
             print(f"  Erro ao listar raiz AUDIO_DUB: {e}")
 
-        # 2. Limpar apenas pasta OUTPUT (mp3/srt de projetos anteriores)
-        #    NÃO limpar INPUT - contém a pasta CLONAGEM com áudio de referência
+        # 2. Limpar pasta OUTPUT (mp3/srt de projetos anteriores)
         try:
             arqs = self.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
             for arq in arqs:
                 try:
                     self.service.files().delete(fileId=arq["id"]).execute()
                     print(f"  Output antigo removido: KAGGLE/AUDIO_DUB/OUTPUT/{arq['name']}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 3. Limpar pasta INPUT (áudio antigo do projeto anterior)
+        #    PRESERVA: subpasta CLONAGEM (contém áudio de referência de voz)
+        try:
+            arqs = self.listar_arquivos("KAGGLE/AUDIO_DUB/INPUT")
+            for arq in arqs:
+                # Proteger a pasta CLONAGEM
+                if arq.get("mimeType") == "application/vnd.google-apps.folder":
+                    print(f"  Pasta preservada: INPUT/{arq['name']}")
+                    continue
+                try:
+                    self.service.files().delete(fileId=arq["id"]).execute()
+                    print(f"  Input antigo removido: KAGGLE/AUDIO_DUB/INPUT/{arq['name']}")
                 except Exception:
                     pass
         except Exception:
