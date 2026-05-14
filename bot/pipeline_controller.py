@@ -165,6 +165,12 @@ class PipelineController:
             bg_box_opacity = style.get("bgBoxOpacity", 0.5)
             all_caps = style.get("allCaps", False)
 
+            glow = style.get("glow", False)
+            glow_color = style.get("glowColor", "#FF6B6B")
+            glow_blur = style.get("glowBlur", 10)
+            glow_intensity = style.get("glowIntensity", 1)
+
+
             # Resolução do vídeo
             if out_format == "9:16":
                 play_w, play_h = 1080, 1920
@@ -250,8 +256,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         except Exception:
                             fade_tag = ""
 
-                        dialogue = f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}}}{texto}"
-                        dialogues.append(dialogue)
+                        if glow:
+                            glow_col = hex_to_ass(glow_color)
+                            gAlpha = f"{int((1 - min(1, glow_intensity)) * 255):02X}"
+                            glow_effect = f"\\1c{glow_col}\\3c{glow_col}\\1a&H{gAlpha}&\\3a&H{gAlpha}&\\bord{max(outline_width, glow_blur)}\\blur{glow_blur}"
+                            dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}{glow_effect}}}{texto}")
+                            main_effect = f"\\1c{primary_col}\\3c{outline_col}\\1a&H00&\\3a&H00&\\bord{outline_width}\\blur0"
+                            dialogues.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{{{fade_tag}{main_effect}}}{texto}")
+                        else:
+                            dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}}}{texto}")
 
             out_ass = os.path.join(tmp_dir, "legendas_final.ass")
             with open(out_ass, "w", encoding="utf-8") as f:
