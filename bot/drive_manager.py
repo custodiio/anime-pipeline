@@ -187,36 +187,29 @@ class DriveManager:
         ).execute()
 
     def limpar_pasta_ativo(self):
-        """Move todo conteudo de ATIVO para ARQUIVO com timestamp."""
+        """Deleta todo o conteúdo de ATIVO e das demais pastas do pipeline."""
         if not self.service:
             return
 
-        from datetime import datetime
-        arquivos = self.listar_arquivos(DRIVE_ATIVO)
-        if not arquivos:
-            print("  Pasta ATIVO ja esta vazia.")
-            return
-
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
-        arquivo_pasta_path = f"{DRIVE_ARQUIVO}/projeto_{timestamp}"
-        arquivo_pasta_id = self._garantir_pasta(arquivo_pasta_path)
-
-        for arq in arquivos:
-            try:
-                self.mover_arquivo(arq["id"], arquivo_pasta_id)
-                print(f"  Movido para arquivo: {arq['name']}")
-            except Exception as e:
-                print(f"  Erro ao mover {arq['name']}: {e}")
-
-        for pasta in [DRIVE_WATERMARK, DRIVE_ENHANCER, DRIVE_OMNI, DRIVE_RENDER, DRIVE_FINAL]:
-            sub_arquivos = self.listar_arquivos(pasta)
-            for arq in sub_arquivos:
+        print("🧹 Iniciando limpeza profunda do projeto anterior...")
+        
+        pastas_para_limpar = [
+            DRIVE_ATIVO, DRIVE_WATERMARK, DRIVE_ENHANCER, 
+            DRIVE_OMNI, DRIVE_RENDER, DRIVE_FINAL
+        ]
+        
+        total_deletado = 0
+        for pasta in pastas_para_limpar:
+            arquivos = self.listar_arquivos(pasta)
+            for arq in arquivos:
                 try:
-                    self.mover_arquivo(arq["id"], arquivo_pasta_id)
-                except Exception:
-                    pass
-
-        print(f"  Projeto anterior arquivado em: {arquivo_pasta_path}")
+                    self.service.files().delete(fileId=arq["id"]).execute()
+                    print(f"  🗑️ Deletado de {pasta}: {arq['name']}")
+                    total_deletado += 1
+                except Exception as e:
+                    print(f"  ❌ Erro ao deletar {arq['name']} em {pasta}: {e}")
+                    
+        print(f"✅ Limpeza concluída. {total_deletado} arquivos antigos removidos do Drive.")
 
     def limpar_audio_dub_cache(self):
         """Apaga os JSONs de cache e outputs do AUDIO_DUB para forçar reprocessamento no Omni.
