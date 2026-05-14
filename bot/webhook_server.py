@@ -44,85 +44,37 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
         """CORS preflight."""
         self._set_headers(204)
 
+    def do_HEAD(self):
+        """Responde HEAD reutilizando do_GET (BaseHTTPRequestHandler não gera automaticamente)."""
+        self.do_GET()
+
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
         return json.loads(self.rfile.read(length)) if length else {}
-
-    def do_HEAD(self):
-        """Endpoints HEAD."""
-        self.do_GET()
 
     def do_GET(self):
         """Endpoints GET."""
         parsed = urlparse(self.path)
         path = parsed.path
+        params = parse_qs(parsed.query)
 
-        if path == "/health":
-            self._set_headers(200)
-            self.wfile.write(json.dumps({"status": "ok"}).encode())
-
-        elif path == "/api/session/validate":
-            # GET /api/session/validate?token=xxx
-            params = parse_qs(parsed.query)
-            token = params.get("token", [""])[0]
-
-            if not _session_validator:
-                self._set_headers(500)
-                self.wfile.write(json.dumps({"error": "Session system not initialized"}).encode())
-                return
-
-            session = _session_validator(token)
-            if session:
-                self._set_headers(200)
-                self.wfile.write(json.dumps({
-                    "valid": True,
-                    "project_id": session["project_id"],
-                }).encode())
-            else:
-                self._set_headers(401)
-                self.wfile.write(json.dumps({"valid": False, "error": "Sessão inválida ou expirada"}).encode())
-
-        elif path == "/api/session/video":
-            # GET /api/session/video?token=xxx — Serve o vídeo da pasta uploads/
-            params = parse_qs(parsed.query)
-            token = params.get("token", [""])[0]
-
-            if not _session_validator:
-                self._set_headers(500)
-                self.wfile.write(json.dumps({"error": "Session system not initialized"}).encode())
-                return
-
-            session = _session_validator(token)
-            if not session:
-                self._set_headers(401)
-                self.wfile.write(json.dumps({"error": "Sessão inválida"}).encode())
-                return
-
-            # Procurar o vídeo na pasta uploads/
+        if path == "/api/video":
+            name = params.get("name", ["video.mp4"])[0]
             uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
-            video_file = None
-            if os.path.isdir(uploads_dir):
-                for f in os.listdir(uploads_dir):
-                    if any(f.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov", ".webm"]):
-                        video_file = os.path.join(uploads_dir, f)
-                        break
-
-            if not video_file or not os.path.exists(video_file):
+            video_file = os.path.join(uploads_dir, name)
+            
+            if not os.path.exists(video_file):
                 self._set_headers(404)
-                self.wfile.write(json.dumps({"error": "Vídeo não encontrado na pasta uploads/"}).encode())
+                self.wfile.write(json.dumps({"error": "Video not found"}).encode())
                 return
 
-            # Servir o arquivo de vídeo com suporte a Range requests
             file_size = os.path.getsize(video_file)
-            
-            # Verificar se é Range request (necessário para <video>)
             range_header = self.headers.get("Range")
+            
             if range_header:
-                # Parse range: bytes=START-END
-                range_match = range_header.replace("bytes=", "").split("-")
-                start = int(range_match[0]) if range_match[0] else 0
-                end = int(range_match[1]) if range_match[1] else file_size - 1
-                end = min(end, file_size - 1)
+                byte_range = range_header.replace("bytes=", "").split("-")
+                start = int(byte_range[0])
+                end = int(byte_range[1]) if byte_range[1] else file_size - 1
                 content_length = end - start + 1
                 
                 self.send_response(206)  # Partial Content
@@ -234,6 +186,103 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
             </html>
             """
             self.wfile.write(html.encode("utf-8"))
+
+        elif path == "/api/session/validate":
+            token = params.get("token", [""])[0]
+            if not token or not _session_validator:
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"valid": False}).encode())
+                return
+
+            session = _session_validator(token)
+            if session:
+                self._set_headers(200)
+                self.wfile.write(json.dumps({
+                    "valid": True,
+                    "project_id": session["project_id"]
+                }).encode())
+            else:
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"valid": False}).encode())
+
+        elif path == "/api/session/video":
+            token = params.get("token", [""])[0]
+            if not token or not _session_validator:
+                self._set_headers(401)
+                self.wfile.write(json.dumps({"error": "Unauthorized"}).encode())
+                return
+
+            session = _session_validator(token)
+            if not session:
+                self._set_headers(401)
+                self.wfile.write(json.dumps({"error": "Invalid session"}).encode())
+                return
+
+            # Buscar vídeo do projeto na pasta uploads
+            uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+            video_file = None
+            if os.path.exists(uploads_dir):
+                for f in os.listdir(uploads_dir):
+                    if any(f.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov", ".webm"]):
+                        video_file = os.path.join(uploads_dir, f)
+                        break
+
+            if not video_file or not os.path.exists(video_file):
+                self._set_headers(404)
+                self.wfile.write(json.dumps({"error": "Video not found"}).encode())
+                return
+
+            file_size = os.path.getsize(video_file)
+            range_header = self.headers.get("Range")
+
+            if range_header:
+                byte_range = range_header.replace("bytes=", "").split("-")
+                start = int(byte_range[0])
+                end = int(byte_range[1]) if byte_range[1] else file_size - 1
+                content_length = end - start + 1
+
+                self.send_response(206)
+                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Length", str(content_length))
+                self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
+                self.end_headers()
+
+                try:
+                    with open(video_file, "rb") as f:
+                        f.seek(start)
+                        remaining = content_length
+                        while remaining > 0:
+                            chunk_size = min(65536, remaining)
+                            chunk = f.read(chunk_size)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            remaining -= len(chunk)
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                    pass
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Length", str(file_size))
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
+                self.end_headers()
+
+                try:
+                    with open(video_file, "rb") as f:
+                        while True:
+                            chunk = f.read(65536)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                    pass
 
         else:
             self._set_headers(404)
