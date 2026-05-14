@@ -214,38 +214,40 @@ class DriveManager:
         print(f"  Projeto anterior arquivado em: {arquivo_pasta_path}")
 
     def limpar_audio_dub_cache(self):
-        """Apaga os JSONs de cache e outputs do AUDIO_DUB para forçar reprocessamento no Omni."""
+        """Apaga os JSONs de cache e outputs do AUDIO_DUB para forçar reprocessamento no Omni.
+        PRESERVA: pasta CLONAGEM, arquivos de referência de voz (.wav), pasta INPUT.
+        """
         if not self.service:
             return
-        # Limpar arquivos soltos na raiz do AUDIO_DUB (transcrições, roteiros, guias)
+        # 1. Limpar arquivos soltos na raiz do AUDIO_DUB (transcrições, roteiros, guias)
         try:
             arqs_raiz = self.listar_arquivos("KAGGLE/AUDIO_DUB")
             for arq in arqs_raiz:
-                # Evitar apagar as pastas INPUT, OUTPUT, CLONAGEM, etc
-                # Foca apenas em arquivos soltos que o omni gera (.json, .txt)
                 nome = arq["name"].lower()
+                # Proteger pastas (INPUT, OUTPUT, CLONAGEM, etc)
+                if arq.get("mimeType") == "application/vnd.google-apps.folder":
+                    continue
+                # Foca apenas em arquivos soltos que o omni gera (.json, .txt)
                 if nome.endswith(".json") or nome.endswith(".txt"):
-                    if "referencia" in arq["name"].lower() or "referência" in arq["name"].lower() or arq["name"].endswith(".wav"):
-                        continue
                     try:
+                        self.service.files().delete(fileId=arq["id"]).execute()
                         print(f"  Resquício removido da raiz: {arq['name']}")
                     except Exception as e:
                         print(f"  Erro ao remover {arq['name']}: {e}")
         except Exception as e:
             print(f"  Erro ao listar raiz AUDIO_DUB: {e}")
 
-        # Limpar pasta de OUTPUT (mp3/srt de projetos anteriores)
-        for pasta in ["KAGGLE/AUDIO_DUB/OUTPUT", "KAGGLE/AUDIO_DUB/INPUT"]:
-            try:
-                arqs = self.listar_arquivos(pasta)
-                for arq in arqs:
-                    if "referencia" in arq["name"].lower() or "referência" in arq["name"].lower() or arq["name"].endswith(".wav"):
-                        continue
-                    try:
-                        print(f"  Output antigo removido: {pasta}/{arq['name']}")
-                    except Exception:
-                        pass
-            except Exception:
+        # 2. Limpar apenas pasta OUTPUT (mp3/srt de projetos anteriores)
+        #    NÃO limpar INPUT - contém a pasta CLONAGEM com áudio de referência
+        try:
+            arqs = self.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
+            for arq in arqs:
+                try:
+                    self.service.files().delete(fileId=arq["id"]).execute()
+                    print(f"  Output antigo removido: KAGGLE/AUDIO_DUB/OUTPUT/{arq['name']}")
+                except Exception:
+                    pass
+        except Exception:
                 pass
 
 

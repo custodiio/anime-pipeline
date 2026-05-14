@@ -79,22 +79,26 @@ jobs:
           # 💉 Injetar secrets no notebook (script Python dedicado)
           python ../inject_secrets.py
 
-          # Criar kernel-metadata.json
-          cat > kernel-metadata.json << EOF
-          {
-            "id": "${KAGGLE_USER}/${NOTEBOOK}-v6",
-            "title": "${NOTEBOOK}-v6",
-            "code_file": "${NOTEBOOK}.ipynb",
-            "language": "python",
-            "kernel_type": "notebook",
-            "is_private": true,
-            "enable_gpu": true,
-            "enable_internet": true,
-            "dataset_sources": ["alessandroalvs/models"],
-            "competition_sources": [],
-            "kernel_sources": []
+          # Criar kernel-metadata.json via Python (evita indentação do heredoc)
+          python3 -c "
+          import json
+          meta = {
+            'id': '${KAGGLE_USER}/${NOTEBOOK}-v7',
+            'title': '${NOTEBOOK}-v7',
+            'code_file': '${NOTEBOOK}.ipynb',
+            'language': 'python',
+            'kernel_type': 'notebook',
+            'is_private': True,
+            'enable_gpu': True,
+            'enable_internet': True,
+            'dataset_sources': ['alessandroalvs/models'],
+            'competition_sources': [],
+            'kernel_sources': []
           }
-          EOF
+          with open('kernel-metadata.json', 'w') as f:
+            json.dump(meta, f, indent=2)
+          print(open('kernel-metadata.json').read())
+          "
 
           # Push com T4 x2 forçado
           kaggle kernels push -p . --accelerator NvidiaTeslaT4
@@ -137,7 +141,7 @@ jobs:
           # Monitorar execução
           for i in $(seq 1 120); do
             sleep 30
-            STATUS=$(kaggle kernels status "${KAGGLE_USER}/${NOTEBOOK}-v6" 2>/dev/null | tail -1 || echo "unknown")
+            STATUS=$(kaggle kernels status "${KAGGLE_USER}/${NOTEBOOK}-v7" 2>/dev/null | tail -1 || echo "unknown")
             echo "  [$(date +%H:%M:%S)] Status: ${STATUS}"
             
             if echo "$STATUS" | grep -qi "complete"; then
