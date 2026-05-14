@@ -69,14 +69,29 @@ def dispatch_workflow(task, project_id, extra_payload=None):
         "X-GitHub-Api-Version": "2022-11-28",
     }
 
-    response = requests.post(url, json=payload, headers=headers)
+    for attempt in range(3):
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
 
-    if response.status_code == 204:
-        print(f"  Workflow disparado: {task} (Conta {account_num})")
-        return True
-    else:
-        print(f"  Erro ao disparar {task}: {response.status_code} - {response.text}")
-        return False
+            if response.status_code == 204:
+                print(f"  Workflow disparado: {task} (Conta {account_num})")
+                return True
+            else:
+                print(f"  Erro ao disparar {task}: {response.status_code} - {response.text}")
+                return False
+        except requests.exceptions.Timeout:
+            print(f"  Timeout ao disparar {task} (tentativa {attempt+1}/3)")
+            if attempt < 2:
+                import time
+                time.sleep(5)
+        except requests.exceptions.ConnectionError as e:
+            print(f"  Erro de conexão ao disparar {task} (tentativa {attempt+1}/3): {e}")
+            if attempt < 2:
+                import time
+                time.sleep(5)
+
+    print(f"  Falha definitiva ao disparar {task} após 3 tentativas")
+    return False
 
 
 def dispatch_parallel(tasks, project_id, extra_payload=None):
