@@ -157,6 +157,44 @@ async def cmd_upload(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
+
+@authorized
+async def cmd_teste_enhancer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Comando de teste isolado para o Video Enhancer."""
+    chat_id = str(update.effective_chat.id)
+    uploads = user_uploads.get(chat_id, {})
+    video_path = uploads.get("video")
+    
+    if not video_path:
+        await update.message.reply_text("❌ Envie um vídeo primeiro e depois chame /teste_enhancer.")
+        return
+
+    await update.message.reply_text("🚀 Iniciando Teste do Enhancer (só PT1)...")
+    
+    import uuid, asyncio
+    from bot.drive_manager import DriveManager
+    from bot.github_actions import dispatch_parallel
+    
+    pid = str(uuid.uuid4())
+    
+    async def run_test():
+        try:
+            drive = DriveManager()
+            await update.message.reply_text("⏳ Fazendo upload do video pro Drive (pt1_limpo.mp4)...")
+            await asyncio.to_thread(drive.salvar_arquivo, video_path, "KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4")
+            
+            await update.message.reply_text("🚀 Disparando workflow do Enhancer no Kaggle...")
+            await asyncio.to_thread(dispatch_parallel, ["enhancer-pt1"], pid)
+            
+            await update.message.reply_text("✅ Workflow disparado! Acompanhe os logs pelo Kaggle.\nO arquivo gerado será KAGGLE/PIPELINE/ENHANCER/pt1_enhanced.mp4")
+            
+            # Limpa cache do user para não interferir em outros comandos
+            user_uploads.pop(chat_id, None)
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro no teste: {e}")
+
+    asyncio.create_task(run_test())
+
 @authorized
 async def cmd_novo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Inicia um novo projeto."""
@@ -737,6 +775,7 @@ def main():
     # Comandos
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("novo", cmd_novo))
+    app.add_handler(CommandHandler("teste_enhancer", cmd_teste_enhancer))
     app.add_handler(CommandHandler("usar_local", cmd_usar_local))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("cells", cmd_cells))
