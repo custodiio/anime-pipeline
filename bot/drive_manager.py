@@ -50,12 +50,17 @@ class DriveManager:
             self.service = None
             print(f"Falha na autenticacao do Drive: {e}")
 
+    @staticmethod
+    def _esc(name):
+        """Escapa aspas simples para queries do Drive API."""
+        return name.replace("'", "\\'")
+
     def _buscar_id(self, caminho_no_drive):
         """Resolve caminho do Drive para file ID."""
         partes = caminho_no_drive.strip("/").split("/")
         parent_id = "root"
         for parte in partes:
-            query = f"name='{parte.replace(\"'\", \"\\'\")}' and '{parent_id}' in parents and trashed=false"
+            query = f"name='{self._esc(parte)}' and '{parent_id}' in parents and trashed=false"
             results = self.service.files().list(q=query, fields="files(id, mimeType)").execute()
             arquivos = results.get("files", [])
             if not arquivos:
@@ -68,7 +73,7 @@ class DriveManager:
         partes = caminho_pasta.strip("/").split("/")
         parent_id = "root"
         for pasta in partes:
-            query = f"name='{pasta.replace(\"'\", \"\\'\")}' and '{parent_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
+            query = f"name='{self._esc(pasta)}' and '{parent_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
             results = self.service.files().list(q=query, fields="files(id)").execute()
             existentes = results.get("files", [])
             if existentes:
@@ -115,7 +120,7 @@ class DriveManager:
             pasta_drive = "/".join(partes[:-1]) if len(partes) > 1 else ""
             parent_id = self._garantir_pasta(pasta_drive) if pasta_drive else "root"
 
-            query = f"name='{nome_arquivo.replace(\"'\", \"\\'\")}' and '{parent_id}' in parents and trashed=false"
+            query = f"name='{self._esc(nome_arquivo)}' and '{parent_id}' in parents and trashed=false"
             results = self.service.files().list(q=query, fields="files(id)").execute()
             existentes = results.get("files", [])
             media = MediaFileUpload(caminho_local, resumable=True)
