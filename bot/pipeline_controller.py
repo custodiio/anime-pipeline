@@ -191,6 +191,7 @@ ScriptType: v4.00+
 PlayResX: {play_w}
 PlayResY: {play_h}
 ScaledBorderAndShadow: yes
+WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -216,8 +217,37 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     return f"{h}:{m}:{int(sec):02d}.{cs}"
                 return "0:00:00.00"
 
-            # Parsear SRT
-            dialogues = []
+            def time_to_ms(t):
+                p = t.replace(",", ".").strip().split(":")
+                return (int(p[0]) * 3600 + int(p[1]) * 60 + float(p[2])) * 1000
+
+            def ms_to_ass_time(ms):
+                ms = max(0, ms)
+                total_s = ms / 1000.0
+                h = int(total_s // 3600)
+                m = int((total_s % 3600) // 60)
+                s = total_s % 60
+                sec = int(s)
+                cs = int((s - sec) * 100)
+                return f"{h}:{m:02d}:{sec:02d}.{cs:02d}"
+
+            def wrap_text(text, max_chars=42):
+                """Quebra texto longo em linhas de ~max_chars usando \\N do ASS."""
+                words = text.split()
+                wrapped = []
+                current = ""
+                for word in words:
+                    if current and len(current) + 1 + len(word) > max_chars:
+                        wrapped.append(current)
+                        current = word
+                    else:
+                        current = f"{current} {word}" if current else word
+                if current:
+                    wrapped.append(current)
+                return "\\N".join(wrapped)
+
+            # Parsear SRT e coletar blocos com timestamps
+            parsed_blocks = []
             with open(srt_path, "r", encoding="utf-8") as f:
                 srt_content = f.read()
 
@@ -226,36 +256,59 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 lines = block.strip().split('\n')
                 if len(lines) >= 3:
                     time_line = lines[1]
-                    texto = " ".join(lines[2:]).replace('\n', '\\N')
+                    raw_text = " ".join(lines[2:])
                     if all_caps:
-                        texto = texto.upper()
+                        raw_text = raw_text.upper()
 
                     if "-->" in time_line:
                         t_start, t_end = time_line.split("-->")
-                        start = srt_to_ass_time(t_start)
-                        end = srt_to_ass_time(t_end)
-
-                        # Calcular fade
                         try:
-                            def time_to_ms(t):
-                                p = t.replace(",", ".").split(":")
-                                return (int(p[0]) * 3600 + int(p[1]) * 60 + float(p[2])) * 1000
-                            dur_ms = time_to_ms(t_end.strip()) - time_to_ms(t_start.strip())
-                            eff_in = min(fade_in, dur_ms * fade_in_pct / 100)
-                            eff_out = min(fade_out, dur_ms * fade_out_pct / 100)
-                            fade_tag = f"\\\\fad({int(eff_in)},{int(eff_out)})"
+                            start_ms = time_to_ms(t_start)
+                            end_ms = time_to_ms(t_end)
                         except Exception:
-                            fade_tag = ""
+                            continue
 
-                        if glow:
-                            glow_col = hex_to_ass(glow_color)
-                            gAlpha = f"{int((1 - min(1, glow_intensity)) * 255):02X}"
-                            glow_effect = f"\\1c{glow_col}\\3c{glow_col}\\1a&H{gAlpha}&\\3a&H{gAlpha}&\\bord{max(outline_width, glow_blur)}\\blur{glow_blur}"
-                            dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}{glow_effect}}}{texto}")
-                            main_effect = f"\\1c{primary_col}\\3c{outline_col}\\1a&H00&\\3a&H00&\\bord{outline_width}\\blur0"
-                            dialogues.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{{{fade_tag}{main_effect}}}{texto}")
-                        else:
-                            dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}}}{texto}")
+                        texto = wrap_text(raw_text)
+                        parsed_blocks.append({
+                            "start_ms": start_ms,
+                            "end_ms": end_ms,
+                            "text": texto
+                        })
+
+            # Ordenar por start_ms e corrigir sobreposições
+            parsed_blocks.sort(key=lambda b: b["start_ms"])
+            for i in range(len(parsed_blocks) - 1):
+                if parsed_blocks[i]["end_ms"] > parsed_blocks[i + 1]["start_ms"]:
+                    # Trim end do bloco atual para não sobrepor o próximo
+                    parsed_blocks[i]["end_ms"] = parsed_blocks[i + 1]["start_ms"]
+
+            # Gerar dialogues
+            dialogues = []
+            for pb in parsed_blocks:
+                start = ms_to_ass_time(pb["start_ms"])
+                end = ms_to_ass_time(pb["end_ms"])
+                texto = pb["text"]
+                dur_ms = pb["end_ms"] - pb["start_ms"]
+
+                # Calcular fade
+                try:
+                    eff_in = min(fade_in, dur_ms * fade_in_pct / 100)
+                    eff_out = min(fade_out, dur_ms * fade_out_pct / 100)
+                    fade_tag = f"\\\\fad({int(eff_in)},{int(eff_out)})"
+                except Exception:
+                    fade_tag = ""
+
+                if glow:
+                    glow_col = hex_to_ass(glow_color)
+                    gAlpha = f"{int((1 - min(1, glow_intensity)) * 255):02X}"
+                    # Glow mais sutil: bord reduzido e blur proporcional
+                    glow_bord = round(outline_width + glow_blur * 0.35, 1)
+                    glow_effect = f"\\1c{glow_col}\\3c{glow_col}\\1a&H{gAlpha}&\\3a&H{gAlpha}&\\bord{glow_bord}\\blur{glow_blur}"
+                    dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}{glow_effect}}}{texto}")
+                    main_effect = f"\\1c{primary_col}\\3c{outline_col}\\1a&H00&\\3a&H00&\\bord{outline_width}\\blur0"
+                    dialogues.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{{{fade_tag}{main_effect}}}{texto}")
+                else:
+                    dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}}}{texto}")
 
             out_ass = os.path.join(tmp_dir, "legendas_final.ass")
             with open(out_ass, "w", encoding="utf-8") as f:
