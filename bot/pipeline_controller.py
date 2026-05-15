@@ -303,6 +303,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         w_ok = (w1 in ["done", "skipped"]) and (w2 in ["done", "skipped"])
         e_ok = (e1 in ["done", "skipped"]) and (e2 in ["done", "skipped"])
+        split_ok = project.get("step_split") == "done"
+
+        # Aguarda a etapa de upload e divisão terminar antes de despachar qualquer coisa no Kaggle
+        if not split_ok:
+            return
 
         # 1. Config salva -> disparar Watermark (se pendente e não skipped)
         if conf == "done" and w1 == "pending":
@@ -315,8 +320,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if w_ok and e1 == "pending":
             if w1 == "skipped":
                 print(f"[{project_id}] Watermark pulado, copiando vídeo original para limpo...")
-                self.drive.copiar_arquivo("KAGGLE/PIPELINE/ATIVO/video_pt1.mp4", "KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4")
-                self.drive.copiar_arquivo("KAGGLE/PIPELINE/ATIVO/video_pt2.mp4", "KAGGLE/PIPELINE/WATERMARK/pt2_limpo.mp4")
+                ok1 = self.drive.copiar_arquivo("KAGGLE/PIPELINE/ATIVO/video_pt1.mp4", "KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4")
+                ok2 = self.drive.copiar_arquivo("KAGGLE/PIPELINE/ATIVO/video_pt2.mp4", "KAGGLE/PIPELINE/WATERMARK/pt2_limpo.mp4")
+                if not (ok1 and ok2):
+                    print(f"[{project_id}] Falha ao copiar arquivos para o WATERMARK. Retry no próximo ciclo.")
+                    return
 
             print(f"[{project_id}] Watermark concluído/pulado -> Disparando Enhancer")
             self.disparar_enhancer(project_id)
@@ -326,8 +334,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if conf == "done" and w_ok and e_ok and omni == "done" and r1 == "pending":
             if e1 == "skipped":
                 print(f"[{project_id}] Enhancer pulado, copiando vídeo limpo para enhanced...")
-                self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt1_enhanced.mp4")
-                self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt2_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt2_enhanced.mp4")
+                ok1 = self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt1_enhanced.mp4")
+                ok2 = self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt2_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt2_enhanced.mp4")
+                if not (ok1 and ok2):
+                    print(f"[{project_id}] Falha ao copiar arquivos para o ENHANCER. Retry no próximo ciclo.")
+                    return
 
             # Copiar output do Omni para a pasta padrão do pipeline
             # O Omni salva como: KAGGLE/AUDIO_DUB/OUTPUT/{safe_anime}_{modo_folder}.mp3/.srt

@@ -181,7 +181,7 @@ async def cmd_teste_enhancer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             drive = DriveManager()
             await update.message.reply_text("⏳ Fazendo upload do video pro Drive (pt1_limpo.mp4)...")
-            await asyncio.to_thread(drive.salvar_arquivo, video_path, "KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4")
+            await asyncio.to_thread(drive.salvar, video_path, "KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4")
             
             await update.message.reply_text("🚀 Disparando workflow do Enhancer no Kaggle...")
             await asyncio.to_thread(dispatch_parallel, ["enhancer-pt1"], pid)

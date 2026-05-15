@@ -304,6 +304,24 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                 uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
                 os.makedirs(uploads_dir, exist_ok=True)
                 
+                # Deleta arquivos do mesmo tipo antes de salvar o novo
+                video_exts = [".mp4", ".mkv", ".avi", ".mov", ".webm"]
+                audio_exts = [".mp3", ".wav", ".m4a", ".ogg", ".aac"]
+                
+                for existing in os.listdir(uploads_dir):
+                    existing_path = os.path.join(uploads_dir, existing)
+                    if os.path.isfile(existing_path):
+                        if file_type == "video" and any(existing.lower().endswith(e) for e in video_exts):
+                            try:
+                                os.remove(existing_path)
+                                logger.info(f"Vídeo antigo deletado localmente: {existing}")
+                            except: pass
+                        elif file_type == "audio" and any(existing.lower().endswith(e) for e in audio_exts):
+                            try:
+                                os.remove(existing_path)
+                                logger.info(f"Áudio antigo deletado localmente: {existing}")
+                            except: pass
+                
                 length = int(self.headers.get("Content-Length", 0))
                 file_path = os.path.join(uploads_dir, file_name)
                 
