@@ -5,11 +5,20 @@ on:
     types:
       - run-wm-pt1
       - run-wm-pt2
+      - run-wm-pt3
+      - run-wm-pt4
+      - run-wm-pt5
       - run-enhancer-pt1
       - run-enhancer-pt2
+      - run-enhancer-pt3
+      - run-enhancer-pt4
+      - run-enhancer-pt5
       - run-omni
       - run-render-pt1
       - run-render-pt2
+      - run-render-pt3
+      - run-render-pt4
+      - run-render-pt5
       - run-merge
 
 jobs:

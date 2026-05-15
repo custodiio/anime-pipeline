@@ -16,11 +16,20 @@ GITHUB_REPO = os.getenv("GITHUB_REPO", "Blzofando/anime-pipeline")
 ACCOUNT_MAP = {
     "wm-pt1": 1,
     "wm-pt2": 2,
+    "wm-pt3": 4,
+    "wm-pt4": 5,
+    "wm-pt5": 6,
     "enhancer-pt1": 1,
     "enhancer-pt2": 2,
+    "enhancer-pt3": 4,
+    "enhancer-pt4": 5,
+    "enhancer-pt5": 6,
     "omni": 3,
-    "render-pt1": 4,
-    "render-pt2": 5,
+    "render-pt1": 1,
+    "render-pt2": 2,
+    "render-pt3": 4,
+    "render-pt4": 5,
+    "render-pt5": 6,
     "merge": 6,
 }
 
@@ -28,11 +37,20 @@ ACCOUNT_MAP = {
 NOTEBOOK_MAP = {
     "wm-pt1": "watermark-remover-pt-1",
     "wm-pt2": "watermark-remover-pt-2",
+    "wm-pt3": "watermark-remover-pt-3",
+    "wm-pt4": "watermark-remover-pt-4",
+    "wm-pt5": "watermark-remover-pt-5",
     "enhancer-pt1": "video-enhancer-pt-1",
     "enhancer-pt2": "video-enhancer-pt-2",
+    "enhancer-pt3": "video-enhancer-pt-3",
+    "enhancer-pt4": "video-enhancer-pt-4",
+    "enhancer-pt5": "video-enhancer-pt-5",
     "omni": "omni-anime-ver-final",
     "render-pt1": "renderizador-kaggle-pt-1",
     "render-pt2": "renderizador-kaggle-pt-2",
+    "render-pt3": "renderizador-kaggle-pt-3",
+    "render-pt4": "renderizador-kaggle-pt-4",
+    "render-pt5": "renderizador-kaggle-pt-5",
     "merge": "merge-final",
 }
 

@@ -265,10 +265,10 @@ class DriveManager:
                 pass
 
 
-def split_video(input_path, output_dir):
+def split_video(input_path, output_dir, parts=5):
     """
-    Divide um video em 2 partes iguais usando FFmpeg.
-    Retorna (pt1_path, pt2_path).
+    Divide um video em N partes iguais usando FFmpeg.
+    Retorna uma lista com os caminhos dos arquivos gerados.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -278,37 +278,42 @@ def split_video(input_path, output_dir):
         capture_output=True, text=True
     )
     duration = float(result.stdout.strip())
-    mid_point = duration / 2
+    part_duration = duration / parts
 
-    pt1_path = os.path.join(output_dir, "video_pt1.mp4")
-    pt2_path = os.path.join(output_dir, "video_pt2.mp4")
+    paths = []
+    
+    for i in range(parts):
+        pt_path = os.path.join(output_dir, f"video_pt{i+1}.mp4")
+        start_time = i * part_duration
+        
+        cmd = [
+            "ffmpeg", "-y", "-i", input_path,
+            "-ss", str(start_time)
+        ]
+        
+        if i < parts - 1:
+            cmd.extend(["-t", str(part_duration)])
+            
+        cmd.extend([
+            "-c", "copy", "-avoid_negative_ts", "make_zero",
+            pt_path
+        ])
+        
+        subprocess.run(cmd, check=True, capture_output=True)
+        paths.append(pt_path)
 
-    subprocess.run([
-        "ffmpeg", "-y", "-i", input_path,
-        "-t", str(mid_point),
-        "-c", "copy", "-avoid_negative_ts", "make_zero",
-        pt1_path
-    ], check=True, capture_output=True)
-
-    subprocess.run([
-        "ffmpeg", "-y", "-i", input_path,
-        "-ss", str(mid_point),
-        "-c", "copy", "-avoid_negative_ts", "make_zero",
-        pt2_path
-    ], check=True, capture_output=True)
-
-    print(f"  Video dividido: {duration:.1f}s -> PT1({mid_point:.1f}s) + PT2({duration - mid_point:.1f}s)")
-    return pt1_path, pt2_path
+    print(f"  Video dividido: {duration:.1f}s -> {parts} partes de ~{part_duration:.1f}s")
+    return paths
 
 
-def merge_videos(pt1_path, pt2_path, audio_path, output_path):
-    """Junta 2 partes de video + audio de dublagem."""
+def merge_videos(parts_paths, audio_path, output_path):
+    """Junta N partes de video + audio de dublagem."""
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     concat_file = output_path + ".concat.txt"
     with open(concat_file, "w") as f:
-        f.write(f"file '{pt1_path}'\n")
-        f.write(f"file '{pt2_path}'\n")
+        for pt_path in parts_paths:
+            f.write(f"file '{pt_path}'\n")
 
     subprocess.run([
         "ffmpeg", "-y",

@@ -32,11 +32,9 @@ class PipelineController:
         # Se opts diz que não quer, marcamos como skipped
         if opts:
             if not opts.get("watermark", True):
-                update_step(pid, "step_watermark_pt1", "skipped", "User disabled")
-                update_step(pid, "step_watermark_pt2", "skipped", "User disabled")
+                for i in range(1, 6): update_step(pid, f"step_watermark_pt{i}", "skipped", "User disabled")
             if not opts.get("enhancer", False):
-                update_step(pid, "step_enhancer_pt1", "skipped", "User disabled")
-                update_step(pid, "step_enhancer_pt2", "skipped", "User disabled")
+                for i in range(1, 6): update_step(pid, f"step_enhancer_pt{i}", "skipped", "User disabled")
 
         try:
             update_step(pid, "step_upload", "running", "Limpando Drive...")
@@ -57,11 +55,10 @@ class PipelineController:
 
             update_step(pid, "step_split", "running", "Dividindo video...")
             temp_dir = os.path.join(os.path.dirname(video_path), "split_temp")
-            pt1_path, pt2_path = split_video(video_path, temp_dir)
-
-            self.drive.salvar(pt1_path, f"{DRIVE_ATIVO}/video_pt1.mp4")
-            self.drive.salvar(pt2_path, f"{DRIVE_ATIVO}/video_pt2.mp4")
-            update_step(pid, "step_split", "done", "Video dividido em 2 partes")
+            parts_paths = split_video(video_path, temp_dir, parts=5)
+            for i, p_path in enumerate(parts_paths, 1):
+                self.drive.salvar(p_path, f"{DRIVE_ATIVO}/video_pt{i}.mp4")
+            update_step(pid, "step_split", "done", "Video dividido em 5 partes")
 
             return project
 
@@ -75,26 +72,20 @@ class PipelineController:
         dispatch_workflow("omni", project_id)
 
     def disparar_watermark(self, project_id):
-        """Etapa condicional: Dispara watermark (pt1+pt2 simultaneo)."""
-        update_step(project_id, "step_watermark_pt1", "running")
-        update_step(project_id, "step_watermark_pt2", "running")
-        dispatch_parallel(["wm-pt1", "wm-pt2"], project_id)
+        for i in range(1, 6): update_step(project_id, f"step_watermark_pt{i}", "running")
+        dispatch_parallel([f"wm-pt{i}" for i in range(1, 6)], project_id)
 
     def disparar_enhancer(self, project_id):
-        """Etapa 6: Dispara video enhancer para as 2 partes (simultaneo)."""
-        update_step(project_id, "step_enhancer_pt1", "running")
-        update_step(project_id, "step_enhancer_pt2", "running")
-        dispatch_parallel(["enhancer-pt1", "enhancer-pt2"], project_id)
+        for i in range(1, 6): update_step(project_id, f"step_enhancer_pt{i}", "running")
+        dispatch_parallel([f"enhancer-pt{i}" for i in range(1, 6)], project_id)
 
     def criar_sessao_videorender(self, project_id, session_url):
         """Etapa 7: Marca sessao criada e envia link pro Telegram."""
         mark_project_waiting_config(project_id, session_url)
 
     def disparar_render(self, project_id):
-        """Etapa 9: Dispara renderizadores para as 2 partes."""
-        update_step(project_id, "step_render_pt1", "running")
-        update_step(project_id, "step_render_pt2", "running")
-        dispatch_parallel(["render-pt1", "render-pt2"], project_id)
+        for i in range(1, 6): update_step(project_id, f"step_render_pt{i}", "running")
+        dispatch_parallel([f"render-pt{i}" for i in range(1, 6)], project_id)
 
     def disparar_merge(self, project_id):
         """Etapa 10: Dispara merge final."""
@@ -292,17 +283,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not project:
             return
 
-        w1 = project["step_watermark_pt1"]
-        w2 = project["step_watermark_pt2"]
-        e1 = project["step_enhancer_pt1"]
-        e2 = project["step_enhancer_pt2"]
-        conf = project["step_config_ready"]
-        omni = project["step_omni"]
-        r1 = project["step_render_pt1"]
-        r2 = project["step_render_pt2"]
+        w_vals = [project.get(f"step_watermark_pt{i}") for i in range(1, 6)]
+        e_vals = [project.get(f"step_enhancer_pt{i}") for i in range(1, 6)]
+        r_vals = [project.get(f"step_render_pt{i}") for i in range(1, 6)]
+        conf = project.get("step_config_ready")
+        omni = project.get("step_omni")
 
-        w_ok = (w1 in ["done", "skipped"]) and (w2 in ["done", "skipped"])
-        e_ok = (e1 in ["done", "skipped"]) and (e2 in ["done", "skipped"])
+        w_ok = all(v in ["done", "skipped"] for v in w_vals)
+        e_ok = all(v in ["done", "skipped"] for v in e_vals)
+        r_ok = all(v == "done" for v in r_vals)
         split_ok = project.get("step_split") == "done"
 
         # Aguarda a etapa de upload e divisão terminar antes de despachar qualquer coisa no Kaggle
@@ -310,19 +299,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return
 
         # 1. Config salva -> disparar Watermark (se pendente e não skipped)
-        if conf == "done" and w1 == "pending":
+        if conf == "done" and w_vals[0] == "pending":
             print(f"[{project_id}] Config concluída -> Disparando Watermark")
             self.disparar_watermark(project_id)
             return
 
         # 2. Watermark concluído/skipped -> disparar Enhancer (independe de conf)
         #    Copiar vídeos para a pasta correta se Watermark foi pulado
-        if w_ok and e1 == "pending":
-            if w1 == "skipped":
+        if w_ok and e_vals[0] == "pending":
+            if w_vals[0] == "skipped":
                 print(f"[{project_id}] Watermark pulado, copiando vídeo original para limpo...")
-                ok1 = self.drive.copiar_arquivo("KAGGLE/PIPELINE/ATIVO/video_pt1.mp4", "KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4")
-                ok2 = self.drive.copiar_arquivo("KAGGLE/PIPELINE/ATIVO/video_pt2.mp4", "KAGGLE/PIPELINE/WATERMARK/pt2_limpo.mp4")
-                if not (ok1 and ok2):
+                all_copied = True
+                for i in range(1, 6):
+                    ok = self.drive.copiar_arquivo(f"KAGGLE/PIPELINE/ATIVO/video_pt{i}.mp4", f"KAGGLE/PIPELINE/WATERMARK/pt{i}_limpo.mp4")
+                    if not ok: all_copied = False
+                if not all_copied:
                     print(f"[{project_id}] Falha ao copiar arquivos para o WATERMARK. Retry no próximo ciclo.")
                     return
 
@@ -331,12 +322,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return
 
         # 3. Watermark+Enhancer ok e Omni ok e Config ok -> disparar Render
-        if conf == "done" and w_ok and e_ok and omni == "done" and r1 == "pending":
-            if e1 == "skipped":
+        if conf == "done" and w_ok and e_ok and omni == "done" and r_vals[0] == "pending":
+            if e_vals[0] == "skipped":
                 print(f"[{project_id}] Enhancer pulado, copiando vídeo limpo para enhanced...")
-                ok1 = self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt1_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt1_enhanced.mp4")
-                ok2 = self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt2_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt2_enhanced.mp4")
-                if not (ok1 and ok2):
+                all_copied = True
+                for i in range(1, 6):
+                    ok = self.drive.copiar_arquivo(f"KAGGLE/PIPELINE/WATERMARK/pt{i}_limpo.mp4", f"KAGGLE/PIPELINE/ENHANCER/pt{i}_enhanced.mp4")
+                    if not ok: all_copied = False
+                if not all_copied:
                     print(f"[{project_id}] Falha ao copiar arquivos para o ENHANCER. Retry no próximo ciclo.")
                     return
 
@@ -381,7 +374,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return
 
         # 4. Render concluído -> disparar Merge
-        if r1 == "done" and r2 == "done" and project["step_merge"] == "pending":
+        if r_ok and project["step_merge"] == "pending":
             print(f"[{project_id}] Render concluído -> Disparando Merge")
             self.disparar_merge(project_id)
             return

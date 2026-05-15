@@ -351,18 +351,15 @@ def format_status(project: dict) -> str:
 
     steps = [
         ("step_upload", "Upload & Preparação"),
-        ("step_split", "Divisão em 2 partes"),
+        ("step_split", "Divisão em 5 partes"),
         ("step_omni", "Omni-Anime-Ver"),
-        ("step_watermark_pt1", "Watermark PT1"),
-        ("step_watermark_pt2", "Watermark PT2"),
-        ("step_enhancer_pt1", "Enhancer PT1"),
-        ("step_enhancer_pt2", "Enhancer PT2"),
-        ("step_session_created", "Sessão VideoRender"),
-        ("step_config_ready", "Config Pronta"),
-        ("step_render_pt1", "Render PT1"),
-        ("step_render_pt2", "Render PT2"),
-        ("step_merge", "Merge Final"),
     ]
+    for i in range(1, 6): steps.append((f"step_watermark_pt{i}", f"Watermark PT{i}"))
+    for i in range(1, 6): steps.append((f"step_enhancer_pt{i}", f"Enhancer PT{i}"))
+    steps.append(("step_session_created", "Sessão VideoRender"))
+    steps.append(("step_config_ready", "Config Pronta"))
+    for i in range(1, 6): steps.append((f"step_render_pt{i}", f"Render PT{i}"))
+    steps.append(("step_merge", "Merge Final"))
 
     lines = [
         f"📽️ *{project['project_name']}*",
