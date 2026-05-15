@@ -282,6 +282,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     # Trim end do bloco atual para não sobrepor o próximo
                     parsed_blocks[i]["end_ms"] = parsed_blocks[i + 1]["start_ms"]
 
+            # Posição absoluta para evitar que o bord desloque as camadas
+            pos_x = play_w // 2
+            pos_y = play_h - margin_v
+            pos_tag = f"\\pos({pos_x},{pos_y})"
+
             # Gerar dialogues
             dialogues = []
             for pb in parsed_blocks:
@@ -301,14 +306,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 if glow:
                     glow_col = hex_to_ass(glow_color)
                     gAlpha = f"{int((1 - min(1, glow_intensity)) * 255):02X}"
-                    # Glow mais sutil: bord reduzido e blur proporcional
-                    glow_bord = round(outline_width + glow_blur * 0.35, 1)
-                    glow_effect = f"\\1c{glow_col}\\3c{glow_col}\\1a&H{gAlpha}&\\3a&H{gAlpha}&\\bord{glow_bord}\\blur{glow_blur}"
+                    # Usa pos_tag para travar as camadas na mesma posição física
+                    glow_effect = f"{pos_tag}\\1c{glow_col}\\3c{glow_col}\\1a&H{gAlpha}&\\3a&H{gAlpha}&\\bord{max(outline_width, glow_blur)}\\blur{glow_blur}"
                     dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}{glow_effect}}}{texto}")
-                    main_effect = f"\\1c{primary_col}\\3c{outline_col}\\1a&H00&\\3a&H00&\\bord{outline_width}\\blur0"
+                    main_effect = f"{pos_tag}\\1c{primary_col}\\3c{outline_col}\\1a&H00&\\3a&H00&\\bord{outline_width}\\blur0"
                     dialogues.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{{{fade_tag}{main_effect}}}{texto}")
                 else:
-                    dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}}}{texto}")
+                    dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{fade_tag}{pos_tag}}}{texto}")
 
             out_ass = os.path.join(tmp_dir, "legendas_final.ass")
             with open(out_ass, "w", encoding="utf-8") as f:
