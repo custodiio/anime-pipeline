@@ -302,6 +302,12 @@ def split_video(input_path, output_dir, parts=5):
         subprocess.run(cmd, check=True, capture_output=True)
         paths.append(pt_path)
 
+    import json
+    info_path = os.path.join(output_dir, "split_info.json")
+    with open(info_path, "w") as f:
+        json.dump({"duration": duration, "parts": parts, "part_duration": part_duration}, f)
+    paths.append(info_path)
+
     print(f"  Video dividido: {duration:.1f}s -> {parts} partes de ~{part_duration:.1f}s")
     return paths
 

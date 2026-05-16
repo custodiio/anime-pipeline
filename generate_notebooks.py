@@ -384,14 +384,14 @@ report_step("done", "Enhancer {pt.upper()} concluido")'''),
 # MERGE FINAL
 # ══════════════════════════════════════════════════════════════
 MERGE_CELLS = [
-    ("Download das Partes", '''baixar_do_drive(f"{DRIVE_RENDER}/pt1_renderizado.mp4", f"{BASE_PATH}/pt1_renderizado.mp4")
-baixar_do_drive(f"{DRIVE_RENDER}/pt2_renderizado.mp4", f"{BASE_PATH}/pt2_renderizado.mp4")
+    ("Download das Partes", '''for i in range(1, 6):
+    baixar_do_drive(f"{DRIVE_RENDER}/pt{i}_renderizado.mp4", f"{BASE_PATH}/pt{i}_renderizado.mp4")
 print("Partes baixadas!")'''),
     ("Merge Final", '''OUTPUT = f"{BASE_PATH}/video_final.mp4"
 concat_file = f"{BASE_PATH}/merge_concat.txt"
 with open(concat_file, "w") as f:
-    f.write(f"file '{BASE_PATH}/pt1_renderizado.mp4'\\n")
-    f.write(f"file '{BASE_PATH}/pt2_renderizado.mp4'\\n")
+    for i in range(1, 6):
+        f.write(f"file '{BASE_PATH}/pt{i}_renderizado.mp4'\\n")
 subprocess.run(["ffmpeg","-y","-f","concat","-safe","0","-i",concat_file,"-c","copy",OUTPUT], check=True, capture_output=True)
 print(f"  Merge concluido: {OUTPUT}")'''),
     ("Upload Final", '''salvar_no_drive(f"{BASE_PATH}/video_final.mp4", f"{DRIVE_FINAL}/video_final.mp4")

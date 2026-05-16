@@ -56,8 +56,12 @@ class PipelineController:
             update_step(pid, "step_split", "running", "Dividindo video...")
             temp_dir = os.path.join(os.path.dirname(video_path), "split_temp")
             parts_paths = split_video(video_path, temp_dir, parts=5)
-            for i, p_path in enumerate(parts_paths, 1):
-                self.drive.salvar(p_path, f"{DRIVE_ATIVO}/video_pt{i}.mp4")
+            for p_path in parts_paths:
+                if p_path.endswith(".json"):
+                    self.drive.salvar(p_path, f"{DRIVE_ATIVO}/split_info.json")
+                else:
+                    idx = parts_paths.index(p_path) + 1
+                    self.drive.salvar(p_path, f"{DRIVE_ATIVO}/video_pt{idx}.mp4")
             update_step(pid, "step_split", "done", "Video dividido em 5 partes")
 
             return project
