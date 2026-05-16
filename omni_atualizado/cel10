@@ -1,0 +1,261 @@
+cell_start(10, "Montagem Final")
+# @title 🎹 7. Montagem Final + SRT Híbrido
+# @markdown Monta Video Completo. SRT gerado por Whisper (NARRACAO) + JSON (CENA).
+import os, gc, json, glob, ffmpeg
+from pydub import AudioSegment
+from tqdm.notebook import tqdm
+
+BASE_PATH  = globals().get('BASE_PATH', '/kaggle/working/AUDIO_DUB')
+TEMP_DIR   = globals().get('TEMP_PATH', f'{BASE_PATH}/TEMP')
+# Modos de montagem (Apenas Video Completo)
+
+current_anime_title = globals().get('selected_anime', 'Anime_Desconhecido')
+safe_anime = current_anime_title.replace(' ', '_').replace('/', '_').replace("'", "").replace('"', '')
+
+TARGET_DDBFS = -18.0
+
+def normalize_segment(seg: AudioSegment, target: float = TARGET_DDBFS) -> AudioSegment:
+    if seg.dBFS == float('-inf'):  # silêncio total
+        return seg
+    return seg.apply_gain(target - seg.dBFS)
+
+def sanitize_blocks(lista):
+    lista = sorted(lista, key=lambda b: b['start'])
+    out, cursor = [], 0.0
+    for blk in lista:
+        blk = dict(blk)
+        if blk['start'] < cursor:
+            blk['start'] = cursor
+        if blk['start'] >= blk['end']:
+            continue
+        out.append(blk)
+        cursor = blk['end']
+    return out
+
+def fmt_ts(s):
+    ms = int((s - int(s)) * 1000)
+    m, sec = divmod(int(s), 60)
+    h, m = divmod(m, 60)
+    return f"{h:02d}:{m:02d}:{sec:02d},{ms:03d}"
+
+def run_montagem():
+    modo = "Video Completo"
+    prefix     = "block_"
+    json_final = f"{BASE_PATH}/ROTEIRO_ADAPTADO_COMPLETO_FINAL.json"
+    modo_folder = 'Completo'
+
+    print(f"\n{'='*60}")
+    print(f"  MONTAGEM: {modo}")
+    print(f"{'='*60}")
+
+    # --- Carregamento ---
+    if os.path.exists(json_final):
+        with open(json_final, 'r', encoding='utf-8') as f:
+            lista_render = json.load(f)
+        print(f"  {len(lista_render)} blocos carregados de {os.path.basename(json_final)}")
+    elif os.path.exists(f"{BASE_PATH}/traducao_simplificada.json"):
+        with open(f"{BASE_PATH}/traducao_simplificada.json", 'r', encoding='utf-8') as f:
+            lista_render = json.load(f)
+        print(f"  Usando traducao_simplificada.json ({len(lista_render)} blocos)")
+    else:
+        print(f"  AVISO: Nenhum JSON encontrado para '{modo}'. Pulando.")
+        return
+
+    FINAL_OUTPUT_DIR = f"{BASE_PATH}/{safe_anime}/{modo_folder}"
+    os.makedirs(FINAL_OUTPUT_DIR, exist_ok=True)
+
+    OUTPUT_FILENAME = f"{FINAL_OUTPUT_DIR}/VIDEO_COMPLETO_FINAL.mp3"
+    SRT_FILENAME = OUTPUT_FILENAME.replace('.mp3', '.srt')
+
+    # --- Preparação e Sanitização ---
+    lista_render = sanitize_blocks(lista_render)
+    if not lista_render:
+        print("  AVISO: Lista de blocos vazia apos sanitizacao.")
+        return
+        
+    start_offset = lista_render[0]['start']
+
+    # --- Colagem (Concatenação Sequencial) ---
+    print(f"  Montando {len(lista_render)} blocos...")
+    segments_to_concat = []
+    cursor_ms = 0
+    actual_starts_ms = {}
+
+    for block in tqdm(lista_render, desc=f'Mixing {modo[:5]}'):
+        block_id = block['id']
+        padrao   = os.path.join(TEMP_DIR, f"{prefix}{block_id}_v*.mp3")
+        arquivos = glob.glob(padrao)
+        if not arquivos:
+            continue
+            
+        audio_file = max(arquivos, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]))
+        seg   = AudioSegment.from_file(audio_file)
+        seg   = normalize_segment(seg)  # Normaliza volume
+        
+        ratio = block.get('speed_factor', 1.0)
+        tipo  = block.get('tipo', 'NARRACAO')
+        slot_duration_ms = int((block['end'] - block['start']) * 1000)
+
+        if tipo == 'NARRACAO':
+            safe_speed = max(0.6, min(ratio, 1.6))
+            if safe_speed != 1.0:
+                tmp_wav  = f"tmp_mix_{block_id}.wav"
+                proc_wav = f"proc_mix_{block_id}.wav"
+                seg.export(tmp_wav, format='wav')
+                try:
+                    (
+                        ffmpeg.input(tmp_wav)
+                        .filter('atempo', safe_speed)
+                        .output(proc_wav, acodec='pcm_s16le', ac=1, ar='44100', loglevel='quiet')
+                        .overwrite_output().run()
+                    )
+                    if os.path.exists(proc_wav):
+                        seg = AudioSegment.from_wav(proc_wav)
+                        os.remove(proc_wav)
+                except Exception as e:
+                    print(f'  Erro atempo bloco {block_id}: {e}')
+                finally:
+                    if os.path.exists(tmp_wav): os.remove(tmp_wav)
+
+        # Forçar que o segmento caiba no slot original (evita acumular excesso)
+        if slot_duration_ms > 0 and len(seg) > slot_duration_ms + 200:
+            seg = seg[:slot_duration_ms]
+
+        block_start_ms = int((block['start'] - start_offset) * 1000)
+        gap = block_start_ms - cursor_ms
+        if gap > 10:
+            # Limitar gap a no máximo 2s para evitar silêncio excessivo
+            gap = min(gap, 2000)
+            segments_to_concat.append(AudioSegment.silent(duration=gap))
+            cursor_ms += gap
+            
+        actual_starts_ms[block_id] = cursor_ms
+        segments_to_concat.append(seg)
+        cursor_ms += len(seg)
+
+    if not segments_to_concat:
+        print("  AVISO: Nenhum áudio montado.")
+        return
+
+    # Realiza a concatenação real
+    print(f"  Concatenando segmentos...")
+    final_mix = segments_to_concat[0]
+    for s in segments_to_concat[1:]:
+        final_mix = final_mix + s
+
+    print(f'  Exportando: {OUTPUT_FILENAME}')
+    final_mix.export(OUTPUT_FILENAME, format='mp3')
+    del final_mix
+    gc.collect()
+    print(f'  MP3 salvo.')
+
+    # --- SRT Híbrido ---
+    print(f'  Gerando SRT...')
+    srt_entries = []
+    for b_idx, block in enumerate(tqdm(lista_render, desc='SRT')):
+        tipo     = block.get('tipo', 'NARRACAO')
+        block_id = block['id']
+        if tipo == 'NARRACAO':
+            arquivos = glob.glob(os.path.join(TEMP_DIR, f"{prefix}{block_id}_v*.mp3"))
+            if not arquivos: continue
+            audio_file = max(arquivos, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]))
+            try:
+                if 'stable_model' not in globals(): raise RuntimeError('Whisper nao carregou. Verifique MODEL_WHISPER_PATH.')
+                if stable_model is not None:
+                    result = stable_model.transcribe_stable(audio_file, language='pt', word_timestamps=True)
+                    time_offset = actual_starts_ms.get(block_id, int((block['start'] - start_offset) * 1000)) / 1000.0
+                    current_text = ''
+                    current_start = -1
+                    current_end = -1
+                    for seg in result.segments:
+                        for word in seg.words:
+                            has_punct = any(p in word.word for p in ['.', '?', '!', ','])
+                            limit = 60 if has_punct else 42
+                            
+                            # Checa limite de tamanho ANTES de adicionar (se passar, quebra a linha)
+                            if current_text and (len(current_text) + len(word.word) > limit):
+                                srt_entries.append({'block_idx': b_idx, 
+                                    'start': time_offset + current_start,
+                                    'end':   time_offset + current_end,
+                                    'text':  current_text.strip()
+                                })
+                                current_text = ''
+                                current_start = -1
+                                
+                            if current_start == -1: 
+                                current_start = word.start
+                            current_end = word.end
+                            current_text += word.word
+                            
+                            # Se a palavra tiver pontuação forte, quebra DEPOIS de adicionar
+                            if has_punct:
+                                srt_entries.append({'block_idx': b_idx, 
+                                    'start': time_offset + current_start,
+                                    'end':   time_offset + current_end,
+                                    'text':  current_text.strip()
+                                })
+                                current_text = ''
+                                current_start = -1
+                                
+                    # Adiciona sobra do bloco inteiro se houver
+                    if current_text.strip():
+                        srt_entries.append({'block_idx': b_idx, 
+                            'start': time_offset + current_start,
+                            'end':   time_offset + current_end,
+                            'text':  current_text.strip()
+                        })
+                else:
+                    raise Exception("stable_model nao carregado.")
+            except Exception:
+                real_start = actual_starts_ms.get(block_id, int((block['start'] - start_offset) * 1000)) / 1000.0
+                srt_entries.append({'block_idx': b_idx, 
+                    'start': real_start,
+                    'end':   real_start + (block['end'] - block['start']),
+                    'text':  block.get('translated_text', '')
+                })
+        elif tipo == 'CENA' and block.get('translated_text', '').strip():
+            real_start = actual_starts_ms.get(block_id, int((block['start'] - start_offset) * 1000)) / 1000.0
+            srt_entries.append({'block_idx': b_idx, 
+                'start': real_start,
+                'end':   real_start + (block['end'] - block['start']),
+                'text':  block['translated_text']
+            })
+
+    srt_entries.sort(key=lambda x: (x.get('block_idx', 0), x['start']))
+    # Elimina sobreposicoes no SRT final
+    cleaned = []
+    last_end = -1.0
+    for entry in srt_entries:
+        if entry['start'] < last_end:
+            entry['start'] = last_end
+        if entry['end'] <= entry['start']:
+            entry['end'] = entry['start'] + 0.5
+        cleaned.append(entry)
+        last_end = entry['end']
+    srt_entries = cleaned
+    with open(SRT_FILENAME, 'w', encoding='utf-8') as srt_file:
+        for idx, entry in enumerate(srt_entries, 1):
+            srt_file.write(f"{idx}\n")
+            srt_file.write(f"{fmt_ts(entry['start'])} --> {fmt_ts(entry['end'])}\n")
+            srt_file.write(f"{entry['text']}\n\n")
+    print(f'  SRT: {len(srt_entries)} entradas salvas.')
+
+    # --- Backup no Drive ---
+    if 'salvar_no_drive' in globals():
+        drive_mp3 = f"KAGGLE/AUDIO_DUB/OUTPUT/{safe_anime}_{modo_folder}.mp3"
+        drive_srt = f"KAGGLE/AUDIO_DUB/OUTPUT/{safe_anime}_{modo_folder}.srt"
+        try:
+            salvar_no_drive(OUTPUT_FILENAME, drive_mp3)
+            salvar_no_drive(SRT_FILENAME,    drive_srt)
+            print(f"  Backup Drive: {drive_mp3}")
+        except Exception as e:
+            print(f"  Erro backup Drive: {e}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXECUÇÃO
+# ─────────────────────────────────────────────────────────────────────────────
+run_montagem()
+
+print("\nMONTAGEM CONCLUIDA!")
+
+cell_end(10, "done", "Celula 10 concluido")

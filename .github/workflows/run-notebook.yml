@@ -112,12 +112,8 @@ jobs:
 
           # Push com T4 x2 forçado
           kaggle kernels push -p . --accelerator NvidiaTeslaT4
-
-          echo "✅ Notebook enviado para execução com T4!"
-          echo "⏳ Monitorando status..."
-
           echo ""
           echo "✅ Notebook enviado ao Kaggle com sucesso!"
-          echo "📡 O notebook reportará conclusão via webhook automaticamente."
+          echo "📡 O notebook reportará conclusão via DB automaticamente."
           echo "⏱️ Workflow finalizado (fire-and-forget mode)."
 
