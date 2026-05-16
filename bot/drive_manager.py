@@ -287,15 +287,14 @@ def split_video(input_path, output_dir, parts=5):
         start_time = i * part_duration
         
         cmd = [
-            "ffmpeg", "-y", "-i", input_path,
-            "-ss", str(start_time)
+            "ffmpeg", "-y", "-ss", str(start_time), "-i", input_path
         ]
         
         if i < parts - 1:
             cmd.extend(["-t", str(part_duration)])
             
         cmd.extend([
-            "-c", "copy", "-avoid_negative_ts", "make_zero",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", "-c:a", "copy",
             pt_path
         ])
         
