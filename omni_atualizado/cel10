@@ -95,36 +95,42 @@ def run_montagem():
         ratio = block.get('speed_factor', 1.0)
         tipo  = block.get('tipo', 'NARRACAO')
         slot_duration_ms = int((block['end'] - block['start']) * 1000)
+        dur_antes = len(seg)
 
-        if tipo == 'NARRACAO':
+        if tipo == 'NARRACAO' and ratio != 1.0:
             safe_speed = max(0.6, min(ratio, 1.6))
-            if safe_speed != 1.0:
-                tmp_wav  = f"tmp_mix_{block_id}.wav"
-                proc_wav = f"proc_mix_{block_id}.wav"
-                seg.export(tmp_wav, format='wav')
-                try:
-                    (
-                        ffmpeg.input(tmp_wav)
-                        .filter('atempo', safe_speed)
-                        .output(proc_wav, acodec='pcm_s16le', ac=1, ar='44100', loglevel='quiet')
-                        .overwrite_output().run()
-                    )
-                    if os.path.exists(proc_wav):
-                        seg = AudioSegment.from_wav(proc_wav)
-                        os.remove(proc_wav)
-                except Exception as e:
-                    print(f'  Erro atempo bloco {block_id}: {e}')
-                finally:
-                    if os.path.exists(tmp_wav): os.remove(tmp_wav)
+            tmp_wav  = f"tmp_mix_{block_id}.wav"
+            proc_wav = f"proc_mix_{block_id}.wav"
+            seg.export(tmp_wav, format='wav')
+            try:
+                import subprocess as _sp
+                result = _sp.run(
+                    ['ffmpeg', '-y', '-i', tmp_wav,
+                     '-filter:a', f'atempo={safe_speed}',
+                     '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '44100',
+                     proc_wav],
+                    capture_output=True
+                )
+                if result.returncode == 0 and os.path.exists(proc_wav):
+                    seg = AudioSegment.from_wav(proc_wav)
+                    os.remove(proc_wav)
+                    print(f"  [atempo] bloco {block_id}: {dur_antes}ms -> {len(seg)}ms (speed={safe_speed:.2f}x, slot={slot_duration_ms}ms)")
+                else:
+                    print(f"  [ERRO atempo] bloco {block_id}: ffmpeg retornou {result.returncode}")
+                    print(f"    stderr: {result.stderr.decode()[-200:]}")
+            except Exception as e:
+                print(f'  [ERRO atempo] bloco {block_id}: {e}')
+            finally:
+                if os.path.exists(tmp_wav): os.remove(tmp_wav)
 
-        # Forçar que o segmento caiba no slot original (evita acumular excesso)
+        # Forçar que o segmento caiba no slot original (fallback de segurança)
         if slot_duration_ms > 0 and len(seg) > slot_duration_ms + 200:
+            print(f"  [TRUNCATE] bloco {block_id}: {len(seg)}ms -> {slot_duration_ms}ms (slot={slot_duration_ms}ms)")
             seg = seg[:slot_duration_ms]
 
         block_start_ms = int((block['start'] - start_offset) * 1000)
         gap = block_start_ms - cursor_ms
         if gap > 10:
-            # Limitar gap a no máximo 2s para evitar silêncio excessivo
             gap = min(gap, 2000)
             segments_to_concat.append(AudioSegment.silent(duration=gap))
             cursor_ms += gap
