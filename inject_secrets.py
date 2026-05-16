@@ -30,6 +30,7 @@ secrets = {
     "GEMINI_API_KEY": os.environ.get("GEMINI_API_KEY", ""),
     "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
     "PIPELINE_PROJECT_ID": os.environ.get("PROJECT_ID", ""),
+    "PIPELINE_WEBHOOK_URL": os.environ.get("PIPELINE_WEBHOOK_URL", ""),
 }
 
 replaced_count = 0
