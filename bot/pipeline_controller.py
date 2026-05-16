@@ -355,6 +355,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         r_ok = all(v == "done" for v in r_vals)
         split_ok = project.get("step_split") == "done"
 
+        # Log de diagnóstico: mostrar estado quando render está pendente
+        if conf == "done" and w_ok and e_ok and r_vals[0] == "pending":
+            if omni != "done":
+                print(f"[{project_id}] ⏳ Aguardando Omni (atual: {omni}) para disparar render.")
+
         # Aguarda a etapa de upload e divisão terminar antes de despachar qualquer coisa no Kaggle
         if not split_ok:
             return
