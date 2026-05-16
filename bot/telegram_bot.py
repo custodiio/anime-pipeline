@@ -5,6 +5,7 @@ Protegido por lista de IDs autorizados.
 """
 
 import os
+import sys
 import asyncio
 import tempfile
 import logging
@@ -12,6 +13,12 @@ import uuid
 import hashlib
 import time
 from functools import wraps
+
+# Força UTF-8 no console do Windows (evita charmap error com emojis)
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr.reconfigure(encoding='utf-8')
 from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
