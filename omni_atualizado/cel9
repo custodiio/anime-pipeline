@@ -237,6 +237,22 @@ def run_fabrica():
     # Aplica fusão de fragmentos na base (garantindo que IDs novos combinem)
     target_list = fundir_fragmentos_narracao(target_list)
     
+    def sanitize_blocks(lista):
+        lista = sorted(lista, key=lambda b: b['start'])
+        out, cursor = [], 0.0
+        for blk in lista:
+            blk = dict(blk)
+            if blk['start'] < cursor:
+                blk['start'] = cursor
+            if blk['start'] >= blk['end']:
+                continue
+            out.append(blk)
+            cursor = blk['end']
+        return out
+
+    # Resolve sobreposições de tempo ANTES de avaliar a velocidade
+    target_list = sanitize_blocks(target_list)
+    
     if os.path.exists(save_name):
         print(f"  Mesclando com cache existente: {save_name}")
         with open(save_name, 'r', encoding='utf-8') as f:
