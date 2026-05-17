@@ -98,7 +98,8 @@ def run_montagem():
         dur_antes = len(seg)
 
         if tipo == 'NARRACAO' and ratio != 1.0:
-            safe_speed = max(0.6, min(ratio, 1.6))
+            # Permitimos acelerar até 3.0x para garantir que caiba no tempo
+            safe_speed = max(0.5, min(ratio, 3.0))
             tmp_wav  = f"tmp_mix_{block_id}.wav"
             proc_wav = f"proc_mix_{block_id}.wav"
             seg.export(tmp_wav, format='wav')
@@ -123,14 +124,14 @@ def run_montagem():
             finally:
                 if os.path.exists(tmp_wav): os.remove(tmp_wav)
 
-        # Forçar que o segmento caiba no slot original (fallback de segurança)
+        # Forçar que o segmento caiba no slot original (fallback de segurança super importante)
         if slot_duration_ms > 0 and len(seg) > slot_duration_ms + 200:
             print(f"  [TRUNCATE] bloco {block_id}: {len(seg)}ms -> {slot_duration_ms}ms (slot={slot_duration_ms}ms)")
             seg = seg[:slot_duration_ms]
 
         block_start_ms = int((block['start'] - start_offset) * 1000)
         gap = block_start_ms - cursor_ms
-        if gap > 10:
+        if gap > 10:  # Adiciona silêncio se houver gap
             gap = min(gap, 2000)
             segments_to_concat.append(AudioSegment.silent(duration=gap))
             cursor_ms += gap
