@@ -183,55 +183,72 @@ def run_montagem():
                     for seg in result.segments:
                         for w in seg.words:
                             all_words.append({'word': w.word.strip(), 'start': w.start / safe_speed, 'end': w.end / safe_speed})
-                    
+
+                    # Junta cliticos (-lo, -la, -se, -nos etc) a palavra anterior
+                    joined = []
+                    for w in all_words:
+                        if w['word'].startswith('-') and joined:
+                            joined[-1]['word'] += w['word']
+                            joined[-1]['end'] = w['end']
+                        else:
+                            joined.append(dict(w))
+                    all_words = joined
+
+                    MAX_CHARS_LINE = 50  # largura confortavel para 1080p
+
+                    def format_sub(wlist):
+                        """Formata lista de palavras em no maximo 2 linhas."""
+                        full = " ".join(ww['word'] for ww in wlist)
+                        if len(full) <= MAX_CHARS_LINE:
+                            return full
+                        # Achar melhor ponto de quebra (UMA unica quebra)
+                        mid = len(full) // 2
+                        best_pos = -1
+                        best_score = 9999
+                        pos = 0
+                        for wi in range(len(wlist) - 1):
+                            pos += len(wlist[wi]['word'])
+                            score = abs(pos - mid)
+                            if wlist[wi]['word'].endswith(','):
+                                score -= 20  # bonus: prefere quebrar apos virgula
+                            if score < best_score and wi > 0:
+                                best_score = score
+                                best_pos = pos
+                            pos += 1  # espaco
+                        if best_pos <= 0:
+                            return full
+                        line1 = full[:best_pos].rstrip()
+                        line2 = full[best_pos:].lstrip()
+                        return f"{line1}\\n{line2}"
+
                     idx = 0
                     curr_block = []
                     while idx < len(all_words):
                         w = all_words[idx]
                         curr_block.append(w)
-                        
+
                         has_strong = any(p in w['word'] for p in ['.', '?', '!'])
                         has_comma = ',' in w['word']
-                        
+
                         cut = False
                         if has_strong:
                             cut = True
-                        elif len(curr_block) >= 20:
+                        elif len(curr_block) >= 12:
                             cut = True
-                        elif has_comma:
+                        elif has_comma and len(curr_block) >= 5:
                             lookahead = 0
                             for i in range(idx + 1, len(all_words)):
                                 lookahead += 1
                                 lw = all_words[i]['word']
                                 if any(p in lw for p in ['.', '?', '!', ',']):
                                     break
-                            
-                            if lookahead > 10:
+                            if lookahead > 5:
                                 cut = True
-                            elif len(curr_block) + lookahead > 20:
+                            elif len(curr_block) + lookahead > 10:
                                 cut = True
-                                
+
                         if cut:
-                            n_words = len(curr_block)
-                            text = ""
-                            block_has_comma = any(',' in cw['word'] for cw in curr_block)
-                            
-                            for i, cw in enumerate(curr_block):
-                                ws = cw['word']
-                                if i > 0:
-                                    prev_ws = curr_block[i-1]['word']
-                                    if block_has_comma:
-                                        if ',' in prev_ws and n_words > 14:
-                                            text += "\\n"
-                                        else:
-                                            text += " "
-                                    else:
-                                        if n_words > 14 and i == n_words // 2:
-                                            text += "\\n"
-                                        else:
-                                            text += " "
-                                text += ws
-                                
+                            text = format_sub(curr_block)
                             srt_entries.append({
                                 'block_idx': b_idx,
                                 'start': time_offset + curr_block[0]['start'],
@@ -239,29 +256,11 @@ def run_montagem():
                                 'text':  text
                             })
                             curr_block = []
-                            
+
                         idx += 1
-                        
+
                     if curr_block:
-                        n_words = len(curr_block)
-                        text = ""
-                        block_has_comma = any(',' in cw['word'] for cw in curr_block)
-                        for i, cw in enumerate(curr_block):
-                            ws = cw['word']
-                            if i > 0:
-                                prev_ws = curr_block[i-1]['word']
-                                if block_has_comma:
-                                    if ',' in prev_ws and n_words > 14:
-                                        text += "\\n"
-                                    else:
-                                        text += " "
-                                else:
-                                    if n_words > 14 and i == n_words // 2:
-                                        text += "\\n"
-                                    else:
-                                        text += " "
-                            text += ws
-                            
+                        text = format_sub(curr_block)
                         srt_entries.append({
                             'block_idx': b_idx,
                             'start': time_offset + curr_block[0]['start'],
