@@ -176,42 +176,94 @@ def run_montagem():
                     current_text = ''
                     current_start = -1
                     current_end = -1
+                    all_words = []
                     for seg in result.segments:
-                        for word in seg.words:
-                            has_punct = any(p in word.word for p in ['.', '?', '!', ','])
-                            limit = 60 if has_punct else 42
+                        for w in seg.words:
+                            all_words.append({'word': w.word.strip(), 'start': w.start, 'end': w.end})
+                    
+                    idx = 0
+                    curr_block = []
+                    while idx < len(all_words):
+                        w = all_words[idx]
+                        curr_block.append(w)
+                        
+                        has_strong = any(p in w['word'] for p in ['.', '?', '!'])
+                        has_comma = ',' in w['word']
+                        
+                        cut = False
+                        if has_strong:
+                            cut = True
+                        elif len(curr_block) >= 10:
+                            cut = True
+                        elif has_comma:
+                            lookahead = 0
+                            for i in range(idx + 1, len(all_words)):
+                                lookahead += 1
+                                lw = all_words[i]['word']
+                                if any(p in lw for p in ['.', '?', '!', ',']):
+                                    break
                             
-                            # Checa limite de tamanho ANTES de adicionar (se passar, quebra a linha)
-                            if current_text and (len(current_text) + len(word.word) > limit):
-                                srt_entries.append({'block_idx': b_idx, 
-                                    'start': time_offset + current_start,
-                                    'end':   time_offset + current_end,
-                                    'text':  current_text.strip()
-                                })
-                                current_text = ''
-                                current_start = -1
+                            if lookahead > 6:
+                                cut = True
+                            elif len(curr_block) + lookahead > 10:
+                                cut = True
                                 
-                            if current_start == -1: 
-                                current_start = word.start
-                            current_end = word.end
-                            current_text += word.word
+                        if cut:
+                            n_words = len(curr_block)
+                            text = ""
+                            block_has_comma = any(',' in cw['word'] for cw in curr_block)
                             
-                            # Se a palavra tiver pontuação forte, quebra DEPOIS de adicionar
-                            if has_punct:
-                                srt_entries.append({'block_idx': b_idx, 
-                                    'start': time_offset + current_start,
-                                    'end':   time_offset + current_end,
-                                    'text':  current_text.strip()
-                                })
-                                current_text = ''
-                                current_start = -1
+                            for i, cw in enumerate(curr_block):
+                                ws = cw['word']
+                                if i > 0:
+                                    prev_ws = curr_block[i-1]['word']
+                                    if block_has_comma:
+                                        if ',' in prev_ws and n_words > 6:
+                                            text += "\\n"
+                                        else:
+                                            text += " "
+                                    else:
+                                        if n_words > 6 and i == n_words // 2:
+                                            text += "\\n"
+                                        else:
+                                            text += " "
+                                text += ws
                                 
-                    # Adiciona sobra do bloco inteiro se houver
-                    if current_text.strip():
-                        srt_entries.append({'block_idx': b_idx, 
-                            'start': time_offset + current_start,
-                            'end':   time_offset + current_end,
-                            'text':  current_text.strip()
+                            srt_entries.append({
+                                'block_idx': b_idx,
+                                'start': time_offset + curr_block[0]['start'],
+                                'end':   time_offset + curr_block[-1]['end'],
+                                'text':  text
+                            })
+                            curr_block = []
+                            
+                        idx += 1
+                        
+                    if curr_block:
+                        n_words = len(curr_block)
+                        text = ""
+                        block_has_comma = any(',' in cw['word'] for cw in curr_block)
+                        for i, cw in enumerate(curr_block):
+                            ws = cw['word']
+                            if i > 0:
+                                prev_ws = curr_block[i-1]['word']
+                                if block_has_comma:
+                                    if ',' in prev_ws and n_words > 6:
+                                        text += "\\n"
+                                    else:
+                                        text += " "
+                                else:
+                                    if n_words > 6 and i == n_words // 2:
+                                        text += "\\n"
+                                    else:
+                                        text += " "
+                            text += ws
+                            
+                        srt_entries.append({
+                            'block_idx': b_idx,
+                            'start': time_offset + curr_block[0]['start'],
+                            'end':   time_offset + curr_block[-1]['end'],
+                            'text':  text
                         })
                 else:
                     raise Exception("stable_model nao carregado.")
