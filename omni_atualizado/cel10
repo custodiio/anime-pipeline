@@ -196,7 +196,7 @@ def run_montagem():
                         cut = False
                         if has_strong:
                             cut = True
-                        elif len(curr_block) >= 10:
+                        elif len(curr_block) >= 20:
                             cut = True
                         elif has_comma:
                             lookahead = 0
@@ -206,9 +206,9 @@ def run_montagem():
                                 if any(p in lw for p in ['.', '?', '!', ',']):
                                     break
                             
-                            if lookahead > 6:
+                            if lookahead > 10:
                                 cut = True
-                            elif len(curr_block) + lookahead > 10:
+                            elif len(curr_block) + lookahead > 20:
                                 cut = True
                                 
                         if cut:
@@ -221,12 +221,12 @@ def run_montagem():
                                 if i > 0:
                                     prev_ws = curr_block[i-1]['word']
                                     if block_has_comma:
-                                        if ',' in prev_ws and n_words > 6:
+                                        if ',' in prev_ws and n_words > 14:
                                             text += "\\n"
                                         else:
                                             text += " "
                                     else:
-                                        if n_words > 6 and i == n_words // 2:
+                                        if n_words > 14 and i == n_words // 2:
                                             text += "\\n"
                                         else:
                                             text += " "
@@ -251,12 +251,12 @@ def run_montagem():
                             if i > 0:
                                 prev_ws = curr_block[i-1]['word']
                                 if block_has_comma:
-                                    if ',' in prev_ws and n_words > 6:
+                                    if ',' in prev_ws and n_words > 14:
                                         text += "\\n"
                                     else:
                                         text += " "
                                 else:
-                                    if n_words > 6 and i == n_words // 2:
+                                    if n_words > 14 and i == n_words // 2:
                                         text += "\\n"
                                     else:
                                         text += " "
