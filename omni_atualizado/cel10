@@ -83,12 +83,14 @@ def run_montagem():
 
     for block in tqdm(lista_render, desc=f'Mixing {modo[:5]}'):
         block_id = block['id']
-        padrao   = os.path.join(TEMP_DIR, f"{prefix}{block_id}_v*.mp3")
-        arquivos = glob.glob(padrao)
-        if not arquivos:
-            continue
+        audio_file = block.get('current_file')
+        if not audio_file or not os.path.exists(audio_file):
+            padrao   = os.path.join(TEMP_DIR, f"{prefix}{block_id}_v*.mp3")
+            arquivos = glob.glob(padrao)
+            if not arquivos:
+                continue
+            audio_file = max(arquivos, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]))
             
-        audio_file = max(arquivos, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]))
         seg   = AudioSegment.from_file(audio_file)
         seg   = normalize_segment(seg)  # Normaliza volume
         
