@@ -1,0 +1,566 @@
+cell_start(2, "Setup Inicial + Drive + Whisper")
+# =============================================================================
+# @title 🎙️ 2. Transcrição v6 (Demucs + stable-ts + SenseVoice + Pyannote)
+# @markdown Isolamento vocal, transcrição por região, classificação de idioma,
+# @markdown segunda passagem para falas perdidas, e anti-alucinação.
+# =============================================================================
+
+import json, os, re, subprocess
+import numpy as np
+from pathlib import Path
+from pydub import AudioSegment
+from tqdm.notebook import tqdm
+from funasr import AutoModel
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⚙️ CONFIGURAÇÕES
+# ─────────────────────────────────────────────────────────────────────────────
+TRANSCRICAO_PATH = f"{BASE_PATH}/transcricao_raw.json"
+
+WHISPER_BEAM     = 5
+MAX_SEG_WORDS    = 25
+
+VAD_MIN_SILENCE_MS = 100
+VAD_SPEECH_PAD_MS  = 60
+VAD_THRESHOLD      = 0.25
+
+VAD2_MIN_SILENCE_MS = 50
+VAD2_SPEECH_PAD_MS  = 40
+VAD2_THRESHOLD      = 0.15
+
+VAD_TRIM_ONSET_PAD_MS  = 20
+VAD_TRIM_OFFSET_PAD_MS = 30
+
+MERGE_ZH_GAP_S   = 1.00
+MERGE_JA_GAP_S   = 0.25
+MIN_BLOCK_DUR_S  = 0.12
+MAX_CHARS_PER_SEC = 18.0
+
+SCAN_GAP_MIN_S    = 0.4
+SCAN_SILERO_SENS  = 0.15
+
+WATERMARK_PATTERNS = [
+    "cảm ơn", "theo dõi", "hẹn gặp", "thank you for watching",
+    "subscribe", "like and", "don't forget", "ご視聴", "チャンネル登録", "高評価",
+    "다음 영상에서 만나요.", "ご視聴ありがとうございました", "また会いましょう", "지금까지 흔더리",
+]
+
+if not os.path.exists(ANIME_AUDIO_ORIGINAL):
+    raise FileNotFoundError(f"❌ Áudio não encontrado: {ANIME_AUDIO_ORIGINAL}")
+
+# =============================================================================
+# 🔤 FUNÇÕES AUXILIARES
+# =============================================================================
+def analyze_script(text: str) -> dict:
+    counts = {"hiragana": 0, "katakana": 0, "cjk": 0, "latin": 0, "other": 0}
+    for ch in text:
+        cp = ord(ch)
+        if   0x3040 <= cp <= 0x309F: counts["hiragana"] += 1
+        elif 0x30A0 <= cp <= 0x30FF: counts["katakana"] += 1
+        elif (0x4E00 <= cp <= 0x9FFF) or (0x3400 <= cp <= 0x4DBF):
+            counts["cjk"] += 1
+        elif ch.isascii() and ch.isalpha(): counts["latin"] += 1
+        elif not ch.isspace(): counts["other"] += 1
+    total = sum(counts.values()) or 1
+    kana  = counts["hiragana"] + counts["katakana"]
+    if kana > 0:
+        return {"lang": "ja", "confidence": min(1.0, 0.78 + (kana/total)*0.22)}
+    if counts["cjk"] > 0:
+        return {"lang": "zh", "confidence": min(1.0, 0.65 + (counts["cjk"]/total)*0.35)}
+    if counts["latin"] > 0:
+        return {"lang": "other", "confidence": 0.55}
+    return {"lang": "ambiguous", "confidence": 0.25}
+
+def is_hallucination(text: str, start: float, end: float) -> bool:
+    dur = end - start
+    text_lower = text.strip().lower()
+    if any(pat in text_lower for pat in WATERMARK_PATTERNS): return True
+    if dur > 0 and len(text) / dur > MAX_CHARS_PER_SEC: return True
+    if len(text) <= 2 and dur < 0.4: return True
+    return False
+
+# =============================================================================
+# 🔬 SILERO VAD
+# =============================================================================
+print("🔬 Carregando Silero VAD...")
+try:
+    from silero_vad import load_silero_vad, get_speech_timestamps
+    _silero_model = load_silero_vad()
+    SILERO_OK = True
+    print("   ✅ Silero VAD pronto.")
+except Exception:
+    SILERO_OK = False
+    print("   ⚠️  Silero VAD não disponível.")
+
+def vad_trim(audio_full: AudioSegment, start_s: float, end_s: float) -> tuple:
+    if not SILERO_OK: return start_s, end_s
+    ms_s = max(0, int(start_s * 1000))
+    ms_e = min(len(audio_full), int(end_s * 1000))
+    clip = audio_full[ms_s:ms_e]
+    if len(clip) < 80: return start_s, end_s
+    clip_16k = clip.set_frame_rate(16000).set_channels(1)
+    raw = np.array(clip_16k.get_array_of_samples(), dtype=np.float32) / 32768.0
+    try:
+        ts = get_speech_timestamps(raw, _silero_model, sampling_rate=16000, min_speech_duration_ms=50, min_silence_duration_ms=40)
+    except Exception:
+        return start_s, end_s
+    if not ts: return start_s, end_s
+    onset_ms  = max(0,        ts[0]["start"] / 16.0 - VAD_TRIM_ONSET_PAD_MS)
+    offset_ms = min(len(clip), ts[-1]["end"]  / 16.0 + VAD_TRIM_OFFSET_PAD_MS)
+    new_start = round(start_s + onset_ms  / 1000.0, 4)
+    new_end   = round(start_s + offset_ms / 1000.0, 4)
+    if new_end - new_start < 0.05: return start_s, end_s
+    return new_start, new_end
+
+# =============================================================================
+# VERIFICACAO DE CACHE
+# =============================================================================
+if os.path.exists(TRANSCRICAO_PATH):
+    print(f"Transcricao encontrada. Carregando cache...")
+    with open(TRANSCRICAO_PATH, 'r', encoding='utf-8') as f:
+        final_blocks = json.load(f)
+    print(f"{len(final_blocks)} blocos carregados.")
+
+else:
+    # =====================================================================
+    # 1/4 DEMUCS + PYANNOTE
+    # 2 GPUs: Pyannote roda em GPU1 em paralelo com Demucs em GPU0.
+    # 1 GPU:  sequencial (Demucs primeiro, depois Pyannote).
+    # =====================================================================
+    _gpu_count    = globals().get("GPU_COUNT", torch.cuda.device_count())
+    _use_parallel = (_gpu_count >= 2)
+
+    DIAR_SCRIPT = "/kaggle/working/_run_diar.py"
+    DIAR_OUTPUT = "/kaggle/working/_diar_result.json"
+    DIAR_WAV    = "/kaggle/working/_temp_diar.wav"
+
+    # Pyannote/torchaudio tem bugs com MP3/M4A ("requested chunk resulted in x samples instead of y")
+    # Resolvemos pre-convertendo para WAV mono 16k (tambem acelera o Pyannote brutalmente)
+    subprocess.run(["ffmpeg", "-y", "-i", ANIME_AUDIO_ORIGINAL, "-ar", "16000", "-ac", "1", DIAR_WAV], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Gera o script de diarizacao usando lista de strings (evita conflito de aspas)
+    _lines = [
+        "import sys, types, torch, torchaudio\n",
+        "if not hasattr(torchaudio, 'set_audio_backend'):\n",
+        "    torchaudio.set_audio_backend = lambda x: None\n",
+        "if not hasattr(torchaudio, 'get_audio_backend'):\n",
+        "    torchaudio.get_audio_backend = lambda: 'soundfile'\n",
+        "if 'torchaudio.backend' not in sys.modules:\n",
+        "    sys.modules['torchaudio.backend'] = types.ModuleType('torchaudio.backend')\n",
+        "if 'torchaudio.backend.common' not in sys.modules:\n",
+        "    mod = types.ModuleType('torchaudio.backend.common')\n",
+        "    mod.AudioMetaData = getattr(torchaudio, 'AudioMetaData', type('AudioMetaData', (), {}))\n",
+        "    sys.modules['torchaudio.backend.common'] = mod\n",
+        "import json\n",
+        "from pyannote.audio import Pipeline\n",
+        f"pipeline = Pipeline.from_pretrained('pyannote/speaker-diarization-3.1', token='{HF_TOKEN}')\n",
+        "pipeline = pipeline.to(torch.device('cuda'))\n",
+        f"diarization = pipeline('{DIAR_WAV}')\n",
+        "if hasattr(diarization, 'speaker_diarization'): diarization = diarization.speaker_diarization\n",
+        "segments = []\n",
+        "for turn, _, speaker in diarization.itertracks(yield_label=True):\n",
+        "    segments.append({'start': round(turn.start,4), 'end': round(turn.end,4), 'speaker': speaker})\n",
+        f"with open('{DIAR_OUTPUT}', 'w') as out: json.dump(segments, out)\n",
+        "print(f'Done {len(segments)} segmentos.', flush=True)\n",
+    ]
+    with open(DIAR_SCRIPT, "w", encoding="utf-8") as _df:
+        _df.writelines(_lines)
+
+    proc_diar = None
+    if _use_parallel:
+        _gpu1_env = {**os.environ, "CUDA_VISIBLE_DEVICES": "1"}
+        print("   Pyannote iniciado em GPU1 (paralelo com Demucs)...")
+        proc_diar = subprocess.Popen(
+            ["python", DIAR_SCRIPT],
+            env=_gpu1_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+    else:
+        print("   1 GPU detectada - Pyannote rodara apos Demucs.")
+
+    _demucs_device = "cuda:0" if _use_parallel else "cuda"
+    print(f"\n1/4  Demucs em {_demucs_device}...")
+    subprocess.run(
+        ["python", "-m", "demucs", "--two-stems", "vocals",
+         "-n", "htdemucs", "-d", _demucs_device,
+         "--out", "/kaggle/working/demucs_out", ANIME_AUDIO_ORIGINAL],
+        check=True
+    )
+    stem_name        = Path(ANIME_AUDIO_ORIGINAL).stem
+    VOCAL_PATH       = f"/kaggle/working/demucs_out/htdemucs/{stem_name}/vocals.wav"
+    audio_full       = AudioSegment.from_file(VOCAL_PATH)
+    total_duration_s = len(audio_full) / 1000.0
+    print(f"   Vocais isolados: {total_duration_s:.1f}s")
+
+    # ==========================================================================
+    # 2/4 MODELOS AUXILIARES
+    # ==========================================================================
+    print("\n2/4  Carregando SenseVoice...")
+    sense_model = AutoModel(model=SENSEVOICE_MODEL_PATH, device="cuda:0", disable_update=True)
+    print("   SenseVoice Small carregado.")
+
+    # Coleta ou roda Pyannote
+    print("   Rodando/aguardando Pyannote...")
+    if proc_diar is not None:
+        _dout, _derr = proc_diar.communicate()   # aguarda e captura de uma vez
+        _diar_ok = (proc_diar.returncode == 0)
+        if not _diar_ok:
+            print(f"   Pyannote (GPU1) falhou:\n{_derr.decode()[-1200:]}")
+    else:
+        _r = subprocess.run(["python", DIAR_SCRIPT], capture_output=True, text=True)
+        _diar_ok = (_r.returncode == 0)
+        if not _diar_ok:
+            print(f"   Pyannote falhou:\n{_r.stderr[-1200:]}")
+
+    if _diar_ok and os.path.exists(DIAR_OUTPUT):
+        with open(DIAR_OUTPUT) as f:
+            diar_segments = json.load(f)
+        print(f"   {len(diar_segments)} segmentos de diarizacao coletados.")
+    else:
+        print("   Continuando sem agrupamento de speakers.")
+        diar_segments = []
+
+
+    def merge_diar_regions(diar_segs, gap_tol=0.4):
+        if not diar_segs: return []
+        s = sorted(diar_segs, key=lambda d: d["start"])
+        merged = [dict(s[0])]
+        for d in s[1:]:
+            last = merged[-1]
+            if d["speaker"] == last["speaker"] and (d["start"] - last["end"]) <= gap_tol:
+                last["end"] = max(last["end"], d["end"])
+            else:
+                merged.append(dict(d))
+        return merged
+
+    speaker_regions = merge_diar_regions(diar_segments)
+    full_regions = []
+    cursor = 0.0
+    for r in sorted(speaker_regions, key=lambda x: x["start"]):
+        if r["start"] - cursor > 0.3:
+            full_regions.append({"start": cursor, "end": r["start"], "speaker": "unknown"})
+        full_regions.append(r)
+        cursor = r["end"]
+    if total_duration_s - cursor > 0.3:
+        full_regions.append({"start": cursor, "end": total_duration_s, "speaker": "unknown"})
+
+    # ==========================================================================
+    # 🧠 TRANSCRIÇÃO POR REGIÃO
+    # ==========================================================================
+    TEMP_WAV = "/kaggle/working/_temp_region.wav"
+
+    def transcribe_region(start_s, end_s, language=None, vad_min_silence_ms=VAD_MIN_SILENCE_MS, vad_speech_pad_ms=VAD_SPEECH_PAD_MS, threshold=VAD_THRESHOLD):
+        ms_s = max(0, int(start_s * 1000))
+        ms_e = min(len(audio_full), int(end_s * 1000))
+        clip = audio_full[ms_s:ms_e]
+        if len(clip) < 200: return []
+        clip.export(TEMP_WAV, format="wav")
+        try:
+            if 'stable_model' not in globals(): raise RuntimeError('Whisper nao carregou. Verifique MODEL_WHISPER_PATH.')
+            result = stable_model.transcribe_stable(
+                TEMP_WAV, language=language, beam_size=WHISPER_BEAM, word_timestamps=True,
+                vad_filter=True, vad_parameters=dict(min_silence_duration_ms=vad_min_silence_ms, speech_pad_ms=vad_speech_pad_ms, threshold=threshold),
+                temperature=0, condition_on_previous_text=False, no_speech_threshold=0.3,
+                log_prob_threshold=-1.5, compression_ratio_threshold=2.4,
+                regroup=True, suppress_silence=True, only_voice_freq=True,
+            )
+        except Exception as e:
+            print(f"      ⚠️ Erro [{start_s:.1f}-{end_s:.1f}s]: {e}")
+            return []
+        segs = []
+        for seg in result.segments:
+            text = (seg.text or "").strip()
+            if not text: continue
+            words = []
+            if hasattr(seg, "words") and seg.words:
+                for w in seg.words:
+                    words.append({"word": w.word, "start": round(start_s + w.start, 4), "end": round(start_s + w.end, 4)})
+            seg_start = words[0]["start"] if words else round(start_s + seg.start, 4)
+            seg_end   = words[-1]["end"]  if words else round(start_s + seg.end,   4)
+            seg_start = max(start_s, seg_start)
+            seg_end   = min(end_s,   seg_end)
+            if seg_end <= seg_start: continue
+            segs.append({"text": text, "start": seg_start, "end": seg_end, "words": words, "avg_logprob": getattr(seg, "avg_logprob", 0.0), "detected_lang": result.language if hasattr(result, "language") else None})
+        return segs
+
+    # ==========================================================================
+    # 🎤 3/4 TRANSCRIÇÃO
+    # ==========================================================================
+    print(f"\n🎤 3/4  Transcrevendo por região...")
+    all_raw_segs = []
+    for region in tqdm(full_regions, desc="Transcrevendo"):
+        if region["end"] - region["start"] < 0.3: continue
+        segs = transcribe_region(region["start"], region["end"])
+        for s in segs:
+            s["speaker"] = region["speaker"]
+            all_raw_segs.append(s)
+    print(f"   → {len(all_raw_segs)} segmentos brutos.")
+
+    PHRASE_PUNCT = set("。！？…」』）")
+    def split_long_segment(seg_words, max_words):
+        if len(seg_words) <= max_words: return [seg_words]
+        groups, current = [], []
+        for w in seg_words:
+            current.append(w)
+            if any(ch in PHRASE_PUNCT for ch in w["word"].strip()) or len(current) >= max_words:
+                groups.append(current); current = []
+        if current:
+            if groups and len(current) <= 3: groups[-1].extend(current)
+            else: groups.append(current)
+        return groups or [seg_words]
+
+    # ==========================================================================
+    # 🔀 4/4 CONSOLIDAÇÃO
+    # ==========================================================================
+    print("\n🧩 4/4  Consolidando...")
+    TEMP_CHUNK = "/kaggle/working/_temp_chunk.wav"
+
+    # ── FIX: coleta todos os blocos antes de ordenar ─────────────────────────
+    # ORIGINAL: resolved.sort() era chamado dentro do loop a cada iteração.
+    # Isso é inofensivo mas mascarava o problema real: blocos gerados por regiões
+    # diferentes podiam ter timestamps que se sobrepõem (artefato do Whisper em
+    # narrações chinesas com frases repetidas). A ordenação prematura reordenava
+    # sem resolver as sobreposições, que chegavam intactas ao final_blocks.
+    # CORREÇÃO: coleta completa → sort único → resolve_overlaps → merge_adjacent.
+    # ─────────────────────────────────────────────────────────────────────────
+    resolved_raw = []
+    for seg in tqdm(all_raw_segs, desc="Processando"):
+        text = seg["text"].strip()
+        if not text: continue
+        words = seg.get("words", [])
+        sub_groups = split_long_segment(words, MAX_SEG_WORDS) if words else [None]
+        for grp in sub_groups:
+            if grp:
+                sub_text = "".join(w["word"] for w in grp).strip()
+                sub_start, sub_end = grp[0]["start"], grp[-1]["end"]
+            else:
+                sub_text, sub_start, sub_end = text, seg["start"], seg["end"]
+            if not sub_text or is_hallucination(sub_text, sub_start, sub_end): continue
+            sub_start, sub_end = vad_trim(audio_full, sub_start, sub_end)
+            if sub_end - sub_start < MIN_BLOCK_DUR_S: continue
+            r = analyze_script(sub_text)
+            if r["lang"] == "ja":
+                lang_final, conf = "ja", r["confidence"]
+            elif r["lang"] == "zh":
+                # SenseVoice: classifica se o segmento zh é realmente ja ou zh/yue.
+                # Não gera transcrição nova — apenas retorna a tag de idioma detectado.
+                audio_full[max(0,int(sub_start*1000)):min(len(audio_full),int(sub_end*1000))].export(TEMP_CHUNK, format="wav")
+                try:
+                    sv_res = sense_model.generate(input=TEMP_CHUNK, language="auto", use_itn=False)
+                    m = re.search(r'<\|(zh|ja|yue|ko|en|nospeech)\|>', sv_res[0]["text"])
+                    sv_tag = m.group(1) if m else "unknown"
+                except Exception:
+                    sv_tag = "unknown"
+                if sv_tag == "ja" and (r["confidence"] < 0.8 or len(sub_text) < 6):
+                    lang_final, conf = "ja", 0.65
+                elif sv_tag in ("zh", "yue"):
+                    lang_final, conf = "zh", min(1.0, r["confidence"] + 0.12)
+                else:
+                    lang_final, conf = "zh", r["confidence"] * 0.9
+            else:
+                lang_final, conf = "other", r["confidence"]
+            tipo = "NARRACAO" if lang_final == "zh" else "CENA"
+            resolved_raw.append({"tipo": tipo, "start": round(sub_start, 4), "end": round(sub_end, 4), "text": sub_text, "lang_final": lang_final, "confidence": round(conf, 3), "logprob": round(seg.get("avg_logprob", 0.0), 3), "speaker": seg.get("speaker", "?")})
+
+    # Ordena uma única vez após coleta completa
+    resolved_raw.sort(key=lambda b: b["start"])
+
+    # ==========================================================================
+    # FIX: resolve_overlaps — remove sobreposições temporais entre blocos
+    #
+    # PROBLEMA: O Whisper em narrações chinesas com frases repetidas ("如同神明降临
+    # 如同神明降临") gera segmentos cujo start é anterior ao end do segmento anterior.
+    # Ex: bloco A: [10.6s-17.0s], bloco B: [14.9s-20.2s] → B começa DENTRO de A.
+    #
+    # ESTRATÉGIA:
+    #   - Se B.start < A.end → há sobreposição real
+    #   - Ajusta B.start para A.end (clipa o início do bloco invadido)
+    #   - Se após o ajuste B ficar menor que MIN_BLOCK_DUR_S → descarta B
+    #   - Se B estiver 100% contido em A (B.end <= A.end) → descarta B
+    #
+    # Mantém a função pura (recebe lista, retorna lista nova) para reuso.
+    # ==========================================================================
+    def resolve_overlaps(blocks):
+        """
+        Resolve sobreposições temporais entre blocos consecutivos.
+        Whisper pode gerar segmentos com start anterior ao end do segmento
+        anterior (artefato em narrações zh com frases repetidas).
+
+        Estratégia: ajusta start do bloco seguinte para o end do anterior.
+        Se o resultado for menor que MIN_BLOCK_DUR_S ou bloco completamente
+        coberto, descarta o bloco sobrepositor.
+        Retorna nova lista — não modifica a entrada.
+        """
+        if not blocks:
+            return blocks
+        result = [dict(blocks[0])]
+        sobr_count = 0
+        for curr in blocks[1:]:
+            prev = result[-1]
+            if curr["start"] < prev["end"]:
+                sobr_count += 1
+                new_start = prev["end"]
+                # Bloco completamente coberto → descarta
+                if new_start >= curr["end"]:
+                    continue
+                # Resultado muito curto após ajuste → descarta
+                if (curr["end"] - new_start) < MIN_BLOCK_DUR_S:
+                    continue
+                # Ajusta start e mantém o bloco
+                curr = dict(curr)
+                curr["start"] = round(new_start, 4)
+                # Filtra as words que ainda estão dentro da janela ajustada
+                if curr.get("words"):
+                    curr["words"] = [w for w in curr["words"] if w["end"] > new_start]
+            result.append(curr)
+        if sobr_count:
+            print(f"   ⚠️  resolve_overlaps: {sobr_count} sobreposição(ões) corrigida(s).")
+        return result
+
+    def merge_adjacent(blocks):
+        if not blocks:
+            return blocks
+        # Conjunto de pontuação final de frase
+        END_PUNCT = set(". ! ? 。！？…")
+        out = [blocks[0]]
+        for curr in blocks[1:]:
+            prev = out[-1]
+            gap = curr["start"] - prev["end"]
+            prev_ends_punct = prev["text"].strip()[-1] in END_PUNCT if prev["text"].strip() else False
+
+            if prev["tipo"] == "NARRACAO" == curr["tipo"] and gap <= MERGE_ZH_GAP_S and (prev["end"] - prev["start"]) < 5.0 and not prev_ends_punct:
+                prev["text"] = prev["text"] if prev["text"] == curr["text"] else f"{prev['text']}{curr['text']}"
+                prev["end"] = curr["end"]
+                prev["confidence"] = (prev["confidence"] + curr["confidence"]) / 2
+                continue
+
+            if prev["tipo"] == "CENA" == curr["tipo"] and gap <= MERGE_JA_GAP_S and prev.get("speaker") == curr.get("speaker") and (prev["end"] - prev["start"]) < 2.0 and not prev_ends_punct:
+                prev["text"] = f"{prev['text']}{curr['text']}"
+                prev["end"] = curr["end"]
+                continue
+
+            out.append(curr)
+        return out
+
+    # Pipeline: resolve sobreposições → funde adjacentes → exibe contagem
+    resolved = resolve_overlaps(resolved_raw)
+    resolved = merge_adjacent(resolved)
+    print(f"   → {len(resolved)} blocos após resolve+fusão.")
+
+    # ==========================================================================
+    # 🔍 3.5 SEGUNDA PASSAGEM — gaps sem fala detectada
+    # ==========================================================================
+    print("\n🔍 3.5  Segunda passagem nos gaps...")
+
+    # Calcula gaps usando cursor que respeita o end de cada bloco (sem retroagir)
+    all_times = sorted(resolved, key=lambda x: x["start"])
+    gaps = []
+    cursor = 0.0
+    for blk in all_times:
+        if blk["start"] - cursor >= SCAN_GAP_MIN_S: gaps.append((cursor, blk["start"]))
+        cursor = max(cursor, blk["end"])
+    if total_duration_s - cursor >= SCAN_GAP_MIN_S: gaps.append((cursor, total_duration_s))
+    print(f"   → {len(gaps)} gaps.")
+
+    new_segs = []
+    for (gs, ge) in gaps:
+        clip = audio_full[max(0,int(gs*1000)):min(len(audio_full),int(ge*1000))]
+        if len(clip) < 200: continue
+        clip_16k = clip.set_frame_rate(16000).set_channels(1)
+        raw = np.array(clip_16k.get_array_of_samples(), dtype=np.float32) / 32768.0
+        try:
+            speech_ts = get_speech_timestamps(raw, _silero_model, sampling_rate=16000, min_speech_duration_ms=80, min_silence_duration_ms=60, threshold=SCAN_SILERO_SENS)
+        except Exception:
+            continue
+        if not speech_ts: continue
+        for sp in speech_ts:
+            onset_s = gs + sp["start"] / 16000.0
+            offset_s = gs + sp["end"] / 16000.0
+            if offset_s - onset_s < 0.2: continue
+            segs = transcribe_region(onset_s, offset_s, language="ja", vad_min_silence_ms=VAD2_MIN_SILENCE_MS, vad_speech_pad_ms=VAD2_SPEECH_PAD_MS, threshold=VAD2_THRESHOLD)
+            for s in segs:
+                if is_hallucination(s["text"], s["start"], s["end"]): continue
+                r = analyze_script(s["text"])
+                if r["lang"] == "ja" or (r["lang"] == "zh" and r["confidence"] < 0.8):
+                    trim_s, trim_e = vad_trim(audio_full, s["start"], s["end"])
+                    if trim_e - trim_s < MIN_BLOCK_DUR_S: continue
+                    new_segs.append({"tipo": "CENA", "start": round(trim_s, 4), "end": round(trim_e, 4), "text": s["text"], "lang_final": "ja", "confidence": round(max(0.6, r["confidence"]), 3), "logprob": round(s.get("avg_logprob", 0.0), 3), "speaker": "unknown"})
+
+    print(f"   → {len(new_segs)} novos segmentos.")
+    resolved.extend(new_segs)
+    resolved.sort(key=lambda b: b["start"])
+
+    # Aplica resolve_overlaps também após a segunda passagem (novos segs podem sobrepor existentes)
+    resolved = resolve_overlaps(resolved)
+    resolved = merge_adjacent(resolved)
+
+    # Limpeza de watermarks
+    HALL_PHRASES = {"ご視聴ありがとうございました", "ご視聴ありがとうございました。", "ご視聴ありがとうございます", "また会いましょう", "다음 영상에서 만나요.", "지금까지 흔더리", "Thanks for watching!", "Thank you for watching!", "チャンネル登録お願いします", "高評価お願いします", "please like and subscribe", "subscribe to my channel", "don't forget to subscribe", "to show"}
+    before = len(resolved)
+    resolved = [b for b in resolved if not (b["end"]-b["start"] < 2.5 and b.get("confidence",0) < 0.95 and any(p in b.get("text","") for p in HALL_PHRASES))]
+    print(f"   🗑️  {before - len(resolved)} watermarks removidos.")
+
+    # ==========================================================================
+    # 🎬 TIMELINE FINAL
+    # ==========================================================================
+    final_blocks = []
+    block_id = 0
+    cursor = 0.0
+    for seg in resolved:
+        gap = seg["start"] - cursor
+
+        # ── FIX: guard contra sobreposição residual ───────────────────────────
+        # Após resolve_overlaps o ideal é não ter mais sobreposições, mas como
+        # segunda linha de defesa verificamos aqui também. Se seg.start < cursor,
+        # tentamos ajustar. Se o resultado ficar abaixo de MIN_BLOCK_DUR_S, pula.
+        if seg["start"] < cursor:
+            new_start = cursor
+            if new_start >= seg["end"] or (seg["end"] - new_start) < MIN_BLOCK_DUR_S:
+                continue   # bloco completamente coberto ou muito curto → descarta
+            seg = dict(seg)
+            seg["start"] = round(new_start, 4)
+            gap = 0.0     # recalcula gap após ajuste
+        # ─────────────────────────────────────────────────────────────────────
+
+        if gap >= MIN_GAP_CENA_S:
+            final_blocks.append({"id": block_id, "tipo": "CENA", "start": round(cursor, 4), "end": round(seg["start"], 4), "texto_original": "", "translated_text": "", "status": "CENA_SEM_FALA"})
+            block_id += 1
+        final_blocks.append({"id": block_id, "tipo": seg["tipo"], "start": round(seg["start"], 4), "end": round(seg["end"], 4), "texto_original": seg["text"], "translated_text": "", "status": "PENDING", "detected_lang": seg["lang_final"], "confidence": seg["confidence"], "avg_logprob": seg["logprob"], "speaker": seg.get("speaker", "?")})
+        block_id += 1
+        cursor = seg["end"]
+    if total_duration_s - cursor >= MIN_GAP_CENA_S:
+        final_blocks.append({"id": block_id, "tipo": "CENA", "start": round(cursor, 4), "end": round(total_duration_s, 4), "texto_original": "", "translated_text": "", "status": "CENA_SEM_FALA"})
+
+    # ✅ PÓS-PROCESSAMENTO: CENA_SEM_FALA < 1s → descarta e estende o bloco anterior
+    cleaned = []
+    for blk in final_blocks:
+        if blk.get("status") == "CENA_SEM_FALA" and (blk["end"] - blk["start"]) < 1.0:
+            if cleaned:
+                cleaned[-1]["end"] = blk["end"]
+        else:
+            cleaned.append(blk)
+    for i, b in enumerate(cleaned):
+        b["id"] = i
+    final_blocks = cleaned
+
+    with open(TRANSCRICAO_PATH, "w", encoding="utf-8") as f:
+        json.dump(final_blocks, f, ensure_ascii=False, indent=4)
+
+    n_nar = sum(1 for b in final_blocks if b["tipo"] == "NARRACAO")
+    n_cena = sum(1 for b in final_blocks if b["tipo"] == "CENA" and b.get("status") == "PENDING")
+    n_sil = sum(1 for b in final_blocks if b.get("status") == "CENA_SEM_FALA")
+    print(f"\n✅ TRANSCRIÇÃO v6 CONCLUÍDA: {n_nar} NARRACAO | {n_cena} CENA c/ fala | {n_sil} CENA sem fala | {len(final_blocks)} total")
+    print(f"💾 Salvo em: {TRANSCRICAO_PATH}")
+
+# Preview
+print("\n🔎 Preview (Top 10):")
+for b in final_blocks[:10]:
+    lp = f" [lp={b.get('avg_logprob', '')}]" if b.get("avg_logprob") else ""
+    txt = b.get("texto_original", "")[:55]
+    tag = f"[{b['tipo']}]" + (" [SEM FALA]" if b["status"] == "CENA_SEM_FALA" else "")
+    print(f"  {tag} [{b['start']}s-{b['end']}s]{lp} {txt}")
+
+if 'salvar_no_drive' in globals():
+    print('💾 Salvando progresso no Drive...')
+    salvar_no_drive(TRANSCRICAO_PATH, 'KAGGLE/AUDIO_DUB/transcricao_raw.json')
+
+cell_end(2, "done", "Setup Inicial + Drive + Whisper concluido")

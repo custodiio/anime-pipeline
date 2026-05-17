@@ -177,9 +177,12 @@ def run_montagem():
                     current_start = -1
                     current_end = -1
                     all_words = []
+                    ratio = block.get('speed_factor', 1.0)
+                    safe_speed = max(0.5, min(ratio, 3.0)) if ratio != 1.0 else 1.0
+                    
                     for seg in result.segments:
                         for w in seg.words:
-                            all_words.append({'word': w.word.strip(), 'start': w.start, 'end': w.end})
+                            all_words.append({'word': w.word.strip(), 'start': w.start / safe_speed, 'end': w.end / safe_speed})
                     
                     idx = 0
                     curr_block = []
