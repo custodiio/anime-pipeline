@@ -622,21 +622,21 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
             if not manual_mode:
                 controller.disparar_omni_imediatamente(pid)
-                thumb_info = "\n\ud83d\uddbc\ufe0f Thumbnail será gerada automaticamente após a tradução." if thumbnail_enabled else ""
+                thumb_info = "\n🖼️ Thumbnail será gerada automaticamente após a tradução." if thumbnail_enabled else ""
                 msg_text = (
-                    f"\u2705 Upload e Divisão Concluídos!\n\n"
-                    f"\U0001f504 Disparando a Dublagem (Omni)...{thumb_info}\n\n"
-                    f"\u2699\ufe0f Sessão de Configuração de Legenda:\n"
-                    f"\U0001f3ac Abrir VideoRender:\n{session_link}\n\n"
-                    f"\U0001f4ca Use /status para acompanhar."
+                    f"✅ Upload e Divisão Concluídos!\n\n"
+                    f"🔄 Disparando a Dublagem (Omni)...{thumb_info}\n\n"
+                    f"⚙\ufe0f Sessão de Configuração de Legenda:\n"
+                    f"🎬 Abrir VideoRender:\n{session_link}\n\n"
+                    f"📊 Use /status para acompanhar."
                 )
             else:
                 msg_text = (
-                    f"\U0001f6e0\ufe0f Projeto Manual Inicializado!\n\n"
-                    f"\u2705 Upload e Divisão Concluídos.\n"
+                    f"🛠\ufe0f Projeto Manual Inicializado!\n\n"
+                    f"✅ Upload e Divisão Concluídos.\n"
                     f"Nenhuma função foi disparada automaticamente.\n"
-                    f"\U0001f3ac Sessão VideoRender:\n{session_link}\n\n"
-                    f"Use /status e clique em '\U0001f3af Disparar Função' para rodar os blocos."
+                    f"🎬 Sessão VideoRender:\n{session_link}\n\n"
+                    f"Use /status e clique em '🎯 Disparar Função' para rodar os blocos."
                 )
 
             await query.message.reply_text(msg_text)
