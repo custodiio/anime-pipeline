@@ -235,20 +235,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 cs = int((s - sec) * 100)
                 return f"{h}:{m:02d}:{sec:02d}.{cs:02d}"
 
-            def wrap_text(text, max_chars=42):
-                """Quebra texto longo em linhas de ~max_chars usando \\N do ASS."""
-                words = text.split()
-                wrapped = []
-                current = ""
-                for word in words:
-                    if current and len(current) + 1 + len(word) > max_chars:
-                        wrapped.append(current)
-                        current = word
-                    else:
-                        current = f"{current} {word}" if current else word
-                if current:
-                    wrapped.append(current)
-                return "\\N".join(wrapped)
+            def wrap_text(text, max_chars=70):
+                """Quebra texto em no maximo 2 linhas usando \\N do ASS (1080p)."""
+                # Respeitar \n do SRT como ponto de quebra preferencial
+                if '\\n' in text:
+                    parts = text.split('\\n', 1)  # max 1 quebra = 2 linhas
+                    return '\\N'.join(p.strip() for p in parts)
+                if len(text) <= max_chars:
+                    return text
+                # Encontrar melhor ponto de quebra (1 unica) perto do meio
+                mid = len(text) // 2
+                best = -1
+                best_score = 9999
+                for i, ch in enumerate(text):
+                    if ch == ' ':
+                        score = abs(i - mid)
+                        # Bonus para virgula antes do espaco
+                        if i > 0 and text[i-1] == ',':
+                            score -= 20
+                        if score < best_score:
+                            best_score = score
+                            best = i
+                if best <= 0:
+                    return text
+                return text[:best].rstrip() + '\\N' + text[best:].lstrip()
 
             # Parsear SRT e coletar blocos com timestamps
             parsed_blocks = []

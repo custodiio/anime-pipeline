@@ -1,0 +1,254 @@
+cell_start(4, "Transcricao Whisper + Pyannote")
+# @title 🌍 4. Tradução Inteligente (com contexto do anime identificado)
+# @markdown Traduz TODOS os blocos para português usando o nome do anime
+# @markdown e personagens como contexto para evitar erros de nomes/termos.
+# @markdown
+# @markdown  NARRACAO (zh): Forçado em 3ª pessoa, mesmo que o original seja 1ª.
+# @markdown  CENA (ja): Preserva a pessoa gramatical do original (1ª ou 3ª).
+# @markdown Modelos e fallback configurados na Célula 1.
+
+import json
+import time
+import os
+
+TARGET_LANGUAGE  = "Portuguese (Brazil)"
+
+TRADUCAO_PATH    = f"{BASE_PATH}/traducao_simplificada.json"
+TRANSCRICAO_PATH = f"{BASE_PATH}/transcricao_raw.json"
+
+_anime_title = globals().get('selected_anime', 'Desconhecido')
+_protagonist  = globals().get('protagonist', 'Narrador')
+_characters   = anime_info.get('characters', []) if 'anime_info' in globals() else []
+_char_list    = ', '.join(_characters) if _characters else 'Desconhecidos'
+
+print(f"Contexto: {_anime_title} | Protagonista: {_protagonist}")
+print(f"Personagens: {_char_list}")
+
+if os.path.exists(TRADUCAO_PATH):
+    print("Traducao ja existe. Carregando cache...")
+    with open(TRADUCAO_PATH, 'r', encoding='utf-8') as f:
+        final_blocks = json.load(f)
+    print(f"{len(final_blocks)} blocos carregados.")
+else:
+    if 'final_blocks' not in globals() or not final_blocks:
+        try:
+            with open(TRANSCRICAO_PATH, "r", encoding='utf-8') as f:
+                final_blocks = json.load(f)
+            print("Backup carregado do arquivo.")
+        except:
+            raise Exception("Rode a Celula 2 primeiro.")
+
+    blocos_para_traduzir = [
+        b for b in final_blocks
+        if b.get("texto_original", "").strip() and not b.get("translated_text", "").strip()
+    ]
+    blocos_cena_sem_fala = [
+        b for b in final_blocks
+        if b["tipo"] == "CENA" and not b.get("texto_original", "").strip()
+    ]
+
+    for b in blocos_cena_sem_fala:
+        b["translated_text"] = ""
+        b["status"] = "CENA_SEM_FALA"
+
+    narracao_list  = [b for b in blocos_para_traduzir if b["tipo"] == "NARRACAO"]
+    cena_fala_list = [b for b in blocos_para_traduzir if b["tipo"] == "CENA"]
+
+    total_lines = len(blocos_para_traduzir)
+    print(f"Traduzindo {total_lines} blocos | {len(narracao_list)} narracoes | {len(cena_fala_list)} falas de cena")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # PROMPTS SEPARADOS POR TIPO
+    # ──────────────────────────────────────────────────────────────────────────
+
+    SYSTEM_NARRACAO = f"""
+You are a professional dubbing scriptwriter specializing in anime narration for viral short-form videos.
+Your task is to translate Chinese Mandarin narration blocks into {TARGET_LANGUAGE}.
+
+CONTEXT: Anime "{_anime_title}" | Main character: {_protagonist} | Known cast: {_char_list}.
+
+─── TRANSLATION RULES ───────────────────────────────────────────────────────
+
+1. PERSON — Always Third Person. Never First Person.
+   - "我" / "我们" → "ele/ela/eles", never "eu/nós".
+   - Example: "我看到了敌人" → "Ele avistou o inimigo" ✅ | "Eu vi o inimigo" ❌
+
+2. LANGUAGE LEVEL — Simple, clear, everyday vocabulary (A2/B1).
+   - Write for the EAR, not the page. Short sentences, natural spoken rhythm.
+   - Avoid academic, archaic, or overly formal words.
+
+3. REPETITION — Never repeat the same word or phrase twice in a row across consecutive lines.
+   - Vary pronouns and synonyms naturally.
+
+4. PROPER NOUNS — Only keep names that are actual anime character names from the cast list above.
+   - Kinship/role words are NOT proper nouns: "pai", "mãe", "mestre", "rei", "imperador", etc.
+     Translate them normally — do NOT keep "Father", "Master", "Lord" in English mid-sentence.
+   - Example: "Father said..." → "Seu pai disse..." ✅ | "Father disse..." ❌
+
+5. NARRATIVE FLOW — Cinema narration, not a fact report.
+   - Never start two consecutive blocks with the same pronoun/subject.
+   - Use connectors: "Enquanto isso", "Diante disso", "Sem hesitar", "Para sua surpresa", "Anos antes", "Naquele momento" etc.
+   - Merge related ideas in a single block into one flowing sentence.
+   - Vary structure: participial phrases, inverted subjects, temporal clauses.
+
+6. SIMPLE AND DIRECT TONE:
+   - Use simple words that everyone understands. Avoid fancy or uncommon words.
+   - Prefer common verbs: "foi", "fez", "disse", "viu" over "avançou", "sucumbiu", "impôs".
+   - BAD:  "Ao adentrar o recinto, a melancolia apoderou-se de sua psique."
+   - GOOD: "Quando ele entrou na sala, ficou muito triste."
+
+7. SYNC — Keep the translated length close to the original for audio timing.
+   One block = one line. Do not merge or split blocks.
+
+─── OUTPUT ──────────────────────────────────────────────────────────────────
+
+Respond with JSON only. No explanation, no markdown, no extra keys.
+{{"translations": ["string 1", "string 2", ...]}}
+The array MUST contain exactly {{total}} items in the original order.
+"""
+
+    SYSTEM_CENA = f"""
+You are a professional dubbing scriptwriter for viral anime videos.
+Translate the input list from Japanese into {TARGET_LANGUAGE}.
+
+CONTEXT: Anime "{_anime_title}" | Main character: {_protagonist} | Known cast: {_char_list}.
+
+TRANSLATION RULES FOR DIALOGUE BLOCKS (Character Dialogue):
+1. PERSON: Preserve the grammatical person of the original speaker.
+   - If the character speaks in First Person (僕/俺/私 = I/me), keep it as First Person in PT-BR.
+   - If the character narrates in Third Person, keep Third Person.
+   - DO NOT forcefully change "Eu" to "Ele" — these are authentic character voices.
+2. AUTHENTICITY: Keep the character's voice, tone and personality.
+   - Aggressive character → speak with aggression.
+   - Timid character → speak softly/hesitantly.
+3. VOCABULARY: Colloquial Brazilian Portuguese. Natural speech, not literary.
+4. SYNC: Keep length similar to the original for lip-sync timing.
+5. NAMES: Never translate proper nouns. Use the correct anime character names.
+
+OUTPUT FORMAT (JSON ONLY):
+{{ "translations": ["string 1", "string 2", ...] }}
+The list MUST have exactly {{total}} items in the same order.
+"""
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # FUNÇÃO DE TRADUÇÃO COM FALLBACK
+    # ──────────────────────────────────────────────────────────────────────────
+    def _traduzir_chunk(chunk, system_instruction, task_label):
+        """Traduz um chunk de blocos com fallback OpenAI para erros do Gemini 3.1 Pro."""
+        source_texts = [b["texto_original"] for b in chunk]
+        total = len(source_texts)
+        user_payload = json.dumps({"sentences": source_texts}, ensure_ascii=False)
+        full_prompt  = f"{system_instruction}\n\nINPUT DATA:\n{user_payload}"
+        translated_list = None
+        gemini_failed = False
+        
+        try:
+            response = gemini_generate(
+                model_chain=MODELS_TRADUCAO,
+                contents=full_prompt,
+                config={'response_mime_type': 'application/json', 'temperature': 0.2},
+                task_name=task_label
+            )
+            data = json.loads(response.text)
+            if isinstance(data, list): translated_list = data
+            elif "translations" in data: translated_list = data["translations"]
+            else: translated_list = list(data.values())[0]
+        except Exception as e:
+            print(f"  [ERRO] Gemini falhou ({task_label}): {e}")
+            gemini_failed = True
+        
+        # Fallback OpenAI quando Gemini falhou (qualquer erro incluindo JSON invalido)
+        if (gemini_failed or translated_list is None) and USE_OPENAI_FALLBACK and client_openai:
+            print(f"  [FALLBACK] Usando OpenAI {OPENAI_FALLBACK_MODEL} para {task_label}...")
+            try:
+                resp = client_openai.chat.completions.create(
+                    model=OPENAI_FALLBACK_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user",   "content": user_payload}
+                    ],
+                    response_format={"type": "json_object"}, temperature=0.2
+                )
+                data = json.loads(resp.choices[0].message.content)
+                if isinstance(data, list): translated_list = data
+                elif "translations" in data: translated_list = data["translations"]
+                else: translated_list = list(data.values())[0]
+                print(f"  [OK] OpenAI fallback OK ({task_label}).")
+            except Exception as oe:
+                print(f"  [ERRO] OpenAI tambem falhou: {oe}")
+        
+        return translated_list, total
+
+    def traduzir_batch(blocks, system_instruction_template, task_label):
+        if not blocks: return
+        # Determina tamanho do chunk: se anime identificado usa BATCH_SIZE, senão 60
+        _anime_ok = globals().get('selected_anime', 'Desconhecido') != 'Desconhecido'
+        _chunk_sz  = globals().get('BATCH_SIZE', 50) if _anime_ok else 60
+        total = len(blocks)
+        system_instruction = system_instruction_template.replace("{total}", str(_chunk_sz))
+        print(f"  Chunks de {_chunk_sz} | Total: {total} blocos")
+
+        for i in range(0, total, _chunk_sz):
+            chunk = blocks[i: i + _chunk_sz]
+            chunk_label = f"{task_label}-chunk{i//  _chunk_sz + 1}"
+            # Ajusta {total} para o tamanho real do chunk
+            sys_inst = system_instruction_template.replace("{total}", str(len(chunk)))
+            translated_list, expected = _traduzir_chunk(chunk, sys_inst, chunk_label)
+
+            if not translated_list:
+                for block in chunk:
+                    block["translated_text"] = f"[FALHA] {block['texto_original']}"
+                    block["status"] = "FAILED"
+                continue
+
+            if len(translated_list) != expected:
+                print(f"  Recebidos {len(translated_list)} vs esperados {expected}. Ajustando...")
+
+            for j, block in enumerate(chunk):
+                block["translated_text"] = (
+                    translated_list[j] if j < len(translated_list)
+                    else f"[FALHA] {block['texto_original']}"
+                )
+                block["status"] = "TRANSLATED"
+
+
+            print(f"  Chunk {i//  _chunk_sz + 1}: {len(chunk)} blocos traduzidos.")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # EXECUÇÃO
+    # ──────────────────────────────────────────────────────────────────────────
+    start = time.time()
+
+    if narracao_list:
+        print(f"\nTraduzindo {len(narracao_list)} narracoes (zh -> pt, 3a pessoa forcada)...")
+        traduzir_batch(narracao_list, SYSTEM_NARRACAO, "Narracao-zh")
+
+    if cena_fala_list:
+        print(f"\nTraduzindo {len(cena_fala_list)} falas de cena (ja -> pt, pessoa original)...")
+        traduzir_batch(cena_fala_list, SYSTEM_CENA, "Cena-ja")
+
+    elapsed = time.time() - start
+    print(f"\nTraducao concluida em {elapsed:.2f}s.")
+
+    with open(TRADUCAO_PATH, 'w', encoding='utf-8') as f:
+        json.dump(final_blocks, f, ensure_ascii=False, indent=4)
+    print(f"Salvo: {TRADUCAO_PATH}")
+
+    print("\nPreview (3 narracoes):")
+    print("-" * 50)
+    for b in [x for x in final_blocks if x["tipo"] == "NARRACAO"][:3]:
+        print(f"Original : {b['texto_original']}")
+        print(f"Traduzido: {b['translated_text']}")
+        print("-" * 50)
+
+    print("\nPreview (3 falas de cena):")
+    print("-" * 50)
+    for b in [x for x in final_blocks if x["tipo"] == "CENA" and x.get("translated_text")][:3]:
+        print(f"Original : {b['texto_original']}")
+        print(f"Traduzido: {b['translated_text']}")
+        print("-" * 50)
+
+if 'salvar_no_drive' in globals():
+    salvar_no_drive(TRADUCAO_PATH, 'KAGGLE/AUDIO_DUB/traducao_simplificada.json')
+
+cell_end(4, "done", "Transcricao Whisper + Pyannote concluido")
