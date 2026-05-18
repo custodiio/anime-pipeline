@@ -215,6 +215,20 @@ def get_project(project_id: str) -> dict:
     return dict(result) if result else None
 
 
+def get_latest_project(chat_id: str) -> dict:
+    """Retorna o projeto mais recente criado pelo usuário (independente do status)."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM pipeline_projects 
+        WHERE telegram_chat_id = %s 
+        ORDER BY created_at DESC LIMIT 1
+    """, (chat_id,))
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(result) if result else None
+
 def get_active_project(chat_id: str) -> dict:
     """Busca o projeto ativo (mais recente não-completed) para um chat."""
     conn = _get_conn()

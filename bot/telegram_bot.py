@@ -28,7 +28,8 @@ from dotenv import load_dotenv
 
 from bot.database import (
     init_db, get_active_project, get_project, get_running_projects,
-    format_status, format_cell_status, update_step, set_project_opts
+    format_status, format_cell_status, update_step, set_project_opts,
+    get_latest_project
 )
 from bot.pipeline_controller import PipelineController
 
@@ -121,7 +122,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Mensagem de boas-vindas com menu visual."""
     buttons = [
         [InlineKeyboardButton("🚀 Novo Projeto Automático", callback_data="new_auto")],
-        [InlineKeyboardButton("🛠️ Novo Projeto Manual", callback_data="new_manual")]
+        [InlineKeyboardButton("🛠️ Novo Projeto Manual", callback_data="new_manual")],
+        [InlineKeyboardButton("📂 Iniciar via Upload Local", callback_data="start_usar_local")]
     ]
     await update.message.reply_text(
         "🎬 *Agente de Postagem — AnimeRecap*\n\n"
@@ -231,13 +233,14 @@ async def cmd_novo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     await send_config_menu(update, chat_id)
 
-@authorized
-async def cmd_usar_local(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Inicia o projeto pegando os arquivos direto da pasta uploads local."""
-    chat_id = str(update.effective_chat.id)
+async def _handle_local_upload_check(update: Update, chat_id: str, project_name: str = None, query=None):
     active = get_active_project(chat_id)
     if active:
-        await update.message.reply_text("⚠️ Já existe um projeto ativo. Use /cancel primeiro.")
+        msg = "⚠️ Já existe um projeto ativo. Use /cancel primeiro."
+        if query:
+            await query.message.reply_text(msg)
+        else:
+            await update.message.reply_text(msg)
         return
 
     uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
@@ -248,17 +251,72 @@ async def cmd_usar_local(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     audios = [f for f in files if any(f.lower().endswith(ext) for ext in [".mp3", ".wav", ".m4a", ".aac"])]
     
     if not videos or not audios:
-        await update.message.reply_text(
+        msg = (
             f"❌ Arquivos não encontrados!\n"
             f"Coloque 1 vídeo e 1 áudio na pasta:\n`{uploads_dir}`\n"
             f"E tente novamente."
         )
+        if query:
+            await query.message.reply_text(msg)
+        else:
+            await update.message.reply_text(msg)
         return
 
     video_path = os.path.join(uploads_dir, videos[0])
     audio_path = os.path.join(uploads_dir, audios[0])
-    project_name = " ".join(ctx.args) if ctx.args else f"Projeto_{chat_id[:6]}"
+    
+    # Se não foi fornecido um nome, tenta pegar do chat_id
+    if not project_name:
+        project_name = f"Projeto_{chat_id[:6]}"
 
+    # Verificar timestamp do video local vs ultimo projeto concluido
+    mtime = os.path.getmtime(video_path)
+    latest_proj = get_latest_project(chat_id)
+    
+    # Se tiveros um projeto anterior, e a data de conclusao (ou atualizacao) dele for maior que a do mtime do video local
+    # Significa que o arquivo de video em uploads/ provavelmente é o MESMO que ja foi processado nesse projeto
+    if latest_proj and latest_proj.get("updated_at"):
+        try:
+            dt = latest_proj["updated_at"]
+            if dt.timestamp() > mtime:
+                # O vídeo é antigo e já foi processado!
+                buttons = [
+                    [InlineKeyboardButton("🔄 Retomar Projeto Antigo", callback_data=f"local_resume_old:{latest_proj['id']}")],
+                    [InlineKeyboardButton("▶️ Ignorar e Criar Novo (Do Zero)", callback_data="local_force_new")],
+                    [InlineKeyboardButton("❌ Cancelar", callback_data="cancel")]
+                ]
+                text = (
+                    f"⚠️ *Aviso de Vídeo Recorrente*\n\n"
+                    f"O vídeo atual em `uploads/` parece ser o mesmo que já foi processado no projeto:\n"
+                    f"📁 *{latest_proj['project_name']}*\n\n"
+                    f"📊 *Status Atual:* {latest_proj['status'].upper()}\n"
+                    f"📍 *Última Etapa:* {latest_proj.get('current_step', 'N/A')}\n\n"
+                    f"Como cada projeto cria uma pasta única no Google Drive, se você quiser apenas rodar uma etapa específica (ex: Enhancer ou Render) para este vídeo já processado pelo Omni, você deve *retomar o projeto antigo*.\n\n"
+                    f"O que deseja fazer?"
+                )
+                
+                # Guardamos as variaveis provisórias pra caso ele clique em "Force New"
+                if chat_id not in user_uploads:
+                    user_uploads[chat_id] = {}
+                user_uploads[chat_id]["video"] = video_path
+                user_uploads[chat_id]["audio"] = audio_path
+                user_uploads[chat_id]["name"] = project_name
+                user_uploads[chat_id]["local"] = True
+                user_uploads[chat_id]["watermark"] = True
+                user_uploads[chat_id]["enhancer"] = False
+                user_uploads[chat_id]["thumbnail"] = True
+                user_uploads[chat_id]["manual_mode"] = False
+                
+                if query:
+                    await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons))
+                else:
+                    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons))
+                return
+        except Exception as e:
+            logger.error(f"Erro ao parsear data {latest_proj['updated_at']}: {e}")
+            pass
+
+    # Se o vídeo é novo (ou falhou parse), segue fluxo normal
     if chat_id not in user_uploads:
         user_uploads[chat_id] = {}
         
@@ -271,8 +329,18 @@ async def cmd_usar_local(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_uploads[chat_id]["thumbnail"] = True
     user_uploads[chat_id]["manual_mode"] = False
 
-    await send_config_menu(update, chat_id)
+    if query:
+        await send_config_menu(update, chat_id, query)
+    else:
+        await send_config_menu(update, chat_id)
 
+
+@authorized
+async def cmd_usar_local(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Inicia o projeto pegando os arquivos direto da pasta uploads local."""
+    chat_id = str(update.effective_chat.id)
+    project_name = " ".join(ctx.args) if ctx.args else None
+    await _handle_local_upload_check(update, chat_id, project_name)
 
 
 async def send_config_menu(update, chat_id, query=None):
@@ -433,6 +501,40 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     chat_id = str(query.message.chat.id)
     data = query.data
+
+    if data == "start_usar_local":
+        await _handle_local_upload_check(update, chat_id, query=query)
+        return
+
+    elif data == "local_force_new":
+        await send_config_menu(update, chat_id, query)
+        return
+
+    elif data.startswith("local_resume_old:"):
+        pid = data.split(":")[1]
+        from bot.database import _get_conn
+        conn = _get_conn()
+        cur = conn.cursor()
+        cur.execute("UPDATE pipeline_projects SET status = 'paused' WHERE id = %s::uuid", (pid,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        await query.edit_message_text(f"✅ Projeto {pid[:8]} retomado!")
+        # Exibir painel de status automaticamente
+        project = get_project(pid)
+        status_text = format_status(project)
+        buttons = []
+        if project.get("status") == "waiting_config":
+            buttons.append([InlineKeyboardButton("⚙️ Abrir VideoRender", callback_data="open_session")])
+            buttons.append([InlineKeyboardButton("✅ Config Pronta", callback_data="confirm_config")])
+        buttons.append([InlineKeyboardButton("🎯 Disparar Função", callback_data="trigger_menu")])
+        buttons.append([InlineKeyboardButton("🔄 Atualizar", callback_data="refresh_status")])
+        reply_markup = InlineKeyboardMarkup(buttons) if buttons else None
+        
+        # Envia como nova mensagem para nao misturar parse mode
+        await query.message.reply_text(status_text, parse_mode="Markdown", reply_markup=reply_markup)
+        return
 
     if data == "new_auto" or data == "new_manual":
         if chat_id not in user_uploads or not user_uploads[chat_id].get("video") or not user_uploads[chat_id].get("audio"):
