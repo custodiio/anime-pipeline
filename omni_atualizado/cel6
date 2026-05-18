@@ -1,0 +1,69 @@
+cell_start(6, "Celula 6")
+# @title 🔍 5.1 Verificação/Busca do Áudio de Clonagem
+# @markdown Se a Célula 1 já encontrou e baixou o áudio de referência, apenas confirma.
+# @markdown Caso contrário, busca no Drive usando NOME_NARRADOR.
+import os
+from difflib import SequenceMatcher
+
+BASE_PATH  = globals().get('BASE_PATH', '/kaggle/working/AUDIO_DUB')
+
+# Lê configurações da Cel1
+nome_personagem = globals().get('NOME_NARRADOR', 'Alessandro')
+usar_clonagem   = True
+print(f"Narrador: {nome_personagem}")
+
+# Se a Cel1 já baixou o áudio, usa direto
+if globals().get('REF_AUDIO_PATH', '') and os.path.exists(globals().get('REF_AUDIO_PATH', '')):
+    REF_AUDIO_PATH = globals()['REF_AUDIO_PATH']
+    print(f"Referencia ja definida pela Cel1: {REF_AUDIO_PATH}")
+else:
+    REF_AUDIO_PATH = ""
+    CLONAGEM_DIR_DRIVE = "KAGGLE/AUDIO_DUB/INPUT/CLONAGEM"
+    LOCAL_CLONAGEM_DIR = f"{BASE_PATH}/INPUT/CLONAGEM"
+    os.makedirs(LOCAL_CLONAGEM_DIR, exist_ok=True)
+
+    def similaridade(a, b):
+        return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+    if usar_clonagem and nome_personagem and 'drive_service' in globals() and drive_service:
+        print(f"Buscando '{nome_personagem}' na pasta '{CLONAGEM_DIR_DRIVE}'...")
+        parent_id = _buscar_id(CLONAGEM_DIR_DRIVE)
+        if parent_id:
+            query   = f"'{parent_id}' in parents and trashed=false and mimeType contains 'audio/'"
+            results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+            arquivos = results.get('files', [])
+
+            melhor_match = None
+            maior_score  = 0.0
+            for arq in arquivos:
+                nome_limpo = os.path.splitext(arq['name'])[0]
+                score = similaridade(nome_personagem, nome_limpo)
+                if nome_personagem.lower() in nome_limpo.lower():
+                    score = max(score, 0.85)
+                if score > maior_score:
+                    maior_score  = score
+                    melhor_match = arq
+
+            if melhor_match and maior_score > 0.6:
+                print(f"  Match: '{melhor_match['name']}' ({maior_score*100:.1f}%)")
+                caminho_local = f"{LOCAL_CLONAGEM_DIR}/{melhor_match['name']}"
+                if not os.path.exists(caminho_local):
+                    from googleapiclient.http import MediaIoBaseDownload
+                    request = drive_service.files().get_media(fileId=melhor_match['id'])
+                    with open(caminho_local, "wb") as f:
+                        downloader = MediaIoBaseDownload(f, request)
+                        done = False
+                        while not done: _, done = downloader.next_chunk()
+                    print("  Audio baixado!")
+                REF_AUDIO_PATH = caminho_local
+            else:
+                print(f"  Nenhum audio com >60% de similaridade com '{nome_personagem}'.")
+        else:
+            print("  Pasta CLONAGEM nao encontrada no Drive.")
+
+if not REF_AUDIO_PATH:
+    print("Sem audio de clonagem. Usando TTS sintetica.")
+else:
+    print(f"Referencia definida: {REF_AUDIO_PATH}")
+
+cell_end(6, "done", "Celula 6 concluido")

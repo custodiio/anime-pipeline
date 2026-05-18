@@ -1,0 +1,63 @@
+import time, os 
+import requests as http_requests
+
+NOTEBOOK_NAME = "omni-anime-ver-final"
+STEP_NAME = "step_omni"
+
+# Carregar secrets
+try:
+    from kaggle_secrets import UserSecretsClient
+    _s = UserSecretsClient()
+    def _ks(n):
+        try: return _s.get_secret(n)
+        except: return ""
+    DATABASE_URL = "postgresql://pipelineadmin:P1pel!ne_2026@anime-pipeline-db.postgres.database.azure.com:5432/postgres?sslmode=require"
+    PROJECT_ID = "f24d19ea-f2bd-42ce-877c-7777e5efe746"
+    PIPELINE_WEBHOOK_URL = _ks("PIPELINE_WEBHOOK_URL")
+except:
+    DATABASE_URL = os.getenv("DATABASE_URL", "")
+    PROJECT_ID = os.getenv("PIPELINE_PROJECT_ID", "")
+    PIPELINE_WEBHOOK_URL = os.getenv("PIPELINE_WEBHOOK_URL", "")
+
+_cell_timers = {}
+
+def _db_exec(query, params):
+    if not DATABASE_URL: return
+    try:
+        import psycopg2
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute(query, params)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except: pass
+
+def cell_start(idx, name=""):
+    _cell_timers[idx] = time.time()
+    print(f"\n{'='*50}\n  CELULA [{idx}] {name}\n{'='*50}")
+    if not PROJECT_ID: return
+    _db_exec("INSERT INTO pipeline_cell_tracking (project_id,notebook,cell_index,cell_name,status,started_at) VALUES (%s::uuid,%s,%s,%s,'running',NOW()) ON CONFLICT DO NOTHING", (PROJECT_ID, NOTEBOOK_NAME, idx, name))
+    _db_exec("UPDATE pipeline_cell_tracking SET status='running',started_at=NOW(),finished_at=NULL,cell_name=%s WHERE project_id=%s::uuid AND notebook=%s AND cell_index=%s", (name, PROJECT_ID, NOTEBOOK_NAME, idx))
+
+def cell_end(idx, status="done", msg=""):
+    elapsed = ""
+    if idx in _cell_timers:
+        s = int(time.time() - _cell_timers.pop(idx))
+        elapsed = f" ({s//60}m{s%60}s)" if s >= 60 else f" ({s}s)"
+    icon = "OK" if status == "done" else "ERRO"
+    print(f"  [{icon}] CELULA [{idx}] {status}{elapsed}: {msg}\n{'_'*50}")
+    if not PROJECT_ID: return
+    _db_exec("UPDATE pipeline_cell_tracking SET status=%s,finished_at=NOW(),duration_seconds=EXTRACT(EPOCH FROM(NOW()-started_at)),message=%s WHERE project_id=%s::uuid AND notebook=%s AND cell_index=%s", (status, msg, PROJECT_ID, NOTEBOOK_NAME, idx))
+
+def report_step(status, msg=""):
+    if PROJECT_ID and PIPELINE_WEBHOOK_URL:
+        try:
+            http_requests.post(f"{PIPELINE_WEBHOOK_URL}/webhook/status", json={"project_id": PROJECT_ID, "step": STEP_NAME, "status": status, "message": msg}, timeout=15)
+        except: pass
+    print(f"\nNOTEBOOK FINALIZADO: {STEP_NAME} -> {status}")
+    if not PROJECT_ID: return
+    _db_exec(f"UPDATE pipeline_projects SET {STEP_NAME}=%s,current_step=%s,updated_at=NOW() WHERE id=%s::uuid", (status, STEP_NAME.replace("step_",""), PROJECT_ID))
+    _db_exec("INSERT INTO pipeline_logs (project_id,step,status,message) VALUES (%s::uuid,%s,%s,%s)", (PROJECT_ID, STEP_NAME, status, msg))
+
+print("Tracking de celulas configurado!")

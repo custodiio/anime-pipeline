@@ -1,0 +1,61 @@
+cell_start(8, "Celula 8")
+# @title 🎙️ 1b. Servidores OmniVoice (GPU0 + GPU1)
+# @markdown Sobe um servidor por GPU disponível. Rode antes da Cel6 (Fábrica de Áudio).
+import subprocess, urllib.request, time, os, threading
+
+GPU_COUNT = globals().get('GPU_COUNT', torch.cuda.device_count() if 'torch' in dir() else 1)
+
+print(f"GPUs disponíveis: {GPU_COUNT}")
+print("Subindo servidores OmniVoice...")
+
+# Corrige path do modelo OmniVoice no CLI
+demo_file = "/usr/local/lib/python3.12/dist-packages/omnivoice/cli/demo.py"
+if os.path.exists(demo_file):
+    with open(demo_file, "r") as f:
+        content = f.read()
+    if '"k2-fsa/OmniVoice"' in content:
+        content = content.replace('"k2-fsa/OmniVoice"', f'"{MODEL_OMNIVOICE_PATH}"')
+        with open(demo_file, "w") as f:
+            f.write(content)
+        print("CLI OmniVoice corrigido para dataset local.")
+
+_server_procs = []
+OMNIVOICE_PORTS = []
+
+for gpu_idx in range(min(GPU_COUNT, 2)):   # máximo 2 servidores
+    port  = 8001 + gpu_idx
+    log   = open(f"/kaggle/working/omnivoice_gpu{gpu_idx}.log", "w")
+    env   = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu_idx)}
+    proc  = subprocess.Popen(
+        ["omnivoice-demo", "--ip", "127.0.0.1", "--port", str(port)],
+        env=env, stdout=log, stderr=subprocess.STDOUT
+    )
+    _server_procs.append(proc)
+    OMNIVOICE_PORTS.append(port)
+    print(f"  GPU{gpu_idx} → porta {port} iniciando...")
+
+def _aguardar_servidor(port, label):
+    for i in range(40):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2)
+            print(f"  {label} online!")
+            return True
+        except:
+            time.sleep(5)
+            if (i + 1) % 4 == 0:
+                print(f"  [{(i+1)*5}s] {label} subindo...")
+    print(f"  {label} nao respondeu. Verifique o log.")
+    return False
+
+# Espera todos os servidores em paralelo
+threads = [
+    threading.Thread(target=_aguardar_servidor, args=(port, f"GPU{idx}:porta{port}"))
+    for idx, port in enumerate(OMNIVOICE_PORTS)
+]
+for t in threads: t.start()
+for t in threads: t.join()
+
+print(f"\nServidores ativos: {OMNIVOICE_PORTS}")
+print("Pronto para dublar!")
+
+cell_end(8, "done", "Celula 8 concluido")

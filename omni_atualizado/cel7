@@ -1,0 +1,45 @@
+cell_start(7, "Traducao Inteligente")
+# @title 🎤 5.2 Transcrição do Áudio de Referência (Clonagem)
+# @markdown Transcreve o áudio de referência para usar como prompt no OmniVoice.
+import os
+
+REF_TEXT = ""
+
+if 'REF_AUDIO_PATH' in globals() and REF_AUDIO_PATH and os.path.exists(REF_AUDIO_PATH):
+    txt_path = f"{REF_AUDIO_PATH}.txt"
+
+    if os.path.exists(txt_path):
+        print(f"✅ Transcrição em cache: {txt_path}")
+        with open(txt_path, 'r', encoding='utf-8') as f:
+            REF_TEXT = f.read().strip()
+        print(f"📝 Texto: '{REF_TEXT}'")
+    else:
+        print(f"🚀 Transcrevendo: {os.path.basename(REF_AUDIO_PATH)}...")
+
+        try:
+            if 'stable_model' not in globals(): raise RuntimeError('Whisper nao carregou. Verifique MODEL_WHISPER_PATH.')
+            result = stable_model.transcribe_stable(
+                REF_AUDIO_PATH,
+                beam_size=5,
+                vad_filter=True
+            )
+
+            texto_completo = []
+            for seg in result.segments:
+                texto_completo.append(seg.text)
+
+            REF_TEXT = " ".join(texto_completo).strip()
+
+            if REF_TEXT:
+                with open(txt_path, 'w', encoding='utf-8') as f:
+                    f.write(REF_TEXT)
+                print(f"✅ Transcrito e salvo!")
+                print(f"📝 Texto: '{REF_TEXT}'")
+            else:
+                print("⚠️ Nenhuma fala detectada neste áudio.")
+        except Exception as e:
+            print(f"❌ Erro na transcrição: {e}")
+else:
+    print("ℹ️ Sem áudio de clonagem. Nenhuma transcrição necessária.")
+
+cell_end(7, "done", "Traducao Inteligente concluido")

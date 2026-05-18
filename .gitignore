@@ -8,3 +8,13 @@ node_modules/
 dist/
 build/
 generate_notebooks.py
+uploads/
+test*/
+test*.mp4
+test*.png
+test*.py
+_*.py
+database.db
+*.sqlite3
+*.db
+update_*.py
