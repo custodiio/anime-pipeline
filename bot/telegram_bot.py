@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 
 from bot.database import (
     init_db, get_active_project, get_project, get_running_projects,
-    format_status, format_cell_status, update_step
+    format_status, format_cell_status, update_step, set_project_opts
 )
 from bot.pipeline_controller import PipelineController
 
@@ -226,6 +226,8 @@ async def cmd_novo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_uploads[chat_id]["local"] = False
     user_uploads[chat_id]["watermark"] = True
     user_uploads[chat_id]["enhancer"] = False
+    user_uploads[chat_id]["thumbnail"] = True
+    user_uploads[chat_id]["manual_mode"] = False
     
     await send_config_menu(update, chat_id)
 
@@ -266,30 +268,40 @@ async def cmd_usar_local(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_uploads[chat_id]["local"] = True
     user_uploads[chat_id]["watermark"] = True
     user_uploads[chat_id]["enhancer"] = False
+    user_uploads[chat_id]["thumbnail"] = True
+    user_uploads[chat_id]["manual_mode"] = False
 
     await send_config_menu(update, chat_id)
 
 
+
 async def send_config_menu(update, chat_id, query=None):
-    """Envia ou atualiza o menu de configurações do projeto."""
+    """Envia ou atualiza o menu completo de configurações do projeto."""
     opts = user_uploads.get(chat_id)
     if not opts:
         return
 
-    wm_text = "✅ Remover Marca d'água" if opts["watermark"] else "❌ Remover Marca d'água"
-    enhancer_text = "✅ Aumentar Qualidade" if opts["enhancer"] else "❌ Aumentar Qualidade"
+    wm_text      = "✅ Remover Marca d'água" if opts.get("watermark", True)   else "❌ Remover Marca d'água"
+    enhancer_text = "✅ Aumentar Qualidade"   if opts.get("enhancer", False)  else "❌ Aumentar Qualidade"
+    thumb_text   = "✅ Gerar Thumbnail"       if opts.get("thumbnail", True)  else "❌ Gerar Thumbnail"
+    is_manual    = opts.get("manual_mode", False)
+    mode_text    = "🛠️ Modo: Manual"         if is_manual else "🤖 Modo: Automático"
 
     buttons = [
-        [InlineKeyboardButton(wm_text, callback_data="toggle_wm")],
-        [InlineKeyboardButton(enhancer_text, callback_data="toggle_enhancer")],
+        [InlineKeyboardButton(wm_text,        callback_data="toggle_wm")],
+        [InlineKeyboardButton(enhancer_text,  callback_data="toggle_enhancer")],
+        [InlineKeyboardButton(thumb_text,     callback_data="toggle_thumbnail")],
+        [InlineKeyboardButton(mode_text,      callback_data="toggle_mode")],
         [InlineKeyboardButton("▶️ Iniciar Projeto", callback_data="start_project")]
     ]
     markup = InlineKeyboardMarkup(buttons)
-    
+
+    mode_desc = "Manual — você dispara cada etapa" if is_manual else "Automático — Omni inicia imediatamente"
     text = (
-        f"⚙️ *Configurações Iniciais*\n"
-        f"Projeto: `{opts['name']}`\n\n"
-        f"Selecione quais processos opcionais deseja executar antes da dublagem:"
+        f"⚙️ *Configurações do Projeto*\n"
+        f"📽️ `{opts['name']}`\n\n"
+        f"Modo: *{mode_desc}*\n\n"
+        f"Selecione as opções:"
     )
 
     if query:
@@ -436,17 +448,28 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         user_uploads[chat_id]["local"] = False
         user_uploads[chat_id]["watermark"] = True
         user_uploads[chat_id]["enhancer"] = False
+        user_uploads[chat_id]["thumbnail"] = True
         user_uploads[chat_id]["manual_mode"] = (data == "new_manual")
         await send_config_menu(None, chat_id, query)
         
     elif data == "toggle_wm":
         if chat_id in user_uploads:
-            user_uploads[chat_id]["watermark"] = not user_uploads[chat_id]["watermark"]
+            user_uploads[chat_id]["watermark"] = not user_uploads[chat_id].get("watermark", True)
             await send_config_menu(None, chat_id, query)
             
     elif data == "toggle_enhancer":
         if chat_id in user_uploads:
-            user_uploads[chat_id]["enhancer"] = not user_uploads[chat_id]["enhancer"]
+            user_uploads[chat_id]["enhancer"] = not user_uploads[chat_id].get("enhancer", False)
+            await send_config_menu(None, chat_id, query)
+
+    elif data == "toggle_thumbnail":
+        if chat_id in user_uploads:
+            user_uploads[chat_id]["thumbnail"] = not user_uploads[chat_id].get("thumbnail", True)
+            await send_config_menu(None, chat_id, query)
+
+    elif data == "toggle_mode":
+        if chat_id in user_uploads:
+            user_uploads[chat_id]["manual_mode"] = not user_uploads[chat_id].get("manual_mode", False)
             await send_config_menu(None, chat_id, query)
             
     elif data == "start_project":
@@ -463,7 +486,9 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
         try:
-            manual_mode = opts.get("manual_mode", False)
+            manual_mode       = opts.get("manual_mode", False)
+            thumbnail_enabled = opts.get("thumbnail", True)
+
             if manual_mode:
                 project = await asyncio.to_thread(
                     controller.iniciar_projeto_manual,
@@ -486,32 +511,33 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             pid = str(project["id"])
 
+            # Salvar opções no banco para o notifier consultar depois
+            set_project_opts(pid, manual_mode, thumbnail_enabled)
+
             token = gerar_session_token(pid)
             active_sessions[token] = {"project_id": pid, "chat_id": chat_id, "created_at": time.time()}
             session_link = get_session_link(token)
 
             if not manual_mode:
                 controller.disparar_omni_imediatamente(pid)
+                thumb_info = "\n\ud83d\uddbc\ufe0f Thumbnail será gerada automaticamente após a tradução." if thumbnail_enabled else ""
                 msg_text = (
-                    f"✅ Upload e Divisão Concluídos!\n\n"
-                    f"🔄 Disparando a Dublagem (Omni)...\n\n"
-                    f"⚙️ Sessão de Configuração de Legenda:\n"
-                    f"Configure o estilo da legenda.\n"
-                    f"🎬 Abrir VideoRender:\n{session_link}\n\n"
-                    f"📊 Use /status para acompanhar."
+                    f"\u2705 Upload e Divisão Concluídos!\n\n"
+                    f"\U0001f504 Disparando a Dublagem (Omni)...{thumb_info}\n\n"
+                    f"\u2699\ufe0f Sessão de Configuração de Legenda:\n"
+                    f"\U0001f3ac Abrir VideoRender:\n{session_link}\n\n"
+                    f"\U0001f4ca Use /status para acompanhar."
                 )
             else:
                 msg_text = (
-                    f"🛠️ Projeto Manual Inicializado!\n\n"
-                    f"✅ Upload e Divisão Concluídos.\n"
+                    f"\U0001f6e0\ufe0f Projeto Manual Inicializado!\n\n"
+                    f"\u2705 Upload e Divisão Concluídos.\n"
                     f"Nenhuma função foi disparada automaticamente.\n"
-                    f"🎬 Sessão VideoRender:\n{session_link}\n\n"
-                    f"Use /status e clique em '🎯 Disparar Função' para rodar os blocos."
+                    f"\U0001f3ac Sessão VideoRender:\n{session_link}\n\n"
+                    f"Use /status e clique em '\U0001f3af Disparar Função' para rodar os blocos."
                 )
 
             await query.message.reply_text(msg_text)
-            
-            # Removemos a config após iniciar
             user_uploads.pop(chat_id, None)
 
         except Exception as e:
@@ -886,14 +912,22 @@ def main():
 
     def _seo_notifier_callback(project_id):
         """
-        Chamado quando cel5 finaliza. Gera SEO, envia resultado no Telegram
-        e prepara a sessão de Thumbnail.
+        Chamado quando cel5 finaliza.
+        - Se projeto foi modo MANUAL → ignora (usuário disparou tudo manualmente)
+        - Se modo AUTOMÁTICO → gera SEO e, se thumbnail_enabled, envia link de sessão
         """
         import requests as req
         proj = get_project(project_id)
         if not proj:
             return
+
+        # Verificar modo: se manual, não fazer nada
+        if proj.get("manual_mode", False):
+            logger.info(f"[SEO] Projeto {project_id} é manual — cel5 ignorado pelo notifier.")
+            return
+
         chat_id = proj["chat_id"]
+        thumbnail_enabled = proj.get("thumbnail_enabled", True)
 
         def _send_telegram(text, parse_mode="Markdown"):
             req.post(
@@ -910,12 +944,11 @@ def main():
                 _send_telegram("⚠️ Não foi possível gerar o guia SEO automaticamente.")
                 return
 
-            # Montar mensagem clean com os dados principais
-            titulo = guia.get("titulo_principal", "")
-            desc = guia.get("descricao", "")[:800]
+            titulo   = guia.get("titulo_principal", "")
+            desc     = guia.get("descricao", "")[:800]
             hashtags = " ".join(guia.get("hashtags_youtube", [])[:10])
-            tags = guia.get("tags_youtube", "")[:200]
-            score = guia.get("score_viral", 0)
+            tags     = guia.get("tags_youtube", "")[:200]
+            score    = guia.get("score_viral", 0)
             score_emoji = "🔥" if score >= 85 else ("✅" if score >= 70 else "⚠️")
 
             msg = (
@@ -928,22 +961,30 @@ def main():
             )
             _send_telegram(msg)
 
-            # Preparar sessão Thumbnail em background e enviar link
-            try:
-                token = controller.preparar_sessao_seo(project_id, chat_id)
-                if token:
-                    thumb_url = f"{SEO_SERVER_URL}/?token={token}"
-                    req.post(
-                        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                        json={
-                            "chat_id": chat_id,
-                            "text": f"🖼️ *Thumbnail pronta para criar!*\nAcesse e escolha o template \u2014 os frames já estão sendo pré-extraídos:\n[Abrir Gerador de Thumbnail]({thumb_url})",
-                            "parse_mode": "Markdown"
-                        },
-                        timeout=10
-                    )
-            except Exception as e:
-                logger.error(f"[SEO] Erro ao criar sessão thumbnail: {e}")
+            # Sessão Thumbnail — só envia se thumbnail_enabled
+            if thumbnail_enabled:
+                try:
+                    token = controller.preparar_sessao_seo(project_id, chat_id)
+                    if token:
+                        thumb_url = f"{SEO_SERVER_URL}/?token={token}"
+                        req.post(
+                            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                            json={
+                                "chat_id": chat_id,
+                                "text": (
+                                    f"🖼️ *Thumbnail pronta para criar!*\n"
+                                    f"Os frames já estão sendo pré\\-extraídos em background\\.\n"
+                                    f"[Abrir Gerador de Thumbnail]({thumb_url})"
+                                ),
+                                "parse_mode": "MarkdownV2"
+                            },
+                            timeout=10
+                        )
+                except Exception as e:
+                    logger.error(f"[SEO] Erro ao criar sessão thumbnail: {e}")
+            else:
+                logger.info(f"[SEO] Thumbnail desabilitado para projeto {project_id} — link não enviado.")
+
         except Exception as e:
             logger.error(f"[SEO] Erro no notifier: {e}")
             _send_telegram(f"❌ Erro ao gerar SEO: {e}")

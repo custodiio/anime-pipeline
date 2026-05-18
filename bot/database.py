@@ -55,6 +55,10 @@ def init_db():
             session_url TEXT,
             error_message TEXT,
             
+            -- Opções de criação do projeto
+            manual_mode BOOLEAN DEFAULT FALSE,
+            thumbnail_enabled BOOLEAN DEFAULT TRUE,
+            
             started_at TIMESTAMPTZ,
             completed_at TIMESTAMPTZ
         );
@@ -94,6 +98,27 @@ def init_db():
     conn.close()
     print("[OK] Banco de dados inicializado (com tracking por celula).")
 
+    # Migração: adicionar colunas se não existirem (banco já existente)
+    _migrate_db()
+
+
+def _migrate_db():
+    """Adiciona colunas novas ao banco se ainda não existirem."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    migrations = [
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS manual_mode BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS thumbnail_enabled BOOLEAN DEFAULT TRUE",
+    ]
+    for sql in migrations:
+        try:
+            cur.execute(sql)
+        except Exception:
+            pass
+    conn.commit()
+    cur.close()
+    conn.close()
+
 
 # ═══════════════════════════════════════════════════════════════════
 # PROJETOS
@@ -113,6 +138,20 @@ def create_project(project_name: str, chat_id: str) -> dict:
     cur.close()
     conn.close()
     return project
+
+
+def set_project_opts(project_id: str, manual_mode: bool, thumbnail_enabled: bool):
+    """Salva as opções de modo e thumbnail do projeto."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE pipeline_projects
+        SET manual_mode = %s, thumbnail_enabled = %s, updated_at = NOW()
+        WHERE id = %s::uuid
+    """, (manual_mode, thumbnail_enabled, project_id))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def update_step(project_id: str, step: str, status: str, message: str = ""):
