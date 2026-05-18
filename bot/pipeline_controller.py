@@ -70,10 +70,221 @@ class PipelineController:
             update_step(pid, "step_upload", "error", str(e))
             raise
 
+    def iniciar_projeto_manual(self, project_name, chat_id,
+                               video_path, audio_path, mask_path=None, opts=None):
+        """
+        Inicia o projeto mas não dispara o Omni. 
+        Define os status como 'manual' para que o _pipeline_poll_loop o ignore.
+        """
+        project = create_project(project_name, chat_id)
+        pid = str(project["id"])
+        print(f"Projeto manual criado: {pid}")
+
+        try:
+            update_step(pid, "step_upload", "running", "Limpando Drive...")
+            self.drive.limpar_pasta_ativo()
+            self.drive.limpar_audio_dub_cache()
+
+            self.drive.salvar(audio_path, "KAGGLE/AUDIO_DUB/INPUT/anime_audio.mp3")
+            self.drive.salvar(video_path, f"{DRIVE_ATIVO}/video_original.mp4")
+            if mask_path and os.path.exists(mask_path):
+                self.drive.salvar(mask_path, f"{DRIVE_ATIVO}/mask.png")
+
+            update_step(pid, "step_upload", "done", "Upload concluido")
+
+            update_step(pid, "step_split", "running", "Dividindo video...")
+            temp_dir = os.path.join(os.path.dirname(video_path), "split_temp")
+            parts_paths = split_video(video_path, temp_dir, parts=5)
+            for p_path in parts_paths:
+                if p_path.endswith(".json"):
+                    self.drive.salvar(p_path, f"{DRIVE_ATIVO}/split_info.json")
+                else:
+                    idx = parts_paths.index(p_path) + 1
+                    self.drive.salvar(p_path, f"{DRIVE_ATIVO}/video_pt{idx}.mp4")
+            
+            # Definir todos os passos como 'manual'
+            update_step(pid, "step_split", "done", "Video dividido")
+            update_step(pid, "step_omni", "manual", "")
+            update_step(pid, "step_config_ready", "manual", "")
+            for i in range(1, 6):
+                update_step(pid, f"step_watermark_pt{i}", "manual", "")
+                update_step(pid, f"step_enhancer_pt{i}", "manual", "")
+                update_step(pid, f"step_render_pt{i}", "manual", "")
+            update_step(pid, "step_merge", "manual", "")
+
+            return project
+
+        except Exception as e:
+            update_step(pid, "step_upload", "error", str(e))
+            raise
+
+    # ------------------ CHECKERS DE DEPENDÊNCIA ------------------
+    def check_omni_ready(self):
+        arquivos = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB/INPUT")
+        if not any(a["name"] == "anime_audio.mp3" for a in arquivos):
+            return False, "anime_audio.mp3 não encontrado em KAGGLE/AUDIO_DUB/INPUT"
+        return True, ""
+
+    def check_watermark_ready(self):
+        arquivos_ativo = self.drive.listar_arquivos(DRIVE_ATIVO)
+        if not any(a["name"] == "mask.png" for a in arquivos_ativo):
+            return False, "mask.png não encontrada no DRIVE ATIVO."
+        pts_ok = all(any(a["name"] == f"video_pt{i}.mp4" for a in arquivos_ativo) for i in range(1, 6))
+        if not pts_ok:
+            return False, "Faltam partes de vídeo divididas no DRIVE ATIVO."
+        return True, ""
+
+    def check_enhancer_ready(self, part=None):
+        arquivos = self.drive.listar_arquivos("KAGGLE/PIPELINE/WATERMARK")
+        if part:
+            if not any(a["name"] == f"pt{part}_limpo.mp4" for a in arquivos):
+                return False, f"pt{part}_limpo.mp4 não encontrado no WATERMARK."
+        else:
+            for i in range(1, 6):
+                if not any(a["name"] == f"pt{i}_limpo.mp4" for a in arquivos):
+                    return False, f"pt{i}_limpo.mp4 não encontrado no WATERMARK."
+        return True, ""
+
+    def check_render_ready(self, part=None):
+        arquivos = self.drive.listar_arquivos("KAGGLE/PIPELINE/ENHANCER")
+        if part:
+            if not any(a["name"] == f"pt{part}_enhanced.mp4" for a in arquivos):
+                return False, f"pt{part}_enhanced.mp4 não encontrado."
+        else:
+            for i in range(1, 6):
+                if not any(a["name"] == f"pt{i}_enhanced.mp4" for a in arquivos):
+                    return False, f"Faltam partes enhanced."
+        
+        arqs_omni = self.drive.listar_arquivos("KAGGLE/PIPELINE/OMNI")
+        if not any(a["name"] == "videorender-project.json" for a in arqs_omni):
+             return False, "videorender-project.json não encontrado."
+        if not any(a["name"] == "legendas.ass" for a in arqs_omni):
+             return False, "legendas.ass não encontrado."
+        if not any(a["name"] == "audio_dublado.mp3" for a in arqs_omni):
+             return False, "audio_dublado.mp3 não encontrado."
+             
+        return True, ""
+
+    def check_merge_ready(self):
+        arquivos = self.drive.listar_arquivos("KAGGLE/PIPELINE/RENDER")
+        for i in range(1, 6):
+            if not any(a["name"] == f"pt{i}_renderizado.mp4" for a in arquivos):
+                return False, f"pt{i}_renderizado.mp4 não encontrado no RENDER."
+        return True, ""
+    # -----------------------------------------------------------
+
     def disparar_omni_imediatamente(self, project_id):
         """Etapa inicial: Dispara Omni (Dublagem) imediatamente após upload."""
         update_step(project_id, "step_omni", "running")
         dispatch_workflow("omni", project_id)
+
+    def gerar_seo_automatico(self, project_id):
+        """
+        Chamado quando step_cel5 (tradução) é marcado como done.
+        Baixa os JSONs do Drive, envia pro SEO server e retorna o guia.
+        """
+        import json, requests, tempfile, os
+        SEO_URL = os.getenv("SEO_SERVER_URL", "http://localhost:3333")
+
+        tmp = tempfile.mkdtemp()
+        try:
+            trad_path = os.path.join(tmp, "traducao_simplificada.json")
+            ident_path = os.path.join(tmp, "identificacao_anime.json")
+
+            self.drive.baixar("KAGGLE/AUDIO_DUB/traducao_simplificada.json", trad_path)
+            self.drive.baixar("KAGGLE/AUDIO_DUB/identificacao_anime.json", ident_path)
+
+            with open(trad_path, "r", encoding="utf-8") as f:
+                roteiro = json.load(f)
+            with open(ident_path, "r", encoding="utf-8") as f:
+                identificacao = json.load(f)
+
+            resp = requests.post(f"{SEO_URL}/api/auto-guide",
+                json={"roteiro": roteiro, "identificacao": identificacao},
+                timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("guia"), roteiro, identificacao
+        except Exception as e:
+            print(f"[SEO] Erro ao gerar SEO: {e}")
+            return None, None, None
+        finally:
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def preparar_sessao_seo(self, project_id, chat_id):
+        """
+        Cria sessão SEO e inicia pré-análise + pré-extração de frames em background.
+        Retorna o token da sessão.
+        """
+        import json, requests, tempfile, os, threading
+        SEO_URL = os.getenv("SEO_SERVER_URL", "http://localhost:3333")
+
+        tmp = tempfile.mkdtemp()
+        try:
+            trad_path = os.path.join(tmp, "traducao_simplificada.json")
+            ident_path = os.path.join(tmp, "identificacao_anime.json")
+
+            self.drive.baixar("KAGGLE/AUDIO_DUB/traducao_simplificada.json", trad_path)
+            self.drive.baixar("KAGGLE/AUDIO_DUB/identificacao_anime.json", ident_path)
+
+            with open(trad_path, "r", encoding="utf-8") as f:
+                roteiro = json.load(f)
+            with open(ident_path, "r", encoding="utf-8") as f:
+                identificacao = json.load(f)
+
+            # Criar sessão no servidor SEO
+            resp = requests.post(f"{SEO_URL}/api/create-seo-session", json={
+                "project_id": project_id,
+                "chat_id": chat_id,
+                "roteiro": roteiro,
+                "identificacao": identificacao
+            }, timeout=10)
+            resp.raise_for_status()
+            token = resp.json()["token"]
+
+            # Encontrar vídeo local
+            video_local = self._encontrar_video_local(project_id)
+            if not video_local:
+                # Tentar baixar do Drive em background
+                def baixar_e_pre_analisar():
+                    try:
+                        vid_tmp = os.path.join(tmp, "video_original.mp4")
+                        self.drive.baixar(f"KAGGLE/PIPELINE/ATIVO/video_original.mp4", vid_tmp)
+                        requests.post(f"{SEO_URL}/api/pre-analyze",
+                            json={"token": token, "video_path": vid_tmp}, timeout=10)
+                    except Exception as e:
+                        print(f"[SEO] Erro ao baixar vídeo para pré-análise: {e}")
+                threading.Thread(target=baixar_e_pre_analisar, daemon=True).start()
+            else:
+                def pre_analisar():
+                    try:
+                        requests.post(f"{SEO_URL}/api/pre-analyze",
+                            json={"token": token, "video_path": video_local}, timeout=10)
+                    except Exception as e:
+                        print(f"[SEO] Erro na pré-análise: {e}")
+                threading.Thread(target=pre_analisar, daemon=True).start()
+
+            return token
+        except Exception as e:
+            print(f"[SEO] Erro ao preparar sessão: {e}")
+            return None
+        finally:
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def _encontrar_video_local(self, project_id):
+        """Procura o vídeo original nos uploads locais."""
+        import glob
+        padroes = [
+            f"uploads/*{project_id}*.mp4",
+            "uploads/*.mp4",
+        ]
+        for p in padroes:
+            files = glob.glob(p)
+            if files:
+                return os.path.abspath(files[0])
+        return None
 
     def disparar_watermark(self, project_id):
         for i in range(1, 6): update_step(project_id, f"step_watermark_pt{i}", "running")

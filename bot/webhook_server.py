@@ -22,11 +22,17 @@ controller = PipelineController()
 
 # Referência para sessões ativas (importado do telegram_bot em runtime)
 _session_validator = None
+_seo_notifier = None  # função(project_id) chamada quando cel5 finaliza
 
 def set_session_validator(validator_func):
     """Recebe a função validar_sessao do telegram_bot."""
     global _session_validator
     _session_validator = validator_func
+
+def set_seo_notifier(notifier_func):
+    """Recebe a função de notificação SEO do telegram_bot."""
+    global _seo_notifier
+    _seo_notifier = notifier_func
 
 
 class PipelineWebhookHandler(BaseHTTPRequestHandler):
@@ -364,9 +370,22 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"ok": True}).encode())
 
             elif path == "/webhook/cell-end":
-                cell_end(data.get("project_id"), data.get("notebook"),
-                            data.get("cell_index"), data.get("status", "done"),
-                            data.get("message", ""))
+                nb = data.get("notebook", "")
+                cell_idx = data.get("cell_index")
+                cell_status = data.get("status", "done")
+                pid = data.get("project_id")
+                cell_end(pid, nb, cell_idx, cell_status, data.get("message", ""))
+
+                # Trigger SEO automático quando cel5 (tradução) finaliza
+                if cell_idx == 5 and cell_status == "done" and pid and _seo_notifier:
+                    import threading
+                    threading.Thread(
+                        target=_seo_notifier,
+                        args=(pid,),
+                        daemon=True
+                    ).start()
+                    logger.info(f"[SEO] Trigger disparado para projeto {pid} (cel5 done)")
+
                 self._set_headers(200)
                 self.wfile.write(json.dumps({"ok": True}).encode())
 
