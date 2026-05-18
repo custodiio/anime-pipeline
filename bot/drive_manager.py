@@ -186,6 +186,20 @@ class DriveManager:
             fields="id, parents"
         ).execute()
 
+    def get_file_link(self, caminho_drive):
+        """Retorna o webViewLink de um arquivo no Drive."""
+        if not self.service:
+            return None
+        file_id = self._buscar_id(caminho_drive)
+        if not file_id:
+            return None
+        try:
+            file_info = self.service.files().get(fileId=file_id, fields="webViewLink").execute()
+            return file_info.get("webViewLink")
+        except Exception as e:
+            print(f"Erro ao obter link do arquivo {caminho_drive}: {e}")
+            return None
+
     def limpar_pasta_ativo(self):
         """Deleta todo o conteúdo de ATIVO e das demais pastas do pipeline."""
         if not self.service:
