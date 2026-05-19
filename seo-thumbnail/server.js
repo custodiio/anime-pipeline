@@ -53,28 +53,40 @@ const upload = multer({ storage, limits: { fileSize: 500 * 1024 * 1024 } });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function limparJson(raw) {
-  return raw
+  let clean = raw.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  
+  // Tenta extrair apenas o conteúdo entre a primeira { e a última }
+  const firstCurly = clean.indexOf("{");
+  const lastCurly = clean.lastIndexOf("}");
+  
+  if (firstCurly !== -1 && lastCurly !== -1 && lastCurly >= firstCurly) {
+    clean = clean.substring(firstCurly, lastCurly + 1);
+  }
+  
+  return clean
     .replace(/^```json\s*/m, "")
     .replace(/^```\s*/m, "")
     .replace(/\s*```$/m, "")
     .trim();
 }
 
-// Retry com backoff exponencial para chamadas DeepSeek/IA
-async function callWithRetry(fn, maxRetries = 3) {
+// Retry com backoff exponencial para chamadas DeepSeek/IA com Parse Automático
+async function callWithRetry(fn, parseFn, maxRetries = 3) {
   const delays = [2000, 5000, 10000];
   for (let i = 0; i < maxRetries; i++) {
     try {
       const result = await fn();
-      if (!result || (typeof result === 'string' && !result.trim())) {
+      if (!result || (typeof result === "string" && !result.trim())) {
         throw new Error("Resposta vazia da IA");
       }
-      return result;
+      
+      const parsed = parseFn ? parseFn(result) : result;
+      return parsed;
     } catch (err) {
+      console.warn(`[SEO] Tentativa ${i + 1}/${maxRetries} falhou: ${err.message}`);
       const isLast = i === maxRetries - 1;
-      console.warn(`⚠️ Tentativa ${i + 1}/${maxRetries} falhou: ${err.message}`);
       if (isLast) throw err;
-      await new Promise(r => setTimeout(r, delays[i]));
+      await new Promise((resolve) => setTimeout(resolve, delays[i]));
     }
   }
 }
@@ -97,9 +109,13 @@ function extrairFrames(
   duracaoMaxima = 999999,
 ) {
   return new Promise(async (resolve) => {
+    // Forçar conversão para número, caso a IA retorne string como "10s" ou "10.5"
+    const startNum = parseFloat(String(start).replace(/[^\d.]/g, '')) || 0;
+    const endNum = parseFloat(String(end).replace(/[^\d.]/g, '')) || 0;
+
     // Garantir que não vamos tentar buscar além do fim do vídeo
-    const s = Math.min(start, Math.max(0, duracaoMaxima - 2));
-    const e = Math.min(end, Math.max(0.5, duracaoMaxima - 0.5));
+    const s = Math.min(startNum, Math.max(0, duracaoMaxima - 2));
+    const e = Math.min(endNum, Math.max(0.5, duracaoMaxima - 0.5));
 
     const duracao = Math.max(e - s, 0.5);
     const intervalo = duracao / (numFrames + 1);
@@ -446,12 +462,20 @@ Retorne SOMENTE JSON válido:
   "recomendacao": "Excelente frame — expressão de triunfo bem definida"
 }`;
 
-    const result = await geminiFlash.generateContent([
-      { inlineData: { data: imageData, mimeType: "image/jpeg" } },
-      prompt,
-    ]);
-
-    const analise = JSON.parse(limparJson(result.response.text()));
+    const analise = await callWithRetry(
+      async () => {
+        const result = await geminiFlash.generateContent([
+          { inlineData: { data: imageData, mimeType: "image/jpeg" } },
+          prompt,
+        ]);
+        return result.response.text();
+      },
+      (rawText) => {
+        const cleaned = limparJson(rawText);
+        return JSON.parse(cleaned);
+      },
+      3
+    );
     res.json({ success: true, frame_path, analise });
   } catch (err) {
     console.error("❌ analyze-frame:", err.message);
@@ -494,7 +518,9 @@ Instruções de Inteligência e Adaptação dos Frames:
 - Recortes em vez de "quadradões": prefira indicar recortes focados apenas na silhueta/corpo do personagem principal, removendo fundos inúteis.
 - Emoções, Poses e Ajustes: instrua a modificação de reações e poses se o frame for apático. Indique a adição de pequenos detalhes nas bordas se o frame estiver levemente cortado.
 
-Retorne SOMENTE JSON válido com esta estrutura:
+Retorne SOMENTE JSON válido. Você deve ser extremamente criativo e adicionar camadas extras de 'vetor' (como relâmpagos, setas) e 'efeito_facial' (sorriso sinistro, sombras, olhos brilhantes) dependendo do contexto.
+Use esta estrutura base como inspiração para o quão detalhado você deve ser:
+
 {
   "spec_version": "2.0",
   "template": "${template}",
@@ -503,18 +529,28 @@ Retorne SOMENTE JSON válido com esta estrutura:
     {"id": "bg", "tipo": "gradiente", "ordem": 1, "cores": ["#0a0a1a", "#1a0a2e"], "direcao": "diagonal"},
     {"id": "hero_frame", "tipo": "imagem_frame", "ordem": 2, "papel_id": "hero",
       "posicao_canvas": {"x": 0, "y": 0, "w": 830, "h": 720},
-      "crop": {"x_pct": 5, "y_pct": 0, "w_pct": 85, "h_pct": 100},
+      "crop": {"x_pct": 5, "y_pct": 0, "w_pct": 85, "h_pct": 100, "justificativa": "foco no rosto"},
       "ajustes": {"brilho": 1.1, "contraste": 1.25, "saturacao": 1.3},
-      "efeito_borda": "fade_right"},
+      "efeito_borda": "fade_right",
+      "nota_edicao": "Instruções de edição e clima."},
+    {"id": "efeito_drama", "tipo": "efeito_facial", "ordem": 3,
+      "descricao": "Adicionar sorriso sinistro e sombras",
+      "parametros": {"adicionar_sorriso": true, "intensidade_sorriso": 0.85, "adicionar_sombras_olhos": true},
+      "regiao_alvo_aproximada": "rosto central"},
+    {"id": "relampago", "tipo": "vetor", "ordem": 4,
+      "posicao_canvas": {"x": 680, "y": 150, "w": 300, "h": 400},
+      "path": "M 700 200 L 750 300 L 730 320 L 800 450",
+      "estilo": {"preenchimento": "none", "traco": "#FFD700", "largura_traco": 5, "brilho": {"cor": "#FFD700", "intensidade": 0.9, "raio": 15}},
+      "transform": {"rotacao": -5, "escala": 1}},
     {"id": "texto_principal", "tipo": "texto", "ordem": 5,
-      "conteudo": "${textoPrincipal}",
+      "conteudo": "${textoPrincipal !== "TEXTO PRINCIPAL" ? textoPrincipal : "Crie um texto chamativo"}",
       "posicao_canvas": {"x": 820, "y": 60, "w": 430, "h": 160},
       "fonte": {"familia": "Impact", "tamanho": 78, "peso": "black"},
       "cor_texto": "#FFD700",
       "outline": {"cor": "#000000", "espessura": 5},
       "sombra": {"cor": "#000000", "x": 4, "y": 4, "blur": 10}},
     {"id": "subtexto", "tipo": "texto", "ordem": 6,
-      "conteudo": "${subtexto}",
+      "conteudo": "${subtexto !== "" ? subtexto : "Crie um subtitulo"}",
       "posicao_canvas": {"x": 820, "y": 230, "w": 430, "h": 90},
       "fonte": {"familia": "Arial Black", "tamanho": 26, "peso": "bold"},
       "cor_texto": "#FFFFFF",
@@ -526,19 +562,24 @@ Retorne SOMENTE JSON válido com esta estrutura:
   "metadata": {"anime": "${identificacao?.title || ""}", "template": "${template}", "gerado_em": "${new Date().toISOString()}"}
 }`;
 
-    const completion = await deepseek.chat.completions.create({
-      model: "deepseek-v4-pro",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.5,
-      max_tokens: 8192,
-    });
-
-    const msg = completion.choices[0].message;
-    const content = msg?.content || msg?.reasoning_content || "";
-    if (!content.trim())
-      throw new Error("A API retornou um conteúdo vazio mesmo após aguardar.");
-
-    const spec = JSON.parse(limparJson(content));
+    const spec = await callWithRetry(
+      async () => {
+        const completion = await deepseek.chat.completions.create({
+          model: "deepseek-v4-pro",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.5,
+          max_tokens: 8192,
+          response_format: { type: "json_object" }
+        });
+        const msg = completion.choices[0].message;
+        return msg?.content || msg?.reasoning_content || "";
+      },
+      (rawText) => {
+        const cleaned = limparJson(rawText);
+        return JSON.parse(cleaned);
+      },
+      3
+    );
 
     const specFile = `output/specs/spec_${Date.now()}.json`;
     fs.writeFileSync(specFile, JSON.stringify(spec, null, 2));
@@ -555,7 +596,7 @@ Retorne SOMENTE JSON válido com esta estrutura:
 // ═══════════════════════════════════════════════════════════════════════════════
 app.post("/api/generate-thumbnail", async (req, res) => {
   try {
-    const { spec, frames_selecionados } = req.body;
+    const { token, spec, frames_selecionados } = req.body;
     if (!spec) return res.status(400).json({ error: "spec é obrigatório." });
 
     // Lendo os frames como Base64 para enviar pra IA
@@ -577,10 +618,14 @@ Você é um diretor de arte. Gere a arte final da thumbnail do YouTube baseada n
 ${JSON.stringify(spec, null, 2)}
 
 **ANÁLISE PRÉVIA DOS FRAMES (USE ISSO PARA SABER O QUE CORRIGIR):**
-${JSON.stringify(frames_selecionados.map(f => ({
-  papel: f.papel_id,
-  analise_vision: f.analise // ou o objeto que contiver os dados no seu frontend
-})), null, 2)}
+${JSON.stringify(
+  frames_selecionados.map((f) => ({
+    papel: f.papel_id,
+    analise_vision: f.analise, // ou o objeto que contiver os dados no seu frontend
+  })),
+  null,
+  2,
+)}
 
 Instruções:
 - Utilize os frames fornecidos como base criativa, mas seja muito inteligente na adaptação.
@@ -645,6 +690,38 @@ Instruções:
       saved.push({ url: `/output-img/${filename}`, path: filepath });
     }
 
+    // Enviar para o Telegram se houver token e chat_id
+    if (token) {
+      const session = seoSessions[token];
+      if (session && session.telegram_token && session.chat_id && saved.length > 0) {
+        try {
+          const finalImagePath = saved[0].path;
+          const formData = new FormData();
+          const fileBuffer = fs.readFileSync(finalImagePath);
+          const fileBlob = new Blob([fileBuffer], { type: 'image/png' });
+          formData.append('chat_id', session.chat_id);
+          formData.append('photo', fileBlob, 'thumbnail.png');
+          
+          let caption = "✅ *Thumbnail Finalizada!*\n\n";
+          if (session.guia && session.guia.descricao) {
+             caption += `📝 *Descrição SEO:*\n${session.guia.descricao}\n\n`;
+          }
+          if (session.guia && session.guia.hashtags_youtube) {
+             caption += session.guia.hashtags_youtube.join(" ");
+          }
+          formData.append('caption', caption);
+          formData.append('parse_mode', 'Markdown');
+
+          await fetch(`https://api.telegram.org/bot${session.telegram_token}/sendPhoto`, {
+            method: 'POST',
+            body: formData
+          });
+        } catch (tgErr) {
+          console.error("❌ Erro ao enviar thumbnail para o Telegram:", tgErr.message);
+        }
+      }
+    }
+
     return res.json({
       success: true,
       images: saved,
@@ -662,16 +739,23 @@ app.use("/output-img", express.static("output"));
 // ROTA 7 — Criar Sessão SEO (chamado pelo bot Python)
 // ═══════════════════════════════════════════════════════════════════════════════
 app.post("/api/create-seo-session", (req, res) => {
-  const { project_id, chat_id, roteiro, identificacao } = req.body;
+  const { project_id, chat_id, roteiro, identificacao, telegram_token, message_id, guia } = req.body;
   if (!project_id || !roteiro || !identificacao)
-    return res.status(400).json({ error: "project_id, roteiro e identificacao são obrigatórios" });
+    return res
+      .status(400)
+      .json({ error: "project_id, roteiro e identificacao são obrigatórios" });
 
   const token = uuidv4();
   seoSessions[token] = {
-    project_id, chat_id,
-    roteiro, identificacao,
+    project_id,
+    chat_id,
+    roteiro,
+    identificacao,
+    telegram_token: telegram_token || null,
+    message_id: message_id || null,
+    guia: guia || null,
     analise: null,
-    created_at: Date.now()
+    created_at: Date.now(),
   };
   console.log(`[SEO] Sessão criada: ${token} para projeto ${project_id}`);
   res.json({ success: true, token });
@@ -682,14 +766,15 @@ app.post("/api/create-seo-session", (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 app.get("/api/session/:token", (req, res) => {
   const session = seoSessions[req.params.token];
-  if (!session) return res.status(404).json({ error: "Sessão não encontrada ou expirada" });
+  if (!session)
+    return res.status(404).json({ error: "Sessão não encontrada ou expirada" });
   res.json({
     success: true,
     project_id: session.project_id,
     identificacao: session.identificacao,
     roteiro: session.roteiro,
     analise: session.analise,
-    has_frames_cache: !!framesCache[req.params.token]
+    has_frames_cache: !!framesCache[req.params.token],
   });
 });
 
@@ -700,7 +785,9 @@ app.post("/api/auto-guide", async (req, res) => {
   try {
     const { roteiro, identificacao } = req.body;
     if (!roteiro || !identificacao)
-      return res.status(400).json({ error: "roteiro e identificacao são obrigatórios" });
+      return res
+        .status(400)
+        .json({ error: "roteiro e identificacao são obrigatórios" });
 
     const narrativa = roteiro
       .filter((s) => s.tipo === "NARRACAO" && s.translated_text)
@@ -709,7 +796,7 @@ app.post("/api/auto-guide", async (req, res) => {
 
     const prompt = `Você é expert em SEO para YouTube de anime recap em pt-BR, focado em viralização máxima.
 
-ANIME: ${identificacao.title} (${identificacao.title_jp || ''})
+ANIME: ${identificacao.title} (${identificacao.title_jp || ""})
 PROTAGONISTA: ${identificacao.protagonist}
 PERSONAGENS: ${(identificacao.characters || []).join(", ")}
 SINOPSE: ${identificacao.synopsis}
@@ -727,7 +814,7 @@ Retorne SOMENTE JSON válido, sem markdown, sem explicações:
 
     const content = await callWithRetry(async () => {
       const completion = await deepseek.chat.completions.create({
-        model: "deepseek-chat",
+        model: "deepseek-v4-pro",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.8,
         max_tokens: 4096,
@@ -740,7 +827,14 @@ Retorne SOMENTE JSON válido, sem markdown, sem explicações:
 
     // Salvar JSON para uso futuro
     const outPath = `output/guia_seo_${Date.now()}.json`;
-    fs.writeFileSync(outPath, JSON.stringify({ guia, identificacao, gerado_em: new Date().toISOString() }, null, 2));
+    fs.writeFileSync(
+      outPath,
+      JSON.stringify(
+        { guia, identificacao, gerado_em: new Date().toISOString() },
+        null,
+        2,
+      ),
+    );
 
     res.json({ success: true, guia, saved_path: outPath });
   } catch (err) {
@@ -756,17 +850,42 @@ app.post("/api/pre-analyze", async (req, res) => {
   try {
     const { token, video_path } = req.body;
     const session = seoSessions[token];
-    if (!session) return res.status(404).json({ error: "Sessão não encontrada" });
+    if (!session)
+      return res.status(404).json({ error: "Sessão não encontrada" });
     if (!video_path || !fs.existsSync(video_path))
-      return res.status(400).json({ error: `Vídeo não encontrado: ${video_path}` });
+      return res
+        .status(400)
+        .json({ error: `Vídeo não encontrado: ${video_path}` });
 
     // Responde imediatamente — executa em background
     res.json({ success: true, message: "Pré-análise iniciada em background" });
 
+    const updateTelegram = async (text) => {
+      if (session.telegram_token && session.chat_id && session.message_id) {
+        try {
+          await fetch(`https://api.telegram.org/bot${session.telegram_token}/editMessageText`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: session.chat_id,
+              message_id: session.message_id,
+              text: text,
+              parse_mode: 'Markdown'
+            })
+          });
+        } catch (e) {
+          console.error('[SEO] Erro ao atualizar Telegram:', e.message);
+        }
+      }
+    };
+
     // 1. Analisar roteiro para obter os 3 templates
     const narrativa = session.roteiro
       .filter((s) => s.translated_text && s.translated_text.trim())
-      .map((s) => `[${s.start?.toFixed(1) || 0}s-${s.end?.toFixed(1) || 0}s] ${s.translated_text}`)
+      .map(
+        (s) =>
+          `[${s.start?.toFixed(1) || 0}s-${s.end?.toFixed(1) || 0}s] ${s.translated_text}`,
+      )
       .join("\n");
 
     const prompt = `Você é diretor criativo de thumbnails virais de YouTube para anime.
@@ -780,34 +899,48 @@ ${narrativa}
 
 TEMPLATES: HEROI_REACAO, TENSAO_DUAL, OVER_POWERED, STRIP_REACOES, VIRADA_NARRATIVA
 
-Retorne SOMENTE JSON válido com top 3 templates, cada um com frames_necessarios contendo janelas_tempo.`;
+Retorne SOMENTE JSON válido. O formato OBRIGATÓRIO do root element deve ser um objeto contendo a chave "templates_recomendados" com um array dos top 3 templates. Cada template deve ter "template", "descricao" e "frames_necessarios". Cada "frames_necessarios" deve ter "papel_id", "papel_descricao", "emocao_buscada", e "janelas_tempo" (com "start" e "end").`;
 
     let analise;
     try {
-      const content = await callWithRetry(async () => {
-        const completion = await deepseek.chat.completions.create({
-          model: "deepseek-chat",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.7,
-          max_tokens: 4096,
-        });
-        const msg = completion.choices[0].message;
-        return msg?.content || msg?.reasoning_content || "";
-      });
-      analise = JSON.parse(limparJson(content));
+      analise = await callWithRetry(
+        async () => {
+          const completion = await deepseek.chat.completions.create({
+            model: "deepseek-v4-pro",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.7,
+            max_tokens: 4096,
+            response_format: { type: "json_object" }
+          });
+          const msg = completion.choices[0].message;
+          return msg?.content || msg?.reasoning_content || "";
+        },
+        (rawContent) => {
+          const cleaned = limparJson(rawContent);
+          console.log(`[SEO] JSON limpo (primeiros 300 chars): ${cleaned.substring(0, 300)}`);
+          return JSON.parse(cleaned);
+        },
+        3
+      );
       session.analise = analise;
-      console.log(`[SEO] Análise concluída para sessão ${token}: ${analise.templates_recomendados?.length} templates`);
+      console.log(
+        `[SEO] Análise concluída para sessão ${token}: ${analise.templates_recomendados?.length} templates`,
+      );
+      await updateTelegram("⏳ *extraindo frames*");
     } catch (err) {
       console.error(`[SEO] Erro na análise: ${err.message}`);
+      await updateTelegram("❌ Erro ao gerar thumbnails (análise falhou).");
       return;
     }
 
     // 2. Pré-extrair frames das 3 opções de template em paralelo
     let duracaoTotal = 999999;
-    await new Promise(r => ffmpeg.ffprobe(video_path, (err, meta) => {
-      if (!err && meta?.format?.duration) duracaoTotal = meta.format.duration;
-      r();
-    }));
+    await new Promise((r) =>
+      ffmpeg.ffprobe(video_path, (err, meta) => {
+        if (!err && meta?.format?.duration) duracaoTotal = meta.format.duration;
+        r();
+      }),
+    );
 
     framesCache[token] = {};
     const templates = analise.templates_recomendados || [];
@@ -815,10 +948,21 @@ Retorne SOMENTE JSON válido com top 3 templates, cada um com frames_necessarios
     for (let ti = 0; ti < templates.length; ti++) {
       const tmpl = templates[ti];
       framesCache[token][ti] = {};
-      for (const papel of (tmpl.frames_necessarios || [])) {
+      for (const papel of tmpl.frames_necessarios || []) {
         let allFrames = [];
-        for (const janela of (papel.janelas_tempo || [])) {
-          const frames = await extrairFrames(video_path, janela.inicio, janela.fim, `${token}_t${ti}`, papel.papel_id, 15, duracaoTotal);
+        for (const janela of papel.janelas_tempo || []) {
+          // Normalizar: aceita tanto inicio/fim (pt-BR) quanto start/end (en)
+          const jInicio = janela.inicio ?? janela.start ?? 0;
+          const jFim = janela.fim ?? janela.end ?? 0;
+          const frames = await extrairFrames(
+            video_path,
+            jInicio,
+            jFim,
+            `${token}_t${ti}`,
+            papel.papel_id,
+            15,
+            duracaoTotal,
+          );
           allFrames = allFrames.concat(frames);
         }
         allFrames.sort((a, b) => a.timestamp - b.timestamp);
@@ -827,8 +971,18 @@ Retorne SOMENTE JSON válido com top 3 templates, cada um com frames_necessarios
       console.log(`[SEO] Template ${ti} pré-extraído para sessão ${token}`);
     }
     console.log(`[SEO] Pré-extração completa para sessão ${token}`);
+    await updateTelegram(`✅ *sua sessão esta pronta acesse:*\nhttp://localhost:3333/?token=${token}`);
   } catch (err) {
     console.error("❌ pre-analyze:", err.message);
+    try {
+      if (session.telegram_token && session.chat_id && session.message_id) {
+        await fetch(`https://api.telegram.org/bot${session.telegram_token}/editMessageText`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: session.chat_id, message_id: session.message_id, text: "❌ Erro na pré-extração." })
+        });
+      }
+    } catch (e) {}
   }
 });
 
@@ -838,9 +992,11 @@ Retorne SOMENTE JSON válido com top 3 templates, cada um com frames_necessarios
 app.get("/api/session/:token/frames/:template_idx", (req, res) => {
   const { token, template_idx } = req.params;
   const cache = framesCache[token];
-  if (!cache) return res.status(404).json({ error: "Frames ainda não prontos, aguarde" });
+  if (!cache)
+    return res.status(404).json({ error: "Frames ainda não prontos, aguarde" });
   const templateFrames = cache[parseInt(template_idx)];
-  if (!templateFrames) return res.status(404).json({ error: "Template não encontrado no cache" });
+  if (!templateFrames)
+    return res.status(404).json({ error: "Template não encontrado no cache" });
   res.json({ success: true, frames: templateFrames });
 });
 

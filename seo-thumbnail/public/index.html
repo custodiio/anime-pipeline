@@ -304,60 +304,78 @@
           </div>
         </div>
       </div>
-
-      <!-- Análise Vision dos Frames -->
-      <div id="visionAnaliseContainer" class="hidden">
-        <div class="section-card">
-          <div class="card-header">
-            <h2>🤖 Análise Vision dos Frames</h2>
-          </div>
-          <div id="visionResultados"></div>
-          <div class="card-body">
-            <button class="btn-primary btn-large" id="btnGerarSpec">
-              <span class="btn-icon">⚡</span>
-              <span>Gerar Spec JSON da Thumbnail</span>
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
 
-    <!-- ── ETAPA 4: Spec JSON ─────────────────────────────────────────── -->
+    <!-- ── ETAPA 4: PIPELINE DE GERAÇÃO AUTOMÁTICO ─────────────────────────────────── -->
     <div class="thumb-step hidden" id="thumbStep4">
       <div class="section-card">
         <div class="card-header">
-          <h2>📐 Etapa 4 — Spec JSON da Thumbnail</h2>
-          <p>JSON de composição declarativo pronto para renderização com Python/Pillow.</p>
+          <h2>⚙️ Pipeline Automático de Capa</h2>
+          <p>As 3 etapas finais da composição da sua thumbnail.</p>
         </div>
         <div class="card-body">
-          <div class="spec-summary" id="specSummary"></div>
-          <div class="result-card-header" style="margin-bottom:8px">
-            <span></span>
-            <button class="btn-copy" data-copy="specJson">Copiar JSON</button>
-          </div>
-          <pre class="spec-json-box" id="specJson"></pre>
-          <button class="btn-outline" id="btnDownloadSpec" style="margin-top:16px">
-            ⬇️ Baixar spec.json
-          </button>
-          
-          <div style="margin-top:24px;">
-            <button class="btn-primary btn-large" id="btnRenderThumbnail">
-              <span class="btn-icon">✨</span>
-              <span>Gerar Thumbnail com IA (Gemini 3 Pro Image)</span>
-            </button>
-          </div>
+          <style>
+            .pipeline-step { border-left: 4px solid var(--border); padding-left: 20px; margin-left: 16px; position: relative; margin-bottom: 24px; padding-bottom: 12px; transition: border-color 0.4s ease; }
+            .pipeline-step:last-child { border-left: none; }
+            .pipeline-step.step-active { border-left-color: var(--primary); }
+            .pipeline-step.step-done { border-left-color: var(--green); }
+            .step-circle { position: absolute; left: -22px; top: -4px; width: 40px; height: 40px; border-radius: 50%; background: var(--bg-alt); border: 4px solid var(--border); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2rem; transition: all 0.3s ease; }
+            .step-circle.active { border-color: var(--primary); color: var(--primary); box-shadow: 0 0 16px rgba(99,102,241,0.5); animation: pulseGlow 1.5s infinite; }
+            .step-circle.done { background: var(--green); border-color: var(--green); color: #fff; animation: none; box-shadow: 0 0 12px rgba(34,197,94,0.4); }
+            .step-header h3 { margin: 0; padding-top: 4px; font-size: 1.1rem; color: var(--text); }
+            .step-header .step-status { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+            .step-header .step-status.loading { color: var(--primary); }
+            .step-header .step-status.complete { color: var(--green); }
+            .step-content { margin-top: 16px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; border: 1px solid var(--border); }
+            .step-content.hidden { display: none; }
+            @keyframes pulseGlow {
+              0%, 100% { box-shadow: 0 0 10px rgba(99,102,241,0.3); }
+              50% { box-shadow: 0 0 24px rgba(99,102,241,0.7); }
+            }
+            .spinner-inline { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--primary); border-top-color: transparent; border-radius: 50%; animation: spinInline 0.8s linear infinite; vertical-align: middle; margin-right: 6px; }
+            @keyframes spinInline { to { transform: rotate(360deg); } }
+          </style>
 
-          <!-- Resultado Renderização -->
-          <div id="renderResultContainer" class="hidden" style="margin-top: 24px;">
-            <h3 style="margin-bottom: 12px;">✅ Thumbnail Gerada!</h3>
-            <img id="renderedThumbnailImage" src="" alt="Thumbnail Gerada" style="max-width: 100%; border-radius: 8px; border: 1px solid var(--border);" />
-            <button class="btn-outline" id="btnDownloadThumbnail" style="margin-top:16px">
-              ⬇️ Baixar Imagem (.png)
-            </button>
+          <!-- Ação 1 -->
+          <div class="pipeline-step" id="plStep1">
+            <div class="step-circle" id="plCircle1">1</div>
+            <div class="step-header">
+              <h3>Validando frames</h3>
+              <div class="step-status" id="plStatus1">Aguardando...</div>
+            </div>
+            <div class="step-content hidden" id="plContent1">
+              <div id="visionResultados"></div>
+            </div>
+          </div>
+          
+          <!-- Ação 2 -->
+          <div class="pipeline-step" id="plStep2">
+            <div class="step-circle" id="plCircle2">2</div>
+            <div class="step-header">
+              <h3>Gerando Spec JSON</h3>
+              <div class="step-status" id="plStatus2">Aguardando...</div>
+            </div>
+            <div class="step-content hidden" id="plContent2">
+              <pre class="spec-json-box" id="specJson"></pre>
+            </div>
+          </div>
+          
+          <!-- Ação 3 -->
+          <div class="pipeline-step" id="plStep3">
+            <div class="step-circle" id="plCircle3">3</div>
+            <div class="step-header">
+              <h3>Gerando Imagem</h3>
+              <div class="step-status" id="plStatus3">Aguardando...</div>
+            </div>
+            <div class="step-content hidden" id="plContent3">
+              <h4 style="margin-bottom:12px; color:var(--green)">✅ Capa Gerada com Sucesso!</h4>
+              <img id="renderedThumbnailImage" src="" style="width:100%; border-radius:8px; border:1px solid var(--border); margin-bottom:16px;" />
+              <button class="btn-outline" id="btnDownloadThumbnail">⬇️ Baixar Capa (.png)</button>
+            </div>
           </div>
 
           <button class="btn-outline secondary" id="btnNovaIteracao" style="margin-top:24px">
-            🔄 Nova Iteração (ajustar frames)
+            🔄 Reiniciar (Ajustar frames)
           </button>
         </div>
       </div>

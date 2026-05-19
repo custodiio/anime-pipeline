@@ -11,8 +11,8 @@ try:
     def _ks(n):
         try: return _s.get_secret(n)
         except: return ""
-    DATABASE_URL = "postgresql://pipelineadmin:P1pel!ne_2026@anime-pipeline-db.postgres.database.azure.com:5432/postgres?sslmode=require"
-    PROJECT_ID = "f24d19ea-f2bd-42ce-877c-7777e5efe746"
+    DATABASE_URL = _ks("DATABASE_URL")
+    PROJECT_ID = _ks("PIPELINE_PROJECT_ID")
     PIPELINE_WEBHOOK_URL = _ks("PIPELINE_WEBHOOK_URL")
 except:
     DATABASE_URL = os.getenv("DATABASE_URL", "")

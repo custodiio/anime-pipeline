@@ -25,11 +25,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   checkHealth();
 
   const params = new URLSearchParams(window.location.search);
-  const token = params.get('token');
+  let token = params.get('token');
   if (token) {
-    State.seoToken = token;
-    State.sessaoMode = true;
-    await carregarSessao(token);
+    // Extrai apenas o UUID para evitar erros caso a URL tenha sido colada duplicada
+    const uuidMatch = token.match(/[a-f0-9-]{36}/i);
+    if (uuidMatch) {
+      token = uuidMatch[0];
+      State.seoToken = token;
+      State.sessaoMode = true;
+      
+      // Limpa a URL visível no navegador
+      window.history.replaceState({}, '', `/?token=${token}`);
+      
+      await carregarSessao(token);
+    }
   }
 });
 
@@ -301,12 +310,15 @@ function setupThumb() {
     document.getElementById('btnExtrairFrames').disabled = true;
   });
 
-  document.getElementById('btnExtrairFrames').addEventListener('click', extrairFrames);
-  document.getElementById('btnConfirmarFrames').addEventListener('click', analisarFramesSelecionados);
-  document.getElementById('btnGerarSpec').addEventListener('click', gerarSpec);
-  document.getElementById('btnDownloadSpec').addEventListener('click', downloadSpec);
-  document.getElementById('btnRenderThumbnail').addEventListener('click', gerarThumbnailFinalIA);
-  document.getElementById('btnNovaIteracao').addEventListener('click', () => goToStep(3));
+  document.getElementById('btnExtrairFrames')?.addEventListener('click', extrairFrames);
+  document.getElementById('btnConfirmarFrames')?.addEventListener('click', analisarFramesSelecionados);
+  document.getElementById('btnDownloadThumbnail')?.addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = document.getElementById('renderedThumbnailImage').src;
+    a.download = `youtube_thumbnail_${Date.now()}.png`;
+    a.click();
+  });
+  document.getElementById('btnNovaIteracao')?.addEventListener('click', () => goToStep(3));
 }
 
 function setVideoFile(file) {
@@ -364,25 +376,49 @@ const TEMPLATE_COLORS = {
 };
 
 function renderTemplates(analise) {
-  document.getElementById('resumoRoteiro').innerHTML = `
-    <strong>💫 Emoção dominante:</strong> ${analise.emocao_dominante}<br/>
-    <strong>📖 Resumo:</strong> ${analise.resumo_para_thumbnail}`;
+  // Suporte a ambos os formatos de resposta da IA
+  const resumo = analise.resumo_para_thumbnail || analise.resumo || '';
+  const emocao = analise.emocao_dominante || '';
+  document.getElementById('resumoRoteiro').innerHTML =
+    emocao
+      ? `<strong>💫 Emoção dominante:</strong> ${emocao}<br/><strong>📖 Resumo:</strong> ${resumo}`
+      : `<strong>📖 Análise:</strong> ${resumo || 'Templates prontos para seleção.'}`;
 
   const grid = document.getElementById('templatesGrid');
   grid.innerHTML = (analise.templates_recomendados || []).map((t, i) => {
-    const cor = TEMPLATE_COLORS[t.template] || '#7c6af7';
+    // Normalizar campos — IA pode retornar template_id OU template
+    const templateId = t.template_id || t.template || 'CUSTOM';
+    const cor = TEMPLATE_COLORS[templateId] || '#7c6af7';
+    // Normalizar texto exibível
+    const titulo  = t.titulo    || t.texto_capa  || templateId;
+    const motivo  = t.motivo    || t.justificativa || t.descricao || '';
+    const score   = t.score != null ? t.score : null;
+
     const framesHtml = (t.frames_necessarios || []).map(f => {
-      const tempos = (f.janelas_tempo || [{inicio: f.timestamp_inicio, fim: f.timestamp_fim}])
-        .map(j => `[${j.inicio}s–${j.fim}s]`).join(' | ');
-      return `<div class="frame-needed-chip">📍 ${f.papel_id}: ${f.personagem} ${tempos}</div>`;
+      const janelas = f.janelas_tempo && f.janelas_tempo.length
+        ? f.janelas_tempo
+        : [{ inicio: f.timestamp_inicio ?? 0, fim: f.timestamp_fim ?? 0 }];
+      const tempos = janelas.map(j => {
+        const ini = j.inicio ?? j.start ?? 0;
+        const fim = j.fim ?? j.end ?? 0;
+        return `[${ini}s–${fim}s]`;
+      }).join(' | ');
+      const emocao = f.emocao_buscada ? `<span style="color:var(--text-dim);font-size:11px;display:block;margin-top:2px">🎭 ${f.emocao_buscada}</span>` : '';
+      return `<div class="frame-needed-chip">📍 <strong>${f.papel_id || f.personagem || '?'}</strong>: ${f.papel_descricao || f.descricao || f.personagem || ''} ${tempos}${emocao}</div>`;
     }).join('');
+
+    const numFrames = (t.frames_necessarios || []).length;
+
     return `
       <div class="template-card" data-idx="${i}" onclick="selecionarTemplate(${i})">
-        <span class="template-score">${t.score}/100</span>
-        <div class="template-badge" style="background:${cor}22;color:${cor};border:1px solid ${cor}44">${t.template.replace('_', ' ')}</div>
-        <div class="template-name">${t.texto_capa}</div>
-        <div class="template-desc">${t.justificativa}</div>
-        <div class="template-texto">🎨 Paleta: ${t.paleta}</div>
+        ${score != null ? `<span class="template-score">${score}/100</span>` : ''}
+        <div class="template-badge" style="background:${cor}22;color:${cor};border:1px solid ${cor}44">${templateId.replace(/_/g, ' ')}</div>
+        <div class="template-name">${titulo}</div>
+        ${motivo ? `<div class="template-desc">${motivo}</div>` : ''}
+        <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
+          <span style="font-size:11px;padding:3px 8px;border-radius:12px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);color:var(--primary)">🎬 ${numFrames} personagen${numFrames > 1 ? 's' : ''}</span>
+          ${t.paleta ? `<span style="font-size:11px;padding:3px 8px;border-radius:12px;background:rgba(245,197,24,0.1);border:1px solid rgba(245,197,24,0.2);color:#f5c518">🎨 ${t.paleta}</span>` : ''}
+        </div>
         <div class="template-frames-needed">${framesHtml}</div>
       </div>`;
   }).join('');
@@ -402,7 +438,8 @@ function selecionarTemplate(idx) {
     carregarFramesCached(idx);
   }
 
-  toast(`Template "${State.templateSelecionado.template}" selecionado`, 'success');
+  const templateId = State.templateSelecionado.template_id || State.templateSelecionado.template || 'template';
+  toast(`Template "${templateId.replace(/_/g, ' ')}" selecionado`, 'success');
 }
 
 async function carregarFramesCached(templateIdx) {
@@ -438,14 +475,17 @@ function renderFramesInfo(frames) {
     <h4 style="font-size:14px;color:var(--text2);margin-bottom:10px;">Frames que serão extraídos do vídeo:</h4>
     <div class="frames-info-grid">
       ${frames.map(f => {
-        const tempos = (f.janelas_tempo || [{inicio: f.timestamp_inicio, fim: f.timestamp_fim}])
+        const tempos = (f.janelas_tempo || [{ inicio: f.timestamp_inicio ?? 0, fim: f.timestamp_fim ?? 0 }])
           .map(j => `${j.inicio}s → ${j.fim}s`).join(' / ');
+        // Suporte aos dois formatos de campo
+        const nome        = f.personagem || f.papel_id || '?';
+        const descricao   = f.descricao  || f.emocao_buscada || '';
         return `
         <div class="frame-info-card">
           <div class="frame-info-papel">${f.papel_id.toUpperCase()}</div>
-          <div class="frame-info-personagem">👤 ${f.personagem}</div>
+          <div class="frame-info-personagem">👤 ${nome}</div>
           <div class="frame-info-time">⏱ ${tempos}</div>
-          <div class="frame-info-emocao">${f.emocao_buscada}</div>
+          ${descricao ? `<div class="frame-info-emocao">${descricao}</div>` : ''}
         </div>`;
       }).join('')}
     </div>`;
@@ -484,13 +524,19 @@ async function extrairFrames() {
 // ─── Renderizar Grid de Frames ────────────────────────────────────────────────
 function renderFramesExtraidos(resultados) {
   const container = document.getElementById('framesPorPapel');
-  container.innerHTML = resultados.map(papel => `
+  container.innerHTML = resultados.map(papel => {
+    const nome = papel.personagem || papel.papel_id || '?';
+    const desc = papel.descricao || papel.papel_descricao || papel.emocao_buscada || '';
+    const tempos = (papel.janelas_tempo || [{ inicio: papel.timestamp_inicio ?? 0, fim: papel.timestamp_fim ?? 0 }])
+      .map(j => `${j.inicio}s – ${j.fim}s`).join(' / ');
+      
+    return `
     <div class="papel-section">
       <div class="papel-header">
-        <span class="papel-badge">${papel.papel_id}</span>
-        <span class="papel-title">${papel.papel_descricao}</span>
-        <span class="papel-time">⏱ ${(papel.janelas_tempo || [{inicio: papel.timestamp_inicio, fim: papel.timestamp_fim}]).map(j => `${j.inicio}s – ${j.fim}s`).join(' / ')}</span>
-        <span class="papel-desc">👤 ${papel.personagem}</span>
+        <span class="papel-badge">${papel.papel_id.toUpperCase()}</span>
+        ${desc ? `<span class="papel-title">${desc}</span>` : ''}
+        <span class="papel-time">⏱ ${tempos}</span>
+        <span class="papel-desc">👤 ${nome}</span>
       </div>
       <div class="frames-grid" id="grid-${papel.papel_id}">
         ${(papel.frames_extraidos || []).map(f => `
@@ -501,7 +547,8 @@ function renderFramesExtraidos(resultados) {
             <div class="frame-selected-badge">✓ Selecionado</div>
           </div>`).join('')}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   atualizarSelecaoResumo();
 }
@@ -539,7 +586,47 @@ function atualizarSelecaoResumo() {
 // ─── Análise Vision dos Frames Selecionados ───────────────────────────────────
 async function analisarFramesSelecionados() {
   const necessarios = State.templateSelecionado.frames_necessarios;
-  showLoading('Analisando frames com Gemini Vision...', 'Avaliando qualidade visual e composição de cada frame');
+  goToStep(4);
+  
+  // Helper para atualizar status do step
+  function setStepLoading(n) {
+    const circle = document.getElementById(`plCircle${n}`);
+    const status = document.getElementById(`plStatus${n}`);
+    const step = document.getElementById(`plStep${n}`);
+    const content = document.getElementById(`plContent${n}`);
+    circle.classList.add('active');
+    step.classList.add('step-active');
+    status.className = 'step-status loading';
+    status.innerHTML = '<span class="spinner-inline"></span>Processando...';
+    content.classList.remove('hidden');
+  }
+  function setStepDone(n, msg) {
+    const circle = document.getElementById(`plCircle${n}`);
+    const status = document.getElementById(`plStatus${n}`);
+    const step = document.getElementById(`plStep${n}`);
+    circle.classList.remove('active');
+    circle.classList.add('done');
+    circle.innerHTML = '✓';
+    step.classList.remove('step-active');
+    step.classList.add('step-done');
+    status.className = 'step-status complete';
+    status.textContent = msg || 'Concluído ✓';
+  }
+  function setStepError(n, msg) {
+    const circle = document.getElementById(`plCircle${n}`);
+    const status = document.getElementById(`plStatus${n}`);
+    circle.classList.remove('active');
+    circle.style.borderColor = 'var(--red)';
+    circle.style.color = 'var(--red)';
+    circle.innerHTML = '✗';
+    status.className = 'step-status';
+    status.style.color = 'var(--red)';
+    status.textContent = msg || 'Erro';
+  }
+
+  // ── ETAPA 1: Validação Vision ──
+  setStepLoading(1);
+  document.getElementById('visionResultados').innerHTML = '<div style="padding:16px; color:var(--text-dim)"><span class="spinner-inline"></span> Enviando frames para Gemini Vision... aguarde.</div>';
 
   try {
     const resultados = {};
@@ -560,20 +647,19 @@ async function analisarFramesSelecionados() {
       });
       const data = await r.json();
       if (data.success) resultados[f.papel_id] = { frame: sel, analise: data.analise };
+      else throw new Error(data.error);
     }
 
     State.visionResultados = resultados;
     renderVisionResultados(resultados);
-    document.getElementById('visionAnaliseContainer').classList.remove('hidden');
-    toast('Análise visual concluída! Gerando Spec JSON automaticamente...', 'success');
+    setStepDone(1, `${Object.keys(resultados).length} frames analisados`);
     
-    // Auto-flow: gerar spec automaticamente após vision
-    hideLoading();
-    await gerarSpec();
+    // ── ETAPA 2: Spec JSON ──
+    await gerarSpec(setStepLoading, setStepDone, setStepError);
   } catch (err) {
-    toast(`Erro: ${err.message}`, 'error');
-  } finally {
-    hideLoading();
+    document.getElementById('visionResultados').innerHTML = `<div style="color:var(--red)">Erro: ${err.message}</div>`;
+    setStepError(1, err.message);
+    toast(`Erro na Análise Vision: ${err.message}`, 'error');
   }
 }
 
@@ -583,24 +669,24 @@ function renderVisionResultados(resultados) {
     <div class="vision-card">
       <div class="vision-thumb"><img src="${frame.url}" alt="${papelId}" /></div>
       <div>
-        <div style="font-size:14px;font-weight:700;margin-bottom:8px;color:var(--accent)">${papelId.toUpperCase()} — t=${frame.timestamp}s</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:8px;color:var(--accent)">${papelId.toUpperCase()}</div>
         <div class="vision-score-row">
           <span class="vision-score-chip">🎨 Visual: ${a.score_visual}/10</span>
           <span class="vision-score-chip">💫 Emoção: ${a.score_emocao}/10</span>
           <span class="vision-score-chip" style="background:rgba(34,197,94,0.1);border-color:rgba(34,197,94,0.3);color:var(--green)">⭐ Geral: ${a.score_geral}/100</span>
         </div>
-        <div class="vision-list">
+        <div class="vision-list" style="margin-top:8px;">
           ${(a.pontos_fortes || []).map(p => `<span class="vision-tag" style="color:var(--green)">✓ ${p}</span>`).join('')}
           ${(a.pontos_fracos || []).map(p => `<span class="vision-tag" style="color:var(--red)">✗ ${p}</span>`).join('')}
         </div>
-        <div class="vision-rec">${a.recomendacao || ''}</div>
       </div>
     </div>`).join('');
 }
 
 // ─── Etapa 4: Gerar Spec JSON ─────────────────────────────────────────────────
-async function gerarSpec() {
-  showLoading('Gerando Spec JSON...', 'DeepSeek V3 montando o blueprint da thumbnail');
+async function gerarSpec(setStepLoading, setStepDone, setStepError) {
+  setStepLoading(2);
+  document.getElementById('specJson').textContent = 'Consultando DeepSeek V4 Pro... montando blueprint...';
 
   try {
     const framesSelecionados = Object.entries(State.framesSelecionados).map(([papelId, frame]) => ({
@@ -624,44 +710,25 @@ async function gerarSpec() {
     if (!data.success) throw new Error(data.error);
 
     State.specFinal = data.spec;
-    renderSpec(data.spec);
-    goToStep(4);
-    toast('Spec JSON gerado!', 'success');
+    document.getElementById('specJson').textContent = JSON.stringify(data.spec, null, 2);
+    setStepDone(2, 'Blueprint criado');
+
+    // ── ETAPA 3: Gerar Imagem ──
+    await gerarThumbnailFinalIA(setStepLoading, setStepDone, setStepError);
   } catch (err) {
-    toast(`Erro: ${err.message}`, 'error');
-  } finally {
-    hideLoading();
+    document.getElementById('specJson').textContent = `Erro: ${err.message}`;
+    setStepError(2, err.message);
+    toast(`Erro no Spec JSON: ${err.message}`, 'error');
   }
 }
 
-function renderSpec(spec) {
-  document.getElementById('specJson').textContent = JSON.stringify(spec, null, 2);
-
-  document.getElementById('specSummary').innerHTML = `
-    <span class="spec-chip">📐 ${spec.template}</span>
-    <span class="spec-chip">🎨 ${spec.paleta?.nome || ''}</span>
-    <span class="spec-chip">📏 ${spec.canvas?.width}×${spec.canvas?.height}</span>
-    <span class="spec-chip">🗂 ${(spec.camadas || []).length} camadas</span>
-    <span class="spec-chip">🎬 ${State.identificacao?.title || ''}</span>`;
-
-  // Botão copiar spec
-  document.querySelector('[data-copy="specJson"]')?.addEventListener('click', () => {
-    navigator.clipboard.writeText(JSON.stringify(spec, null, 2)).then(() => toast('JSON copiado!', 'success'));
-  });
-}
-
-function downloadSpec() {
-  if (!State.specFinal) return;
-  const blob = new Blob([JSON.stringify(State.specFinal, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `thumbnail_spec_${Date.now()}.json`;
-  a.click();
-}
-
-async function gerarThumbnailFinalIA() {
-  if (!State.specFinal) return;
-  showLoading('Gerando arte final da Thumbnail...', 'A IA (Gemini 3 Pro Image) está criando a imagem baseada nos frames e no JSON.');
+// ─── Renderizar Capa ───────────────────────────────────────────────────────────
+async function gerarThumbnailFinalIA(setStepLoading, setStepDone, setStepError) {
+  setStepLoading(3);
+  
+  const resultImage = document.getElementById('renderedThumbnailImage');
+  resultImage.src = ''; // Limpar img anterior
+  resultImage.alt = 'Gerando imagem... aguarde...';
 
   try {
     const framesSelecionados = Object.entries(State.framesSelecionados).map(([papelId, frame]) => ({
@@ -675,6 +742,7 @@ async function gerarThumbnailFinalIA() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        token: State.seoToken,
         spec: State.specFinal,
         frames_selecionados: framesSelecionados
       })
@@ -684,31 +752,18 @@ async function gerarThumbnailFinalIA() {
     if (!data.success) throw new Error(data.error);
 
     if (data.images && data.images.length > 0) {
-      const resultContainer = document.getElementById('renderResultContainer');
-      const resultImage = document.getElementById('renderedThumbnailImage');
-      const btnDownload = document.getElementById('btnDownloadThumbnail');
+      resultImage.src = data.images[0].url;
+      setStepDone(3, 'Capa renderizada!');
       
-      const imgInfo = data.images[0];
-      resultImage.src = imgInfo.url;
-      resultContainer.classList.remove('hidden');
-      
-      btnDownload.onclick = () => {
-        const a = document.createElement('a');
-        a.href = imgInfo.url;
-        a.download = `youtube_thumbnail_${Date.now()}.png`;
-        a.click();
-      };
-      
-      toast('Arte final gerada com sucesso!', 'success');
-      // Scroll to image
-      setTimeout(() => resultContainer.scrollIntoView({ behavior: 'smooth' }), 200);
+      toast('Capa gerada com sucesso!', 'success');
+      document.getElementById('btnNovaIteracao').classList.remove('hidden');
     } else {
       throw new Error("Nenhuma imagem retornada pela API.");
     }
   } catch (err) {
+    resultImage.alt = `Erro: ${err.message}`;
+    setStepError(3, err.message);
     toast(`Erro ao gerar thumbnail: ${err.message}`, 'error');
-  } finally {
-    hideLoading();
   }
 }
 
