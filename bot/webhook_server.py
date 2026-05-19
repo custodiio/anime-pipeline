@@ -136,61 +136,256 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
             self.end_headers()
             html = """
             <!DOCTYPE html>
-            <html>
-            <head><title>Upload Local AnimeRecap</title>
+            <html lang="pt-BR">
+            <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <meta name="apple-mobile-web-app-capable" content="yes">
+            <title>Upload AnimeRecap</title>
             <style>
-                body { font-family: sans-serif; padding: 40px; background: #121212; color: #fff; }
-                .container { max-width: 600px; margin: auto; background: #1e1e1e; padding: 30px; border-radius: 10px; }
-                h2 { color: #bb86fc; }
-                .drop-zone { border: 2px dashed #bb86fc; padding: 40px; text-align: center; border-radius: 10px; margin-bottom: 20px; cursor: pointer; }
-                .progress { height: 20px; background: #333; border-radius: 10px; overflow: hidden; display: none; margin-top: 10px; }
-                .progress-bar { height: 100%; background: #03dac6; width: 0%; transition: width 0.2s; }
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: linear-gradient(135deg, #0d0d1a 0%, #1a0a2e 50%, #0d1a2e 100%);
+                    color: #e0e0e0;
+                    min-height: 100vh;
+                    padding: 16px;
+                    -webkit-tap-highlight-color: transparent;
+                }
+                .container {
+                    max-width: 540px;
+                    margin: 0 auto;
+                    background: rgba(30, 30, 46, 0.85);
+                    backdrop-filter: blur(12px);
+                    -webkit-backdrop-filter: blur(12px);
+                    padding: 28px 20px;
+                    border-radius: 16px;
+                    border: 1px solid rgba(187, 134, 252, 0.15);
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+                }
+                h2 {
+                    color: #bb86fc;
+                    font-size: 1.4rem;
+                    margin-bottom: 8px;
+                    text-align: center;
+                }
+                .subtitle {
+                    text-align: center;
+                    font-size: 0.85rem;
+                    color: #888;
+                    margin-bottom: 24px;
+                }
+                .upload-zone {
+                    border: 2px dashed #bb86fc;
+                    padding: 32px 16px;
+                    text-align: center;
+                    border-radius: 12px;
+                    margin-bottom: 12px;
+                    cursor: pointer;
+                    transition: all 0.25s ease;
+                    position: relative;
+                    overflow: hidden;
+                    -webkit-user-select: none;
+                    user-select: none;
+                }
+                .upload-zone:active {
+                    transform: scale(0.97);
+                    background: rgba(187, 134, 252, 0.08);
+                }
+                .upload-zone.audio-zone {
+                    border-color: #03dac6;
+                }
+                .upload-zone.audio-zone:active {
+                    background: rgba(3, 218, 198, 0.08);
+                }
+                .upload-zone .icon {
+                    font-size: 2.4rem;
+                    margin-bottom: 8px;
+                    display: block;
+                }
+                .upload-zone .label {
+                    font-size: 1rem;
+                    font-weight: 600;
+                }
+                .upload-zone .hint {
+                    font-size: 0.75rem;
+                    color: #888;
+                    margin-top: 4px;
+                }
+                .upload-zone input[type="file"] {
+                    position: absolute;
+                    top: 0; left: 0;
+                    width: 100%; height: 100%;
+                    opacity: 0;
+                    cursor: pointer;
+                    font-size: 200px; /* iOS hack to make entire zone clickable */
+                }
+                .upload-zone.success {
+                    border-color: #4CAF50 !important;
+                    background: rgba(76, 175, 80, 0.08);
+                }
+                .upload-zone.uploading {
+                    border-color: #FFB74D !important;
+                    opacity: 0.85;
+                    pointer-events: none;
+                }
+                .progress {
+                    height: 6px;
+                    background: rgba(255,255,255,0.08);
+                    border-radius: 6px;
+                    overflow: hidden;
+                    margin-bottom: 20px;
+                    opacity: 0;
+                    transition: opacity 0.3s;
+                }
+                .progress.active { opacity: 1; }
+                .progress-bar {
+                    height: 100%;
+                    background: linear-gradient(90deg, #bb86fc, #03dac6);
+                    width: 0%;
+                    transition: width 0.2s;
+                    border-radius: 6px;
+                }
+                .progress.audio-prog .progress-bar {
+                    background: linear-gradient(90deg, #03dac6, #00bfa5);
+                }
+                #status {
+                    margin-top: 16px;
+                    padding: 12px;
+                    border-radius: 8px;
+                    font-size: 0.85rem;
+                    line-height: 1.6;
+                    white-space: pre-wrap;
+                    display: none;
+                    background: rgba(3, 218, 198, 0.06);
+                    border: 1px solid rgba(3, 218, 198, 0.15);
+                    color: #03dac6;
+                }
+                #status.visible { display: block; }
+                .footer-tip {
+                    margin-top: 20px;
+                    font-size: 0.78rem;
+                    color: #777;
+                    text-align: center;
+                    line-height: 1.5;
+                }
+                .footer-tip b { color: #bb86fc; }
+
+                @media (max-width: 480px) {
+                    body { padding: 12px 8px; }
+                    .container { padding: 20px 14px; border-radius: 12px; }
+                    h2 { font-size: 1.2rem; }
+                    .upload-zone { padding: 28px 12px; }
+                    .upload-zone .icon { font-size: 2rem; }
+                }
             </style>
             </head>
             <body>
             <div class="container">
-                <h2>Upload Local (Ignora limite de 20MB)</h2>
-                <p>Arraste seu arquivo de vídeo e áudio gigante aqui. O upload é instantâneo pois é no seu próprio PC.</p>
-                <div class="drop-zone" id="drop-video">Soltar VÍDEO (.mp4, .mkv)</div>
+                <h2>📤 Upload AnimeRecap</h2>
+                <p class="subtitle">Toque para selecionar ou arraste o arquivo</p>
+
+                <div class="upload-zone" id="zone-video">
+                    <span class="icon">🎬</span>
+                    <span class="label">Selecionar VÍDEO</span>
+                    <span class="hint">.mp4, .mkv, .avi, .mov, .webm</span>
+                    <input type="file" id="input-video" accept="video/*,.mkv">
+                </div>
                 <div class="progress" id="prog-video"><div class="progress-bar" id="bar-video"></div></div>
-                <div class="drop-zone" id="drop-audio" style="border-color: #03dac6;">Soltar ÁUDIO (.mp3, .wav)</div>
-                <div class="progress" id="prog-audio"><div class="progress-bar" id="bar-audio"></div></div>
-                <div id="status" style="margin-top:20px; color: #03dac6;"></div>
-                <p style="margin-top:20px; font-size:14px; color:#aaa;">Após fazer o upload dos dois, vá no Telegram e digite <b>/usar_local Nome do Anime</b></p>
+
+                <div class="upload-zone audio-zone" id="zone-audio">
+                    <span class="icon">🎵</span>
+                    <span class="label">Selecionar ÁUDIO</span>
+                    <span class="hint">.mp3, .wav, .m4a, .aac, .ogg</span>
+                    <input type="file" id="input-audio" accept="audio/*">
+                </div>
+                <div class="progress audio-prog" id="prog-audio"><div class="progress-bar" id="bar-audio"></div></div>
+
+                <div id="status"></div>
+                <p class="footer-tip">Após enviar os dois arquivos, vá no Telegram e use<br><b>/usar_local Nome do Anime</b></p>
             </div>
             <script>
-                function setupDrop(id, type) {
-                    const zone = document.getElementById('drop-' + id);
-                    const bar = document.getElementById('bar-' + id);
-                    const prog = document.getElementById('prog-' + id);
-                    zone.ondragover = e => { e.preventDefault(); zone.style.background = '#333'; };
-                    zone.ondragleave = e => { e.preventDefault(); zone.style.background = 'transparent'; };
-                    zone.ondrop = e => {
-                        e.preventDefault();
-                        zone.style.background = 'transparent';
-                        const file = e.dataTransfer.files[0];
-                        if(!file) return;
-                        zone.innerText = "Fazendo upload de: " + file.name;
-                        prog.style.display = 'block';
-                        
-                        const xhr = new XMLHttpRequest();
-                        xhr.open('POST', '/api/upload-file?type=' + type + '&name=' + encodeURIComponent(file.name));
-                        xhr.upload.onprogress = ev => {
-                            if(ev.lengthComputable) {
-                                bar.style.width = (ev.loaded / ev.total * 100) + '%';
+            (function() {
+                function setupUpload(zoneId, inputId, barId, progId, fileType) {
+                    var zone = document.getElementById(zoneId);
+                    var input = document.getElementById(inputId);
+                    var bar = document.getElementById(barId);
+                    var prog = document.getElementById(progId);
+                    var statusEl = document.getElementById('status');
+                    var labelEl = zone.querySelector('.label');
+                    var hintEl = zone.querySelector('.hint');
+
+                    function doUpload(file) {
+                        if (!file) return;
+                        zone.classList.add('uploading');
+                        labelEl.textContent = 'Enviando: ' + file.name;
+                        hintEl.textContent = 'Aguarde...';
+                        prog.classList.add('active');
+                        bar.style.width = '0%';
+
+                        var xhr = new XMLHttpRequest();
+                        xhr.open('POST', '/api/upload-file?type=' + fileType + '&name=' + encodeURIComponent(file.name));
+
+                        xhr.upload.onprogress = function(ev) {
+                            if (ev.lengthComputable) {
+                                var pct = Math.round(ev.loaded / ev.total * 100);
+                                bar.style.width = pct + '%';
+                                hintEl.textContent = pct + '%';
                             }
                         };
-                        xhr.onload = () => {
-                            if(xhr.status === 200) {
-                                document.getElementById('status').innerText += "✅ " + file.name + " salvo no PC!\\n";
-                                zone.style.borderColor = '#4CAF50';
+
+                        xhr.onload = function() {
+                            zone.classList.remove('uploading');
+                            if (xhr.status === 200) {
+                                zone.classList.add('success');
+                                labelEl.textContent = '✅ ' + file.name;
+                                hintEl.textContent = 'Enviado com sucesso!';
+                                statusEl.classList.add('visible');
+                                statusEl.textContent += '✅ ' + file.name + ' salvo!\\n';
+                            } else {
+                                labelEl.textContent = '❌ Erro no upload';
+                                hintEl.textContent = 'Toque para tentar novamente';
                             }
                         };
+
+                        xhr.onerror = function() {
+                            zone.classList.remove('uploading');
+                            labelEl.textContent = '❌ Falha de conexão';
+                            hintEl.textContent = 'Toque para tentar novamente';
+                        };
+
                         xhr.send(file);
-                    };
+                    }
+
+                    // File input change (funciona em iOS, Android, Desktop)
+                    input.addEventListener('change', function(e) {
+                        var file = e.target.files[0];
+                        doUpload(file);
+                    });
+
+                    // Drag & drop (funciona em Desktop)
+                    zone.addEventListener('dragover', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        zone.style.background = 'rgba(187,134,252,0.08)';
+                    });
+                    zone.addEventListener('dragleave', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        zone.style.background = '';
+                    });
+                    zone.addEventListener('drop', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        zone.style.background = '';
+                        var file = e.dataTransfer.files[0];
+                        doUpload(file);
+                    });
                 }
-                setupDrop('video', 'video');
-                setupDrop('audio', 'audio');
+
+                setupUpload('zone-video', 'input-video', 'bar-video', 'prog-video', 'video');
+                setupUpload('zone-audio', 'input-audio', 'bar-audio', 'prog-audio', 'audio');
+            })();
             </script>
             </body>
             </html>

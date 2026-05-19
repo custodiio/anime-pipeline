@@ -146,7 +146,8 @@ async def cmd_myid(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @authorized
 async def cmd_upload(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Gera link para upload local de arquivos grandes."""
-    upload_url = os.getenv("WEBHOOK_UPLOAD_URL", "http://localhost:8080/upload")
+    base_url = os.getenv("PIPELINE_WEBHOOK_URL", "http://localhost:8080")
+    upload_url = f"{base_url}/upload"
     await update.message.reply_text(
         f"📂 *Upload Local*\n\n"
         f"Use o link abaixo no seu navegador para enviar vídeos maiores que 20MB:\n"
