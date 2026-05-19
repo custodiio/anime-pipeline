@@ -92,6 +92,14 @@ def init_db():
         -- Index para busca rápida
         CREATE INDEX IF NOT EXISTS idx_cell_tracking_project 
             ON pipeline_cell_tracking(project_id, notebook);
+
+        -- Tabela para salvar logos/overlays persistentemente
+        CREATE TABLE IF NOT EXISTS pipeline_overlays (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name TEXT NOT NULL,
+            image_data TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
     """)
     conn.commit()
     cur.close()
@@ -469,3 +477,49 @@ def format_cell_status(project_id: str, notebook: str = None) -> str:
         lines.append(f"  {icon} [{cell['cell_index']}] {name}{dur}{msg}")
 
     return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# OVERLAYS (Galeria Persistente no DB)
+# ═══════════════════════════════════════════════════════════════════
+
+def get_all_overlays() -> list:
+    """Retorna todas as overlays salvas no DB."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, image_data, created_at FROM pipeline_overlays ORDER BY created_at DESC")
+    overlays = [dict(row) for row in cur.fetchall()]
+    for o in overlays:
+        o["id"] = str(o["id"])
+        o["created_at"] = o["created_at"].isoformat()
+    cur.close()
+    conn.close()
+    return overlays
+
+def save_overlay(name: str, image_data: str) -> dict:
+    """Salva uma nova overlay no DB e retorna o registro criado."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO pipeline_overlays (name, image_data)
+        VALUES (%s, %s)
+        RETURNING id, name, image_data, created_at
+    """, (name, image_data))
+    row = dict(cur.fetchone())
+    row["id"] = str(row["id"])
+    row["created_at"] = row["created_at"].isoformat()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row
+
+def delete_overlay(overlay_id: str) -> bool:
+    """Exclui uma overlay do DB pelo ID."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM pipeline_overlays WHERE id = %s::uuid RETURNING id", (overlay_id,))
+    deleted = cur.fetchone() is not None
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted

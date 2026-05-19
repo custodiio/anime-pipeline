@@ -212,12 +212,13 @@ class PipelineController:
             import shutil
             shutil.rmtree(tmp, ignore_errors=True)
 
-    def preparar_sessao_seo(self, project_id, chat_id):
+    def preparar_sessao_seo(self, project_id, chat_id, telegram_info=None):
         """
         Cria sessão SEO e inicia pré-análise + pré-extração de frames em background.
         Retorna o token da sessão.
+        telegram_info: dict com {"token": str, "message_id": int, "guia": dict}
         """
-        import json, requests, tempfile, os, threading
+        import json, requests, tempfile, os, threading, shutil
         SEO_URL = os.getenv("SEO_SERVER_URL", "http://localhost:3333")
 
         tmp = tempfile.mkdtemp()
@@ -233,52 +234,69 @@ class PipelineController:
             with open(ident_path, "r", encoding="utf-8") as f:
                 identificacao = json.load(f)
 
-            # Criar sessão no servidor SEO
-            resp = requests.post(f"{SEO_URL}/api/create-seo-session", json={
+            # Preparar payload
+            payload = {
                 "project_id": project_id,
                 "chat_id": chat_id,
                 "roteiro": roteiro,
                 "identificacao": identificacao
-            }, timeout=10)
+            }
+            if telegram_info:
+                payload["telegram_token"] = telegram_info.get("token")
+                payload["message_id"] = telegram_info.get("message_id")
+                payload["guia"] = telegram_info.get("guia")
+
+            # Criar sessão no servidor SEO
+            resp = requests.post(f"{SEO_URL}/api/create-seo-session", json=payload, timeout=10)
             resp.raise_for_status()
             token = resp.json()["token"]
 
             # Encontrar vídeo local
             video_local = self._encontrar_video_local(project_id)
             if not video_local:
-                # Tentar baixar do Drive em background
+                # Tentar baixar do Drive em background — salva em uploads/ (permanente)
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                uploads_dir = os.path.join(base_dir, "uploads")
+                os.makedirs(uploads_dir, exist_ok=True)
+                vid_dest = os.path.abspath(os.path.join(uploads_dir, f"seo_video_{project_id[:8]}.mp4"))
+                
                 def baixar_e_pre_analisar():
                     try:
-                        vid_tmp = os.path.join(tmp, "video_original.mp4")
-                        self.drive.baixar(f"KAGGLE/PIPELINE/ATIVO/video_original.mp4", vid_tmp)
+                        self.drive.baixar("KAGGLE/PIPELINE/ATIVO/video_original.mp4", vid_dest)
                         requests.post(f"{SEO_URL}/api/pre-analyze",
-                            json={"token": token, "video_path": vid_tmp}, timeout=10)
+                            json={"token": token, "video_path": vid_dest}, timeout=10)
                     except Exception as e:
                         print(f"[SEO] Erro ao baixar vídeo para pré-análise: {e}")
+                    finally:
+                        shutil.rmtree(tmp, ignore_errors=True)
                 threading.Thread(target=baixar_e_pre_analisar, daemon=True).start()
             else:
+                # Vídeo já existe localmente — chamar pre-analyze direto
                 def pre_analisar():
                     try:
                         requests.post(f"{SEO_URL}/api/pre-analyze",
                             json={"token": token, "video_path": video_local}, timeout=10)
                     except Exception as e:
                         print(f"[SEO] Erro na pré-análise: {e}")
+                    finally:
+                        shutil.rmtree(tmp, ignore_errors=True)
                 threading.Thread(target=pre_analisar, daemon=True).start()
 
             return token
         except Exception as e:
             print(f"[SEO] Erro ao preparar sessão: {e}")
-            return None
-        finally:
-            import shutil
             shutil.rmtree(tmp, ignore_errors=True)
+            return None
 
     def _encontrar_video_local(self, project_id):
         """Procura o vídeo original nos uploads locais."""
         import glob
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        uploads_dir = os.path.join(base_dir, "uploads")
+        
         padroes = [
-            f"uploads/*{project_id}*.mp4",
-            "uploads/*.mp4",
+            os.path.join(uploads_dir, f"*{project_id}*.mp4"),
+            os.path.join(uploads_dir, "*.mp4")
         ]
         for p in padroes:
             files = glob.glob(p)

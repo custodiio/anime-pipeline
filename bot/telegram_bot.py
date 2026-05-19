@@ -107,10 +107,9 @@ def gerar_session_token(project_id: str) -> str:
     return token
 
 def get_session_link(token: str) -> str:
-    videorender_url = os.getenv("VIDEORENDER_URL", "http://localhost:5173")
-    webhook_url = os.getenv("PIPELINE_WEBHOOK_URL", "")
-    api_param = f"&api={webhook_url}" if webhook_url else ""
-    return f"{videorender_url}/?session={token}{api_param}"
+    # Frontend é servido pelo webhook_server na mesma porta (8080)
+    base_url = os.getenv("PIPELINE_WEBHOOK_URL", "http://localhost:8080")
+    return f"{base_url}/?session={token}"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -540,7 +539,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if chat_id not in user_uploads or not user_uploads[chat_id].get("video") or not user_uploads[chat_id].get("audio"):
             await query.edit_message_text("❌ Envie vídeo e áudio primeiro!")
             return
-        from bot.database import get_active_project
+        
         active = get_active_project(chat_id)
         if active:
             await query.edit_message_text("⚠️ Já existe um projeto ativo. Use /cancel primeiro.")
@@ -655,8 +654,14 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 buttons.append([InlineKeyboardButton("✅ Config Pronta", callback_data="confirm_config")])
             buttons.append([InlineKeyboardButton("🎯 Disparar Função", callback_data="trigger_menu")])
             buttons.append([InlineKeyboardButton("🔄 Atualizar", callback_data="refresh_status")])
-            await query.edit_message_text(status_text, parse_mode="Markdown",
-                                          reply_markup=InlineKeyboardMarkup(buttons))
+            try:
+                await query.edit_message_text(status_text, parse_mode="Markdown",
+                                              reply_markup=InlineKeyboardMarkup(buttons))
+            except Exception as e:
+                if "Message is not modified" in str(e):
+                    await query.answer("Status já está atualizado!", show_alert=False)
+                else:
+                    pass
 
     elif data == "open_session":
         project = get_active_project(chat_id)
@@ -690,10 +695,78 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
              InlineKeyboardButton("🧹 Watermark", callback_data="trigger_wm_menu")],
             [InlineKeyboardButton("⚡ Enhancer", callback_data="trigger_enhancer_menu"),
              InlineKeyboardButton("🎬 Render", callback_data="trigger_render_menu")],
-            [InlineKeyboardButton("📦 Merge", callback_data="trigger_merge")],
+            [InlineKeyboardButton("📦 Merge", callback_data="trigger_merge"),
+             InlineKeyboardButton("🌐 SEO & Thumb", callback_data="trigger_seo")],
             [InlineKeyboardButton("🔙 Voltar", callback_data="refresh_status")]
         ]
-        await query.edit_message_text("🎯 *Menu de Disparo*\nQual função deseja iniciar?", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons))
+        try:
+            await query.edit_message_text("🎯 *Menu de Disparo*\nQual função deseja iniciar?", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons))
+        except Exception:
+            pass
+
+    elif data == "trigger_seo":
+        project = get_active_project(chat_id)
+        if project:
+            pid = str(project["id"])
+            _chat_id = str(chat_id)
+            import threading
+
+            def _disparar_seo_manual():
+                """Dispara SEO e Thumbnail diretamente, ignorando manual_mode."""
+                import requests as req
+                SEO_SERVER_URL_LOCAL = os.getenv("SEO_SERVER_URL", "http://localhost:3333")
+
+                def _send(text, md="Markdown", message_id=None):
+                    if message_id:
+                        return req.post(
+                            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText",
+                            json={"chat_id": _chat_id, "message_id": message_id, "text": text, "parse_mode": md},
+                            timeout=10
+                        ).json()
+                    else:
+                        return req.post(
+                            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                            json={"chat_id": _chat_id, "text": text, "parse_mode": md},
+                            timeout=10
+                        ).json()
+
+                try:
+                    res_msg = _send("⏳ *gerando seo decrição*")
+                    msg_id = res_msg.get("result", {}).get("message_id")
+                    
+                    guia, roteiro, identificacao = controller.gerar_seo_automatico(pid)
+                    if not guia:
+                        _send("❌ Erro ao gerar descrição SEO.", message_id=msg_id)
+                        return
+
+                    _send("⏳ *gerando thumbnails*", message_id=msg_id)
+                    
+                    # Passamos telegram info para que o server continue atualizando o message_id!
+                    token = controller.preparar_sessao_seo(pid, _chat_id, telegram_info={
+                        "token": TELEGRAM_BOT_TOKEN,
+                        "message_id": msg_id,
+                        "guia": guia
+                    })
+                    
+                    if not token:
+                        _send("❌ Erro ao iniciar sessão SEO.", message_id=msg_id)
+                        
+                except Exception as e:
+                    logger.error(f"[SEO Manual] Erro: {e}")
+                    try:
+                        req.post(
+                            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                            json={"chat_id": _chat_id, "text": f"❌ Erro ao gerar SEO: {e}"},
+                            timeout=10
+                        )
+                    except Exception:
+                        pass
+
+            threading.Thread(target=_disparar_seo_manual, daemon=True).start()
+            try:
+                await query.edit_message_text("🚀 *SEO & Thumb disparado!* Aguarde a mensagem com o guia...")
+            except Exception:
+                pass
 
     elif data == "trigger_omni":
         project = get_active_project(chat_id)
@@ -1028,68 +1101,56 @@ def main():
             logger.info(f"[SEO] Projeto {project_id} é manual — cel5 ignorado pelo notifier.")
             return
 
-        chat_id = proj["chat_id"]
+        chat_id = proj.get("telegram_chat_id")
         thumbnail_enabled = proj.get("thumbnail_enabled", True)
 
-        def _send_telegram(text, parse_mode="Markdown"):
-            req.post(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
-                timeout=10
-            )
+        def _send_telegram(text, parse_mode="Markdown", message_id=None):
+            if message_id:
+                return req.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText",
+                    json={"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": parse_mode},
+                    timeout=10
+                ).json()
+            else:
+                return req.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                    json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
+                    timeout=10
+                ).json()
 
         try:
-            _send_telegram("⏳ *Tradução concluída!* Gerando guia de postagem SEO...")
+            res_msg = _send_telegram("⏳ *gerando seo decrição*")
+            msg_id = res_msg.get("result", {}).get("message_id")
+            
             guia, roteiro, identificacao = controller.gerar_seo_automatico(project_id)
 
             if not guia:
-                _send_telegram("⚠️ Não foi possível gerar o guia SEO automaticamente.")
+                _send_telegram("⚠️ Não foi possível gerar o guia SEO automaticamente.", message_id=msg_id)
                 return
-
-            titulo   = guia.get("titulo_principal", "")
-            desc     = guia.get("descricao", "")[:800]
-            hashtags = " ".join(guia.get("hashtags_youtube", [])[:10])
-            tags     = guia.get("tags_youtube", "")[:200]
-            score    = guia.get("score_viral", 0)
-            score_emoji = "🔥" if score >= 85 else ("✅" if score >= 70 else "⚠️")
-
-            msg = (
-                f"✨ *Guia de Postagem Gerado!*\n"
-                f"*Score Viral:* {score_emoji} {score}/100\n\n"
-                f"🔥 *Título Principal:*\n`{titulo}`\n\n"
-                f"📝 *Descrição (preview):*\n{desc}...\n\n"
-                f"#️⃣ *Hashtags:*\n{hashtags}\n\n"
-                f"🏷️ *Tags:*\n`{tags}`"
-            )
-            _send_telegram(msg)
 
             # Sessão Thumbnail — só envia se thumbnail_enabled
             if thumbnail_enabled:
                 try:
-                    token = controller.preparar_sessao_seo(project_id, chat_id)
-                    if token:
-                        thumb_url = f"{SEO_SERVER_URL}/?token={token}"
-                        req.post(
-                            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                            json={
-                                "chat_id": chat_id,
-                                "text": (
-                                    f"🖼️ *Thumbnail pronta para criar!*\n"
-                                    f"Os frames já estão sendo pré\\-extraídos em background\\.\n"
-                                    f"[Abrir Gerador de Thumbnail]({thumb_url})"
-                                ),
-                                "parse_mode": "MarkdownV2"
-                            },
-                            timeout=10
-                        )
+                    _send_telegram("⏳ *gerando thumbnails*", message_id=msg_id)
+                    token = controller.preparar_sessao_seo(project_id, chat_id, telegram_info={
+                        "token": TELEGRAM_BOT_TOKEN,
+                        "message_id": msg_id,
+                        "guia": guia
+                    })
+                    if not token:
+                        _send_telegram("❌ Erro ao iniciar sessão SEO.", message_id=msg_id)
                 except Exception as e:
                     logger.error(f"[SEO] Erro ao criar sessão thumbnail: {e}")
+                    _send_telegram(f"❌ Erro na thumbnail: {e}", message_id=msg_id)
             else:
                 logger.info(f"[SEO] Thumbnail desabilitado para projeto {project_id} — link não enviado.")
 
         except Exception as e:
             logger.error(f"[SEO] Erro no notifier: {e}")
-            _send_telegram(f"❌ Erro ao gerar SEO: {e}")
+            try:
+                _send_telegram(f"❌ Erro ao gerar SEO: {e}")
+            except Exception:
+                pass
 
     set_seo_notifier(_seo_notifier_callback)
 

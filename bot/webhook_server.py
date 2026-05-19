@@ -6,6 +6,7 @@ Webhook Server — Recebe notificações dos notebooks Kaggle
 import os
 import json
 import logging
+import mimetypes
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 import threading
@@ -19,6 +20,9 @@ from bot.pipeline_controller import PipelineController
 logger = logging.getLogger(__name__)
 
 controller = PipelineController()
+
+# Diretório do VideoRender Frontend (build estático)
+_FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "videorender-frontend", "dist")
 
 # Referência para sessões ativas (importado do telegram_bot em runtime)
 _session_validator = None
@@ -290,6 +294,90 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                 except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                     pass
 
+        elif path == "/api/overlays":
+            from bot.database import get_all_overlays
+            try:
+                overlays = get_all_overlays()
+                self._set_headers(200)
+                self.wfile.write(json.dumps(overlays).encode())
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+        else:
+            # Tentar servir arquivo estático do VideoRender Frontend
+            if not self._serve_static(path):
+                self._set_headers(404)
+                self.wfile.write(json.dumps({"error": "Not found"}).encode())
+
+    def _serve_static(self, url_path):
+        """Serve arquivos estáticos do VideoRender Frontend (dist/)."""
+        if not os.path.isdir(_FRONTEND_DIR):
+            return False
+
+        # Normalizar path: / -> /index.html
+        file_path = url_path.lstrip("/")
+        if not file_path:
+            file_path = "index.html"
+
+        full_path = os.path.join(_FRONTEND_DIR, file_path.replace("/", os.sep))
+
+        # Se não existe, servir index.html (SPA client-side routing)
+        if not os.path.isfile(full_path):
+            full_path = os.path.join(_FRONTEND_DIR, "index.html")
+
+        if not os.path.isfile(full_path):
+            return False
+
+        # Detectar MIME type
+        mime, _ = mimetypes.guess_type(full_path)
+        if not mime:
+            mime = "application/octet-stream"
+
+        try:
+            file_size = os.path.getsize(full_path)
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(file_size))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            # Cache para assets estáticos (js, css, imagens)
+            if any(full_path.endswith(ext) for ext in [".js", ".css", ".woff2", ".png", ".svg"]):
+                self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            self.end_headers()
+
+            with open(full_path, "rb") as f:
+                while True:
+                    chunk = f.read(65536)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            return True
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            return True
+        except Exception:
+            return False
+
+    def do_DELETE(self):
+        """Endpoints DELETE."""
+        parsed = urlparse(self.path)
+        path = parsed.path
+        
+        if path == "/api/overlays":
+            params = parse_qs(parsed.query)
+            overlay_id = params.get("id", [""])[0]
+            if not overlay_id:
+                self._set_headers(400)
+                self.wfile.write(json.dumps({"error": "Missing id"}).encode())
+                return
+                
+            from bot.database import delete_overlay
+            try:
+                success = delete_overlay(overlay_id)
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"ok": success}).encode())
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
         else:
             self._set_headers(404)
             self.wfile.write(json.dumps({"error": "Not found"}).encode())
@@ -362,6 +450,24 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                     self._set_headers(400)
                     self.wfile.write(json.dumps({"error": "Missing fields"}).encode())
 
+            # ── API: Salvar Overlay no DB ──
+            elif path == "/api/overlays":
+                name = data.get("name")
+                image_data = data.get("image_data")
+                if not name or not image_data:
+                    self._set_headers(400)
+                    self.wfile.write(json.dumps({"error": "Missing name or image_data"}).encode())
+                    return
+                
+                from bot.database import save_overlay
+                try:
+                    row = save_overlay(name, image_data)
+                    self._set_headers(200)
+                    self.wfile.write(json.dumps({"ok": True, "overlay": row}).encode())
+                except Exception as e:
+                    self._set_headers(500)
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+
             # ── Webhook: Cell tracking ──
             elif path == "/webhook/cell-start":
                 cell_start(data.get("project_id"), data.get("notebook"),
@@ -376,15 +482,15 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                 pid = data.get("project_id")
                 cell_end(pid, nb, cell_idx, cell_status, data.get("message", ""))
 
-                # Trigger SEO automático quando cel5 (tradução) finaliza
-                if cell_idx == 5 and cell_status == "done" and pid and _seo_notifier:
+                # Trigger SEO automático quando cel4 (tradução simplificada) finaliza
+                if cell_idx == 4 and cell_status == "done" and pid and _seo_notifier:
                     import threading
                     threading.Thread(
                         target=_seo_notifier,
                         args=(pid,),
                         daemon=True
                     ).start()
-                    logger.info(f"[SEO] Trigger disparado para projeto {pid} (cel5 done)")
+                    logger.info(f"[SEO] Trigger disparado para projeto {pid} (cel4 done)")
 
                 self._set_headers(200)
                 self.wfile.write(json.dumps({"ok": True}).encode())
