@@ -5,6 +5,7 @@ Todas as operacoes de Drive usam esse modulo.
 
 import os
 import io
+import shutil
 import subprocess
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -279,6 +280,23 @@ class DriveManager:
                 pass
 
 
+def _find_bin(name):
+    """Encontra o caminho completo de um binario (ffmpeg/ffprobe).
+    Resolve o problema de PATH restrito em servicos systemd."""
+    path = shutil.which(name)
+    if path:
+        return path
+    # Fallback para caminhos comuns no Linux
+    for p in ["/usr/bin/" + name, "/usr/local/bin/" + name, "/snap/bin/" + name]:
+        if os.path.isfile(p):
+            return p
+    return name  # Ultima tentativa: retorna o nome puro
+
+
+FFPROBE = _find_bin("ffprobe")
+FFMPEG = _find_bin("ffmpeg")
+
+
 def split_video(input_path, output_dir, parts=5):
     """
     Divide um video em N partes iguais usando FFmpeg.
@@ -287,7 +305,7 @@ def split_video(input_path, output_dir, parts=5):
     os.makedirs(output_dir, exist_ok=True)
 
     result = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+        [FFPROBE, "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", input_path],
         capture_output=True, text=True
     )
@@ -301,7 +319,7 @@ def split_video(input_path, output_dir, parts=5):
         start_time = i * part_duration
         
         cmd = [
-            "ffmpeg", "-y", "-ss", str(start_time), "-i", input_path
+            FFMPEG, "-y", "-ss", str(start_time), "-i", input_path
         ]
         
         if i < parts - 1:
@@ -335,7 +353,7 @@ def merge_videos(parts_paths, audio_path, output_path):
             f.write(f"file '{pt_path}'\n")
 
     subprocess.run([
-        "ffmpeg", "-y",
+        FFMPEG, "-y",
         "-f", "concat", "-safe", "0", "-i", concat_file,
         "-i", audio_path,
         "-map", "0:v:0", "-map", "1:a:0",
