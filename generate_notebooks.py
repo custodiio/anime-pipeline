@@ -323,7 +323,7 @@ def make_enhancer_cells(part_num):
 print("Video baixado!")'''),
         ("Extrair Frames", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{pt}"
 os.makedirs(FRAMES_DIR, exist_ok=True)
-subprocess.run(f"ffmpeg -i {{BASE_PATH}}/{pt}_limpo.mp4 -qscale:v 1 -qmin 1 -qmax 1 {{FRAMES_DIR}}/frame_%08d.png -hide_banner -loglevel error", shell=True)
+subprocess.run(f"ffmpeg -i {{BASE_PATH}}/{pt}_limpo.mp4 -q:v 2 {{FRAMES_DIR}}/frame_%08d.jpg -hide_banner -loglevel error", shell=True)
 total_frames = len(os.listdir(FRAMES_DIR))
 print(f"  {{total_frames}} frames extraidos")'''),
         ("Upscaling Dual GPU", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{pt}"
@@ -334,24 +334,24 @@ os.makedirs(f"{{BASE_PATH}}/fg1", exist_ok=True)
 os.makedirs(f"{{BASE_PATH}}/ug0", exist_ok=True)
 os.makedirs(f"{{BASE_PATH}}/ug1", exist_ok=True)
 import threading
-all_f = sorted(glob.glob(f"{{FRAMES_DIR}}/*.png"))
+all_f = sorted(glob.glob(f"{{FRAMES_DIR}}/*.jpg"))
 mid = len(all_f) // 2
 for f in all_f[:mid]: shutil.copy(f, f"{{BASE_PATH}}/fg0/")
 for f in all_f[mid:]: shutil.copy(f, f"{{BASE_PATH}}/fg1/")
 print(f"  GPU0: {{mid}} | GPU1: {{len(all_f)-mid}}")
 def run_gpu(cmd): subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-t0 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg0/ -o {{BASE_PATH}}/ug0/ -n realesr-animevideov3 -s 2 -f png -g 0",))
-t1 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg1/ -o {{BASE_PATH}}/ug1/ -n realesr-animevideov3 -s 2 -f png -g 1",))
+t0 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg0/ -o {{BASE_PATH}}/ug0/ -n realesr-animevideov3 -s 2 -f jpg -g 0",))
+t1 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg1/ -o {{BASE_PATH}}/ug1/ -n realesr-animevideov3 -s 2 -f jpg -g 1",))
 t0.start(); t1.start()
 while t0.is_alive() or t1.is_alive():
-    d0 = len(glob.glob(f"{{BASE_PATH}}/ug0/*.png"))
-    d1 = len(glob.glob(f"{{BASE_PATH}}/ug1/*.png"))
+    d0 = len(glob.glob(f"{{BASE_PATH}}/ug0/*.jpg"))
+    d1 = len(glob.glob(f"{{BASE_PATH}}/ug1/*.jpg"))
     print(f"  GPU0: {{d0}}/{{mid}} | GPU1: {{d1}}/{{len(all_f)-mid}}", end="\\r")
     time.sleep(5)
 t0.join(); t1.join()
-for f in sorted(glob.glob(f"{{BASE_PATH}}/ug0/*.png")) + sorted(glob.glob(f"{{BASE_PATH}}/ug1/*.png")):
+for f in sorted(glob.glob(f"{{BASE_PATH}}/ug0/*.jpg")) + sorted(glob.glob(f"{{BASE_PATH}}/ug1/*.jpg")):
     shutil.move(f, UP_DIR)
-total_up = len(glob.glob(f"{{UP_DIR}}/*.png"))
+total_up = len(glob.glob(f"{{UP_DIR}}/*.jpg"))
 print(f"\\n  {{total_up}} frames upscaled")
 shutil.rmtree(f"{{BASE_PATH}}/fg0", ignore_errors=True)
 shutil.rmtree(f"{{BASE_PATH}}/fg1", ignore_errors=True)
@@ -360,7 +360,7 @@ shutil.rmtree(f"{{BASE_PATH}}/ug1", ignore_errors=True)'''),
         ("Montar Video Final", f'''UP_DIR = f"{{BASE_PATH}}/upscaled_{pt}"
 INPUT_VIDEO = f"{{BASE_PATH}}/{pt}_limpo.mp4"
 OUTPUT = f"{{BASE_PATH}}/{pt}_enhanced.mp4"
-frames = sorted(glob.glob(f"{{UP_DIR}}/*.png"))
+frames = sorted(glob.glob(f"{{UP_DIR}}/*.jpg"))
 fps_raw = subprocess.check_output(f"ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 {{INPUT_VIDEO}}", shell=True).decode().strip()
 num, den = (fps_raw.split("/") + ["1"])[:2]
 fps = float(num) / float(den)
