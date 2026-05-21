@@ -499,6 +499,16 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                 self._set_headers(500)
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
 
+        elif path == "/api/presets":
+            from bot.database import get_all_presets
+            try:
+                presets = get_all_presets()
+                self._set_headers(200)
+                self.wfile.write(json.dumps(presets).encode())
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+
         else:
             # Tentar servir arquivo estático do VideoRender Frontend
             if not self._serve_static(path):
@@ -573,6 +583,24 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._set_headers(500)
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+        elif path == "/api/presets":
+            params = parse_qs(parsed.query)
+            preset_id = params.get("id", [""])[0]
+            if not preset_id:
+                self._set_headers(400)
+                self.wfile.write(json.dumps({"error": "Missing id"}).encode())
+                return
+
+            from bot.database import delete_preset
+            try:
+                success = delete_preset(preset_id)
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"ok": success}).encode())
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+
         else:
             self._set_headers(404)
             self.wfile.write(json.dumps({"error": "Not found"}).encode())
@@ -659,6 +687,24 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                     row = save_overlay(name, image_data)
                     self._set_headers(200)
                     self.wfile.write(json.dumps({"ok": True, "overlay": row}).encode())
+                except Exception as e:
+                    self._set_headers(500)
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+            # ── API: Salvar Preset no DB ──
+            elif path == "/api/presets":
+                name = data.get("name")
+                preset_data = data.get("preset_data")
+                if not name or preset_data is None:
+                    self._set_headers(400)
+                    self.wfile.write(json.dumps({"error": "Missing name or preset_data"}).encode())
+                    return
+
+                from bot.database import save_preset
+                try:
+                    row = save_preset(name, preset_data)
+                    self._set_headers(200)
+                    self.wfile.write(json.dumps({"ok": True, "preset": row}).encode())
                 except Exception as e:
                     self._set_headers(500)
                     self.wfile.write(json.dumps({"error": str(e)}).encode())
