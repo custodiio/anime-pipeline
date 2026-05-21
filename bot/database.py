@@ -100,6 +100,15 @@ def init_db():
             image_data TEXT NOT NULL,
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
+
+        -- Tabela para salvar presets de configuração (acessível em qualquer dispositivo)
+        CREATE TABLE IF NOT EXISTS pipeline_presets (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name TEXT NOT NULL UNIQUE,
+            preset_data JSONB NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
     """)
     conn.commit()
     cur.close()
@@ -518,6 +527,70 @@ def delete_overlay(overlay_id: str) -> bool:
     conn = _get_conn()
     cur = conn.cursor()
     cur.execute("DELETE FROM pipeline_overlays WHERE id = %s::uuid RETURNING id", (overlay_id,))
+    deleted = cur.fetchone() is not None
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted
+
+
+# ═══════════════════════════════════════════════════════════════════
+# PRESETS (Configurações Globais — acessíveis em qualquer dispositivo)
+# ═══════════════════════════════════════════════════════════════════
+
+def get_all_presets() -> list:
+    """Retorna todos os presets salvos no DB."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, name, preset_data, created_at, updated_at
+        FROM pipeline_presets
+        ORDER BY name ASC
+    """)
+    presets = [dict(row) for row in cur.fetchall()]
+    for p in presets:
+        p["id"] = str(p["id"])
+        p["created_at"] = p["created_at"].isoformat()
+        p["updated_at"] = p["updated_at"].isoformat()
+        # preset_data já vem como dict via psycopg2 JSONB
+        if not isinstance(p["preset_data"], dict):
+            import json
+            p["preset_data"] = json.loads(p["preset_data"])
+    cur.close()
+    conn.close()
+    return presets
+
+
+def save_preset(name: str, preset_data: dict) -> dict:
+    """Cria ou atualiza um preset pelo nome (upsert). Retorna o registro."""
+    import json
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO pipeline_presets (name, preset_data)
+        VALUES (%s, %s::jsonb)
+        ON CONFLICT (name) DO UPDATE
+            SET preset_data = EXCLUDED.preset_data,
+                updated_at = NOW()
+        RETURNING id, name, preset_data, created_at, updated_at
+    """, (name, json.dumps(preset_data)))
+    row = dict(cur.fetchone())
+    row["id"] = str(row["id"])
+    row["created_at"] = row["created_at"].isoformat()
+    row["updated_at"] = row["updated_at"].isoformat()
+    if not isinstance(row["preset_data"], dict):
+        row["preset_data"] = json.loads(row["preset_data"])
+    conn.commit()
+    cur.close()
+    conn.close()
+    return row
+
+
+def delete_preset(preset_id: str) -> bool:
+    """Exclui um preset do DB pelo ID."""
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM pipeline_presets WHERE id = %s::uuid RETURNING id", (preset_id,))
     deleted = cur.fetchone() is not None
     conn.commit()
     cur.close()
