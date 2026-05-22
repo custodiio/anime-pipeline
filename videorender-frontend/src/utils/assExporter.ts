@@ -196,19 +196,32 @@ export function generateFFmpegScript(config: {
   const outH = hRatio === 16 ? 1920 : 1080;
 
   // 2. Crop & Zoom (before scaling to avoid quality loss)
-  if (config.cropZoom.enabled) {
-    const cz = config.cropZoom;
-    const duration = config.duration || 60; // Default to 60s if unknown
-    const zExpr = cz.animatedZoom 
-      ? `(${cz.zoomStart}+((${cz.zoomEnd}-${cz.zoomStart})*t/${duration}))`
-      : `${cz.zoomStart}`;
+  const cz = config.cropZoom;
+  const zs = cz.enabled ? cz.zoomStart : 1.0;
+  
+  if (zs >= 1.0) {
+    filters.push(`scale=${outW}:${outH}:force_original_aspect_ratio=increase`);
+    filters.push(`crop=${outW}:${outH}`);
+    if (zs > 1.0) {
+      const cw = Math.floor(outW / zs);
+      const ch = Math.floor(outH / zs);
+      const cx = Math.floor((outW - cw) * cz.focusX);
+      const cy = Math.floor((outH - ch) * cz.focusY);
+      filters.push(`crop=${cw}:${ch}:${cx}:${cy}`);
+      filters.push(`scale=${outW}:${outH}`);
+    }
+  } else {
+    // Zoom out
+    filters.push(`scale=${outW}:${outH}:force_original_aspect_ratio=decrease`);
+    const sm_w = Math.floor(outW * zs);
+    const sm_h = Math.floor(outH * zs);
+    const sm_w_even = sm_w - (sm_w % 2);
+    const sm_h_even = sm_h - (sm_h % 2);
+    filters.push(`scale=${sm_w_even}:${sm_h_even}`);
     
-    // FFmpeg crop: crop=w:h:x:y
-    filters.push(`crop=iw/${zExpr}:ih/${zExpr}:(iw-iw/${zExpr})*${cz.focusX}:(ih-ih/${zExpr})*${cz.focusY}`);
+    // TODO: background color handling, defaulting to black here
+    filters.push(`pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2:color=black`);
   }
-
-  filters.push(`scale=${outW}:${outH}:force_original_aspect_ratio=decrease`);
-  filters.push(`pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2`);
 
   // 3. Blur Band (real blur)
   if (config.blurBand.enabled) {

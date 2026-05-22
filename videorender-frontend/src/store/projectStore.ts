@@ -86,6 +86,15 @@ export interface OverlayItem {
   fontSize?: number;
   fontColor?: string;
   fontFamily?: string;
+  fontWeight?: string;
+  fontStyle?: string;
+  shadowColor?: string;
+  shadowBlur?: number;
+  shadowX?: number;
+  shadowY?: number;
+  bgColor?: string;
+  bgOpacity?: number;
+  bgRadius?: number;
   zIndex: number;
 }
 

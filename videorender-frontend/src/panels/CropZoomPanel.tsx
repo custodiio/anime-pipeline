@@ -1,5 +1,22 @@
 import { useProjectStore } from '../store/projectStore';
 
+function getSliderValue(scale: number) {
+  if (scale >= 1.0) {
+    return ((scale - 1.0) / 4.0) * 50;
+  } else {
+    return ((scale - 1.0) / 0.9) * 50;
+  }
+}
+
+function getScaleValue(slider: number) {
+  if (slider >= 0) {
+    return 1.0 + (slider / 50) * 4.0;
+  } else {
+    return 1.0 + (slider / 50) * 0.9;
+  }
+}
+
+
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className="toggle">
@@ -38,24 +55,31 @@ export function CropZoomPanel() {
           <div className="form-group">
             <div className="form-label">
               <span>{cropZoom.animatedZoom ? 'Zoom Inicial' : 'Nível de Zoom'}</span>
-              <span className="form-label-value">{cropZoom.zoomStart.toFixed(2)}×</span>
+              <span className="form-label-value">
+                {cropZoom.zoomStart >= 1.0 ? '+' : ''}{Math.round(getSliderValue(cropZoom.zoomStart))} ({(cropZoom.zoomStart).toFixed(2)}×)
+              </span>
             </div>
             <input
-              type="range" min={1.0} max={5.0} step={0.05}
-              value={cropZoom.zoomStart}
-              onChange={(e) => setCropZoom({ zoomStart: Number(e.target.value), zoomEnd: cropZoom.animatedZoom ? cropZoom.zoomEnd : Number(e.target.value) })}
+              type="range" min={-50} max={50} step={1}
+              value={getSliderValue(cropZoom.zoomStart)}
+              onChange={(e) => {
+                const scale = getScaleValue(Number(e.target.value));
+                setCropZoom({ zoomStart: scale, zoomEnd: cropZoom.animatedZoom ? cropZoom.zoomEnd : scale });
+              }}
             />
           </div>
           {cropZoom.animatedZoom !== false && (
             <div className="form-group">
               <div className="form-label">
                 <span>Zoom Final</span>
-                <span className="form-label-value">{cropZoom.zoomEnd.toFixed(2)}×</span>
+                <span className="form-label-value">
+                  {cropZoom.zoomEnd >= 1.0 ? '+' : ''}{Math.round(getSliderValue(cropZoom.zoomEnd))} ({(cropZoom.zoomEnd).toFixed(2)}×)
+                </span>
               </div>
               <input
-                type="range" min={1.0} max={5.0} step={0.05}
-                value={cropZoom.zoomEnd}
-                onChange={(e) => setCropZoom({ zoomEnd: Number(e.target.value) })}
+                type="range" min={-50} max={50} step={1}
+                value={getSliderValue(cropZoom.zoomEnd)}
+                onChange={(e) => setCropZoom({ zoomEnd: getScaleValue(Number(e.target.value)) })}
               />
             </div>
           )}

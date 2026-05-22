@@ -1,6 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useProjectStore } from '../store/projectStore';
-import type { OverlayItem } from '../store/projectStore';
 
 function genId() {
   return Math.random().toString(36).slice(2);
@@ -38,11 +37,38 @@ export function OverlayPanel() {
         }
       } else {
         const fontSize = Math.round((o.fontSize || 32) * (canvasH / 1080));
-        ctx.font = `${o.type === 'watermark' ? 'bold ' : ''}${fontSize}px ${o.fontFamily || 'Montserrat'}`;
+        
+        // Draw background box if bgColor is set
+        if (o.bgColor) {
+          ctx.font = `${o.fontStyle || ''} ${o.fontWeight || o.type === 'watermark' ? 'bold' : 'normal'} ${fontSize}px ${o.fontFamily || 'Montserrat'}`;
+          const metrics = ctx.measureText(o.content);
+          const bgOpacity = o.bgOpacity !== undefined ? o.bgOpacity : 0.5;
+          ctx.fillStyle = o.bgColor;
+          ctx.globalAlpha = o.opacity * bgOpacity;
+          const padding = fontSize * 0.2;
+          
+          // Draw rect
+          ctx.fillRect(ox - padding, oy - padding, metrics.width + padding * 2, fontSize + padding * 2);
+          ctx.globalAlpha = o.opacity;
+        }
+
+        ctx.font = `${o.fontStyle || ''} ${o.fontWeight || o.type === 'watermark' ? 'bold' : 'normal'} ${fontSize}px ${o.fontFamily || 'Montserrat'}`;
         ctx.fillStyle = o.fontColor || '#FFFFFF';
+        
+        // Add shadow if set
+        if (o.shadowColor) {
+          ctx.shadowColor = o.shadowColor;
+          ctx.shadowBlur = o.shadowBlur || 0;
+          ctx.shadowOffsetX = o.shadowX || 2;
+          ctx.shadowOffsetY = o.shadowY || 2;
+        }
+
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillText(o.content, ox, oy);
+        
+        // Reset shadow
+        ctx.shadowColor = 'transparent';
       }
       ctx.restore();
     });
@@ -93,6 +119,14 @@ export function OverlayPanel() {
       fontSize: 48,
       fontColor: '#FFFFFF',
       fontFamily: 'Montserrat',
+      fontWeight: 'bold',
+      fontStyle: 'normal',
+      shadowColor: '#000000',
+      shadowBlur: 4,
+      shadowX: 2,
+      shadowY: 2,
+      bgColor: '',
+      bgOpacity: 0.5,
       zIndex: overlays.length,
     });
   };
@@ -262,7 +296,6 @@ export function OverlayPanel() {
                 className={`overlay-chip ${o === activeOverlay ? 'active' : ''}`}
                 onClick={() => {
                   // Reorder to make it active (top)
-                  const others = overlays.filter(x => x.id !== o.id);
                   useProjectStore.getState().setSubtitleStyle({}); // Force store update pattern if needed, but here we just use what we have
                   // We'll just assume the last one is being edited for simplicity as per previous logic
                 }}
@@ -341,6 +374,63 @@ export function OverlayPanel() {
                 <div className="form-label">Opacidade ({Math.round(activeOverlay.opacity * 100)}%)</div>
                 <input type="range" min={0} max={1} step={0.01} value={activeOverlay.opacity} onChange={(e) => updateOverlay(activeOverlay.id, { opacity: Number(e.target.value) })} />
               </div>
+
+              {activeOverlay.type !== 'image' && (
+                <>
+                  <div className="grid-2">
+                    <div className="form-group">
+                      <div className="form-label">Família da Fonte</div>
+                      <select className="form-control" value={activeOverlay.fontFamily || 'Montserrat'} onChange={(e) => updateOverlay(activeOverlay.id, { fontFamily: e.target.value })}>
+                        <option value="Montserrat">Montserrat</option>
+                        <option value="Inter">Inter</option>
+                        <option value="Roboto">Roboto</option>
+                        <option value="Arial">Arial</option>
+                        <option value="Bebas Neue">Bebas Neue</option>
+                        <option value="Oswald">Oswald</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <div className="form-label">Cor do Texto</div>
+                      <input type="color" className="form-control" value={activeOverlay.fontColor || '#ffffff'} onChange={(e) => updateOverlay(activeOverlay.id, { fontColor: e.target.value })} style={{ padding: 2, height: 36 }} />
+                    </div>
+                  </div>
+                  
+                  <div className="grid-2">
+                    <div className="form-group">
+                      <div className="form-label">Peso (Negrito)</div>
+                      <select className="form-control" value={activeOverlay.fontWeight || 'normal'} onChange={(e) => updateOverlay(activeOverlay.id, { fontWeight: e.target.value })}>
+                        <option value="normal">Normal</option>
+                        <option value="bold">Negrito (Bold)</option>
+                        <option value="900">Black (900)</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <div className="form-label">Estilo (Itálico)</div>
+                      <select className="form-control" value={activeOverlay.fontStyle || 'normal'} onChange={(e) => updateOverlay(activeOverlay.id, { fontStyle: e.target.value })}>
+                        <option value="normal">Normal</option>
+                        <option value="italic">Itálico</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid-2">
+                    <div className="form-group">
+                      <div className="form-label">Cor da Sombra</div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input type="color" className="form-control" value={activeOverlay.shadowColor || '#000000'} onChange={(e) => updateOverlay(activeOverlay.id, { shadowColor: e.target.value })} style={{ padding: 2, height: 36, flex: 1 }} />
+                        <button className="btn btn-secondary btn-sm" onClick={() => updateOverlay(activeOverlay.id, { shadowColor: '' })}>X</button>
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <div className="form-label">Cor de Fundo (Box)</div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input type="color" className="form-control" value={activeOverlay.bgColor || '#000000'} onChange={(e) => updateOverlay(activeOverlay.id, { bgColor: e.target.value })} style={{ padding: 2, height: 36, flex: 1 }} />
+                        <button className="btn btn-secondary btn-sm" onClick={() => updateOverlay(activeOverlay.id, { bgColor: '' })}>X</button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
