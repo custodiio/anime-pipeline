@@ -36,7 +36,9 @@ from bot.pipeline_controller import PipelineController
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "default_secret")
+SESSION_SECRET = os.getenv("SESSION_SECRET")
+if not SESSION_SECRET:
+    raise ValueError("❌ ERRO CRÍTICO: SESSION_SECRET não foi configurado no .env!")
 
 # IDs autorizados (separados por vírgula no .env)
 _raw_users = os.getenv("AUTHORIZED_TELEGRAM_USERS", "")
