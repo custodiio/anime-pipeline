@@ -159,6 +159,22 @@ DRIVE_FINAL = "KAGGLE/PIPELINE/FINAL"
 BASE_PATH = "/kaggle/working"
 os.makedirs(BASE_PATH, exist_ok=True)
 
+print("Baixando pacote de fontes do Google Drive...")
+os.system("mkdir -p /usr/share/fonts/truetype/custom")
+try:
+    _fid = _buscar_id("KAGGLE/PIPELINE/FONTS")
+    if _fid:
+        _r = drive_service.files().list(q=f"'{_fid}' in parents and trashed=false", fields="files(id, name)").execute()
+        _f_list = _r.get("files", [])
+        for _f in _f_list:
+            baixar_do_drive(f"KAGGLE/PIPELINE/FONTS/{_f['name']}", f"/usr/share/fonts/truetype/custom/{_f['name']}")
+    else:
+        print("  ⚠️ Pasta KAGGLE/PIPELINE/FONTS nao encontrada no Drive!")
+except Exception as e:
+    print(f"  ❌ Erro ao baixar fontes do Drive: {e}")
+os.system("fc-cache -f -v > /dev/null 2>&1")
+print("Fontes instaladas!")
+
 cell_end(0, "done", "Setup concluido")'''
 
 
