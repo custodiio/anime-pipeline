@@ -134,7 +134,7 @@ export function PreviewPanel() {
       
       if (videoEdit?.hFlip) ctx.scale(-1, 1);
       if (videoEdit?.vFlip) ctx.scale(1, -1);
-      if (videoEdit?.rotate && videoEdit.rotate !== 0) {
+      if (videoEdit?.rotate) {
         ctx.rotate((videoEdit.rotate * Math.PI) / 180);
       }
       
@@ -305,7 +305,7 @@ export function PreviewPanel() {
         let transformStr = '';
         if (videoEdit?.hFlip) transformStr += ' scaleX(-1)';
         if (videoEdit?.vFlip) transformStr += ' scaleY(-1)';
-        if (videoEdit?.rotate && videoEdit.rotate !== 0) {
+        if (videoEdit?.rotate) {
           transformStr += ` rotate(${videoEdit.rotate}deg)`;
         }
 
