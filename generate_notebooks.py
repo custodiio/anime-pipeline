@@ -189,15 +189,17 @@ def save_nb(nb, filename):
 # ══════════════════════════════════════════════════════════════
 # WATERMARK REMOVER PT1
 # ══════════════════════════════════════════════════════════════
-WM_PT1_CELLS = [
-    ("Download dos Arquivos", '''import cv2, numpy as np
-baixar_do_drive(f"{DRIVE_ATIVO}/video_pt1.mp4", f"{BASE_PATH}/video_pt1.mp4")
-baixar_do_drive(f"{DRIVE_ATIVO}/mask.png", f"{BASE_PATH}/mask.png")
+def make_watermark_cells(part_num):
+    pt = f"pt{part_num}"
+    return [
+        ("Download dos Arquivos", f'''import cv2, numpy as np
+baixar_do_drive(f"{{DRIVE_ATIVO}}/video_{pt}.mp4", f"{{BASE_PATH}}/video_{pt}.mp4")
+baixar_do_drive(f"{{DRIVE_ATIVO}}/mask.png", f"{{BASE_PATH}}/mask.png")
 print("Arquivos prontos!")'''),
 
-    ("Processamento Watermark", '''INPUT = f"{BASE_PATH}/video_pt1.mp4"
-MASK = f"{BASE_PATH}/mask.png"
-OUTPUT = f"{BASE_PATH}/pt1_limpo.mp4"
+        ("Processamento Watermark", f'''INPUT = f"{{BASE_PATH}}/video_{pt}.mp4"
+MASK = f"{{BASE_PATH}}/mask.png"
+OUTPUT = f"{{BASE_PATH}}/{pt}_limpo.mp4"
 
 import cv2, numpy as np
 
@@ -218,7 +220,7 @@ else:
 
     pipe = subprocess.Popen([
         "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
-        "-s", f"{W}x{H}", "-pix_fmt", "bgr24", "-r", str(FPS), "-i", "pipe:0",
+        "-s", f"{{W}}x{{H}}", "-pix_fmt", "bgr24", "-r", str(FPS), "-i", "pipe:0",
         "-c:v", "h264_nvenc", "-preset", "p2", "-b:v", "5M", "-c:a", "copy", OUTPUT
     ], stdin=subprocess.PIPE)
 
@@ -230,73 +232,17 @@ else:
         pipe.stdin.write(out.tobytes())
         count += 1
         if count % 500 == 0:
-            print(f"  Frame {count}/{TOTAL} ({count/TOTAL*100:.1f}%)")
+            print(f"  Frame {{count}}/{{TOTAL}} ({{count/TOTAL*100:.1f}}%)")
 
     cap.release()
     pipe.stdin.close()
     pipe.wait()
-print(f"  {count} frames processados")'''),
+print(f"  {{count}} frames processados")'''),
 
-    ("Upload Resultado", '''salvar_no_drive(f"{BASE_PATH}/pt1_limpo.mp4", f"{DRIVE_WATERMARK}/pt1_limpo.mp4")'''),
+        ("Upload Resultado", f'''salvar_no_drive(f"{{BASE_PATH}}/{pt}_limpo.mp4", f"{{DRIVE_WATERMARK}}/{pt}_limpo.mp4")'''),
 
-    ("Finalizacao", '''report_step("done", f"Watermark PT1 concluido - {count} frames")'''),
-]
-
-# ══════════════════════════════════════════════════════════════
-# WATERMARK REMOVER PT2 (identico mas com pt2)
-# ══════════════════════════════════════════════════════════════
-WM_PT2_CELLS = [
-    ("Download dos Arquivos", '''import cv2, numpy as np
-baixar_do_drive(f"{DRIVE_ATIVO}/video_pt2.mp4", f"{BASE_PATH}/video_pt2.mp4")
-baixar_do_drive(f"{DRIVE_ATIVO}/mask.png", f"{BASE_PATH}/mask.png")
-print("Arquivos prontos!")'''),
-
-    ("Processamento Watermark", '''INPUT = f"{BASE_PATH}/video_pt2.mp4"
-MASK = f"{BASE_PATH}/mask.png"
-OUTPUT = f"{BASE_PATH}/pt2_limpo.mp4"
-
-import cv2, numpy as np
-
-# Se mask não existe, copiar direto sem processamento
-if not os.path.exists(MASK):
-    print("  Mask nao encontrada, copiando video sem watermark removal...")
-    shutil.copy2(INPUT, OUTPUT)
-    count = 0
-else:
-    cap = cv2.VideoCapture(INPUT)
-    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    FPS = cap.get(cv2.CAP_PROP_FPS)
-    TOTAL = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    mask_np = cv2.imread(MASK, cv2.IMREAD_GRAYSCALE)
-    mask_np = cv2.resize(mask_np, (W, H))
-    _, mask_bin = cv2.threshold(mask_np, 10, 255, cv2.THRESH_BINARY)
-
-    pipe = subprocess.Popen([
-        "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
-        "-s", f"{W}x{H}", "-pix_fmt", "bgr24", "-r", str(FPS), "-i", "pipe:0",
-        "-c:v", "h264_nvenc", "-preset", "p2", "-b:v", "5M", "-c:a", "copy", OUTPUT
-    ], stdin=subprocess.PIPE)
-
-    count = 0
-    while True:
-        ret, frame = cap.read()
-        if not ret: break
-        out = cv2.inpaint(frame, mask_bin, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-        pipe.stdin.write(out.tobytes())
-        count += 1
-        if count % 500 == 0:
-            print(f"  Frame {count}/{TOTAL} ({count/TOTAL*100:.1f}%)")
-
-    cap.release()
-    pipe.stdin.close()
-    pipe.wait()
-print(f"  {count} frames processados")'''),
-
-    ("Upload Resultado", '''salvar_no_drive(f"{BASE_PATH}/pt2_limpo.mp4", f"{DRIVE_WATERMARK}/pt2_limpo.mp4")'''),
-
-    ("Finalizacao", '''report_step("done", f"Watermark PT2 concluido - {count} frames")'''),
-]
+        ("Finalizacao", f'''report_step("done", f"Watermark {pt.upper()} concluido - {{count}} frames")'''),
+    ]
 
 # ══════════════════════════════════════════════════════════════
 # VIDEO ENHANCER PT1
@@ -407,26 +353,17 @@ if __name__ == "__main__":
     
     print("Gerando notebooks padronizados...")
     
-    nb = make_nb(WM_PT1_CELLS, "watermark-remover-pt-1", "step_watermark_pt1")
-    save_nb(nb, "watermark-remover-pt-1.ipynb")
-    
-    nb = make_nb(WM_PT2_CELLS, "watermark-remover-pt-2", "step_watermark_pt2")
-    save_nb(nb, "watermark-remover-pt-2.ipynb")
-    
-    nb = make_nb(make_enhancer_cells(1), "video-enhancer-pt-1", "step_enhancer_pt1")
-    save_nb(nb, "video-enhancer-pt-1.ipynb")
-    
-    nb = make_nb(make_enhancer_cells(2), "video-enhancer-pt-2", "step_enhancer_pt2")
-    save_nb(nb, "video-enhancer-pt-2.ipynb")
-    
+    # Gerar todas as 5 partes de Watermark Remover
+    for i in range(1, 6):
+        nb = make_nb(make_watermark_cells(i), f"watermark-remover-pt-{i}", f"step_watermark_pt{i}")
+        save_nb(nb, f"watermark-remover-pt-{i}.ipynb")
+        
+    # Gerar todas as 5 partes de Video Enhancer
+    for i in range(1, 6):
+        nb = make_nb(make_enhancer_cells(i), f"video-enhancer-pt-{i}", f"step_enhancer_pt{i}")
+        save_nb(nb, f"video-enhancer-pt-{i}.ipynb")
+        
     nb = make_nb(MERGE_CELLS, "merge-final", "step_merge")
     save_nb(nb, "merge-final.ipynb")
     
-    print("\nTodos os notebooks gerados!")
-    print("  watermark-remover-pt-1.ipynb")
-    print("  watermark-remover-pt-2.ipynb")
-    print("  video-enhancer-pt-1.ipynb")
-    print("  video-enhancer-pt-2.ipynb")
-    print("  merge-final.ipynb")
-    print("\nNOTA: omni-anime-ver-final.ipynb e renderizador-kaggle-pt-*.ipynb")
-    print("precisam ser atualizados manualmente (logica complexa).")
+    print("\nTodos os notebooks gerados com sucesso!")
