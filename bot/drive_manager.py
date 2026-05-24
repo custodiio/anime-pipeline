@@ -62,7 +62,8 @@ class DriveManager:
         parent_id = "root"
         for parte in partes:
             query = f"name='{self._esc(parte)}' and '{parent_id}' in parents and trashed=false"
-            results = self.service.files().list(q=query, fields="files(id, mimeType)").execute()
+            # Adicionado orderBy para garantir que arquivos mais novos fiquem no topo se houver duplicidade
+            results = self.service.files().list(q=query, fields="files(id, mimeType)", orderBy="modifiedTime desc").execute()
             arquivos = results.get("files", [])
             if not arquivos:
                 return None
@@ -122,12 +123,19 @@ class DriveManager:
             parent_id = self._garantir_pasta(pasta_drive) if pasta_drive else "root"
 
             query = f"name='{self._esc(nome_arquivo)}' and '{parent_id}' in parents and trashed=false"
-            results = self.service.files().list(q=query, fields="files(id)").execute()
+            results = self.service.files().list(q=query, fields="files(id)", orderBy="modifiedTime desc").execute()
             existentes = results.get("files", [])
             media = MediaFileUpload(caminho_local, resumable=True)
 
             if existentes:
                 self.service.files().update(fileId=existentes[0]["id"], media_body=media).execute()
+                # Limpar quaisquer arquivos duplicados adicionais mais antigos com o mesmo nome
+                for ext in existentes[1:]:
+                    try:
+                        self.service.files().delete(fileId=ext["id"]).execute()
+                        print(f"  Deletado duplicado histórico do arquivo no salvar: {caminho_drive} (ID: {ext['id']})")
+                    except Exception as ed:
+                        print(f"  Erro ao deletar duplicado antigo no salvar: {ed}")
             else:
                 self.service.files().create(
                     body={"name": nome_arquivo, "parents": [parent_id]},
@@ -153,7 +161,7 @@ class DriveManager:
         return results.get("files", [])
 
     def copiar_arquivo(self, caminho_origem, caminho_destino):
-        """Copia um arquivo no Drive de um caminho para outro."""
+        """Copia um arquivo no Drive de um caminho para outro, prevenindo duplicados."""
         try:
             arq_id = self._buscar_id(caminho_origem)
             if not arq_id:
@@ -162,6 +170,15 @@ class DriveManager:
                 
             dir_dest, nome_dest = caminho_destino.rsplit("/", 1)
             dir_dest_id = self._garantir_pasta(dir_dest)
+            
+            # Prevenir duplicidades deletando o arquivo de mesmo nome existente no destino
+            existente_id = self._buscar_id(caminho_destino)
+            if existente_id:
+                try:
+                    self.service.files().delete(fileId=existente_id).execute()
+                    print(f"  Deletado arquivo duplicado existente no destino: {caminho_destino}")
+                except Exception as ed:
+                    print(f"  Erro ao deletar duplicado no destino: {ed}")
             
             body = {
                 'name': nome_dest,

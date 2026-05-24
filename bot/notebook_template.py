@@ -72,7 +72,7 @@ def _buscar_id(caminho):
     pid = "root"
     for p in partes:
         q = f"name='{{p}}' and '{{pid}}' in parents and trashed=false"
-        r = drive_service.files().list(q=q, fields="files(id,mimeType)").execute()
+        r = drive_service.files().list(q=q, fields="files(id,mimeType)", orderBy="modifiedTime desc").execute()
         a = r.get("files", [])
         if not a: return None
         pid = a[0]["id"]
