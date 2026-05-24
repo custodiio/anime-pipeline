@@ -166,14 +166,32 @@ try:
     if _fid:
         _r = drive_service.files().list(q=f"'{_fid}' in parents and trashed=false", fields="files(id, name)").execute()
         _f_list = _r.get("files", [])
+        print(f"  {len(_f_list)} fontes encontradas no Drive")
         for _f in _f_list:
-            baixar_do_drive(f"KAGGLE/PIPELINE/FONTS/{_f['name']}", f"/usr/share/fonts/truetype/custom/{_f['name']}")
+            _dest = f"/usr/share/fonts/truetype/custom/{_f['name']}"
+            if os.path.exists(_dest):
+                print(f"  Ja existe: {_f['name']}")
+                continue
+            try:
+                _req = drive_service.files().get_media(fileId=_f['id'])
+                with open(_dest, "wb") as _fh:
+                    _dl = MediaIoBaseDownload(_fh, _req); _done = False
+                    while not _done: _, _done = _dl.next_chunk()
+                print(f"  Baixado: {_f['name']}")
+            except Exception as _ex:
+                print(f"  Erro baixando {_f['name']}: {_ex}")
     else:
         print("  ⚠️ Pasta KAGGLE/PIPELINE/FONTS nao encontrada no Drive!")
 except Exception as e:
     print(f"  ❌ Erro ao baixar fontes do Drive: {e}")
 os.system("fc-cache -f -v > /dev/null 2>&1")
-print("Fontes instaladas!")
+_custom_dir = "/usr/share/fonts/truetype/custom"
+if os.path.isdir(_custom_dir):
+    _installed = os.listdir(_custom_dir)
+    print(f"  Fontes instaladas ({len(_installed)}): {_installed}")
+else:
+    print("  ⚠️ Diretorio de fontes custom nao existe!")
+print("Setup de fontes concluido!")
 
 cell_end(0, "done", "Setup concluido")'''
 
