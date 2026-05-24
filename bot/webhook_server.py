@@ -289,7 +289,7 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                     <span class="icon">🎬</span>
                     <span class="label">Selecionar VÍDEO</span>
                     <span class="hint">.mp4, .mkv, .avi, .mov, .webm</span>
-                    <input type="file" id="input-video" accept="video/*,.mkv">
+                    <input type="file" id="input-video" accept="video/*, .mp4, .mkv, .avi, .mov, .webm">
                 </div>
                 <div class="progress" id="prog-video"><div class="progress-bar" id="bar-video"></div></div>
 
@@ -297,7 +297,7 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                     <span class="icon">🎵</span>
                     <span class="label">Selecionar ÁUDIO</span>
                     <span class="hint">.mp3, .wav, .m4a, .aac, .ogg</span>
-                    <input type="file" id="input-audio" accept="audio/*">
+                    <input type="file" id="input-audio" accept="audio/*, .mp3, .wav, .m4a, .aac, .ogg, audio/mpeg, audio/mp3, audio/wav, audio/x-wav, audio/x-m4a, audio/m4a, audio/ogg, audio/aac">
                 </div>
                 <div class="progress audio-prog" id="prog-audio"><div class="progress-bar" id="bar-audio"></div></div>
 

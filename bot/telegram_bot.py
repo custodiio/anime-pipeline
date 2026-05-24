@@ -88,15 +88,19 @@ def authorized(func):
     """Decorator que bloqueia usuários não autorizados."""
     @wraps(func)
     async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
-        user_id = update.effective_user.id
+        user_id = update.effective_user.id if update.effective_user else None
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        text = update.message.text if update.message else "No text"
+        logger.info(f"[DEBUG] Recebido comando/evento: func={func.__name__}, user_id={user_id}, chat_id={chat_id}, text={text}")
         if AUTHORIZED_USERS and user_id not in AUTHORIZED_USERS:
             logger.warning(f"Acesso negado para user_id={user_id}")
-            await update.message.reply_text(
-                "🔒 Acesso negado.\n"
-                f"Seu ID: `{user_id}`\n"
-                "Peça ao administrador para adicionar seu ID.",
-                parse_mode="Markdown"
-            )
+            if update.message:
+                await update.message.reply_text(
+                    "🔒 Acesso negado.\n"
+                    f"Seu ID: `{user_id}`\n"
+                    "Peça ao administrador para adicionar seu ID.",
+                    parse_mode="Markdown"
+                )
             return
         return await func(update, ctx, *args, **kwargs)
     return wrapper
