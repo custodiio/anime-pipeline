@@ -8,7 +8,8 @@ function genId() {
 export function OverlayPanel() {
   const { 
     overlays, addOverlay, updateOverlay, removeOverlay,
-    extractedFrames, selectedFrameId, outputFormat
+    extractedFrames, selectedFrameId, outputFormat,
+    blurBand, cropZoom, staticCrop, videoPosition, videoEdit, colorGrade, background, videoInfo
   } = useProjectStore();
   
   const imgInputRef = useRef<HTMLInputElement>(null);
@@ -16,8 +17,145 @@ export function OverlayPanel() {
 
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryItems, setGalleryItems] = useState<{id: string, name: string, image_data: string}[]>([]);
+  const [activeOverlayId, setActiveOverlayId] = useState<string | null>(null);
 
   const selectedFrame = extractedFrames.find(f => f.id === selectedFrameId);
+
+  // Sync activeOverlayId with overlays array
+  useEffect(() => {
+    if (overlays.length > 0) {
+      if (!activeOverlayId || !overlays.some(o => o.id === activeOverlayId)) {
+        setActiveOverlayId(overlays[overlays.length - 1].id);
+      }
+    } else {
+      setActiveOverlayId(null);
+    }
+  }, [overlays, activeOverlayId]);
+
+  const drawVideoBackground = useCallback((ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, img: HTMLImageElement) => {
+    // 1. Draw Background
+    if (background.type === 'blur') {
+      ctx.filter = `blur(${background.blurIntensity}px)`;
+      ctx.drawImage(img, -20, -20, canvas.width + 40, canvas.height + 40);
+      ctx.filter = 'none';
+    } else if (background.type === 'solid') {
+      ctx.fillStyle = background.solidColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else if (background.type === 'gradient') {
+      const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      grad.addColorStop(0, background.gradient[0]);
+      grad.addColorStop(1, background.gradient[1]);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // 2. Crop calculation
+    let sx = 0;
+    let sy = 0;
+    let sw = img.width;
+    let sh = img.height;
+
+    if (staticCrop?.enabled) {
+      sx = (staticCrop.x / 100) * img.width;
+      sy = (staticCrop.y / 100) * img.height;
+      sw = (staticCrop.width / 100) * img.width;
+      sh = (staticCrop.height / 100) * img.height;
+    } else if (cropZoom?.enabled) {
+      let currentZoom = cropZoom.zoomStart;
+      if (cropZoom.animatedZoom !== false && videoInfo && videoInfo.duration > 0 && selectedFrame) {
+        const progress = selectedFrame.timeSeconds / videoInfo.duration;
+        currentZoom = cropZoom.zoomStart + (cropZoom.zoomEnd - cropZoom.zoomStart) * progress;
+      }
+      const czw = img.width / currentZoom;
+      const czh = img.height / currentZoom;
+      sx = Math.max(0, Math.min(img.width - czw, (img.width - czw) * cropZoom.focusX));
+      sy = Math.max(0, Math.min(img.height - czh, (img.height - czh) * cropZoom.focusY));
+      sw = czw;
+      sh = czh;
+    }
+
+    // Aspect ratio fit
+    const cropAspect = sw / sh;
+    const outAspect = canvas.width / canvas.height;
+    let dw = canvas.width;
+    let dh = canvas.height;
+    let dx = 0;
+    let dy = 0;
+
+    if (cropAspect > outAspect) {
+      dw = canvas.width;
+      dh = dw / cropAspect;
+      dx = 0;
+      dy = (canvas.height - dh) / 2;
+    } else {
+      dh = canvas.height;
+      dw = dh * cropAspect;
+      dx = (canvas.width - dw) / 2;
+      dy = 0;
+    }
+
+    // Video translation & scaling inside canvas
+    if (videoPosition?.enabled) {
+      const tx = (videoPosition.x / 100) * canvas.width;
+      const ty = (videoPosition.y / 100) * canvas.height;
+      dw = dw * videoPosition.scale;
+      dh = dh * videoPosition.scale;
+      dx = (canvas.width - dw) / 2 + tx;
+      dy = (canvas.height - dh) / 2 + ty;
+    }
+
+    // Draw original image with flips and rotation (geom transforms from videoEdit)
+    ctx.save();
+    ctx.translate(dx + dw / 2, dy + dh / 2);
+    
+    if (videoEdit?.hFlip) ctx.scale(-1, 1);
+    if (videoEdit?.vFlip) ctx.scale(1, -1);
+    if (videoEdit?.rotate) {
+      ctx.rotate((videoEdit.rotate * Math.PI) / 180);
+    }
+    
+    ctx.drawImage(img, sx, sy, sw, sh, -dw / 2, -dh / 2, dw, dh);
+    ctx.restore();
+
+    // Color grade simulation (brightness/contrast)
+    if (colorGrade.brightness !== 0 || colorGrade.contrast !== 0 || colorGrade.saturation !== 0) {
+      ctx.filter = `brightness(${1 + colorGrade.brightness / 100}) contrast(${1 + colorGrade.contrast / 100}) saturate(${1 + colorGrade.saturation / 100})`;
+      ctx.drawImage(canvas, 0, 0);
+      ctx.filter = 'none';
+    }
+
+    // Blur bands
+    if (blurBand.enabled) {
+      const bandH = (blurBand.height / 100) * canvas.height;
+      const bandY = (blurBand.positionY / 100) * canvas.height - bandH / 2;
+      
+      const off = document.createElement('canvas');
+      off.width = canvas.width;
+      off.height = canvas.height;
+      const octx = off.getContext('2d')!;
+      octx.filter = `blur(${blurBand.blurIntensity}px)`;
+      octx.drawImage(canvas, 0, 0);
+
+      const mask = document.createElement('canvas');
+      mask.width = canvas.width;
+      mask.height = canvas.height;
+      const mctx = mask.getContext('2d')!;
+      
+      const grad = mctx.createLinearGradient(0, bandY - blurBand.feather, 0, bandY + bandH + blurBand.feather);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(blurBand.feather / (bandH + blurBand.feather * 2), 'rgba(0,0,0,1)');
+      grad.addColorStop(1 - blurBand.feather / (bandH + blurBand.feather * 2), 'rgba(0,0,0,1)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      
+      mctx.fillStyle = grad;
+      mctx.fillRect(0, bandY - blurBand.feather, canvas.width, bandH + blurBand.feather * 2);
+
+      octx.globalCompositeOperation = 'destination-in';
+      octx.drawImage(mask, 0, 0);
+
+      ctx.drawImage(off, 0, 0);
+    }
+  }, [background, staticCrop, cropZoom, videoInfo, selectedFrame, videoPosition, videoEdit, colorGrade, blurBand]);
 
   const drawOverlays = useCallback((ctx: CanvasRenderingContext2D, canvasW: number, canvasH: number) => {
     overlays.forEach(o => {
@@ -88,7 +226,8 @@ export function OverlayPanel() {
       const img = new Image();
       img.src = selectedFrame.dataUrl;
       const render = () => {
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawVideoBackground(ctx, canvas, img);
         drawOverlays(ctx, canvas.width, canvas.height);
       };
       if (img.complete) render();
@@ -98,7 +237,7 @@ export function OverlayPanel() {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawOverlays(ctx, canvas.width, canvas.height);
     }
-  }, [selectedFrame, drawOverlays]);
+  }, [selectedFrame, drawOverlays, drawVideoBackground]);
 
   useEffect(() => {
     drawFrame();
@@ -229,7 +368,20 @@ export function OverlayPanel() {
     }
   };
 
-  const activeOverlay = overlays[overlays.length - 1];
+  const activeOverlay = overlays.find(o => o.id === activeOverlayId) || overlays[overlays.length - 1];
+
+  const duplicateOverlay = () => {
+    if (!activeOverlay) return;
+    const newId = genId();
+    addOverlay({
+      ...activeOverlay,
+      id: newId,
+      x: Math.min(90, activeOverlay.x + 5),
+      y: Math.min(90, activeOverlay.y + 5),
+      zIndex: overlays.length,
+    });
+    setActiveOverlayId(newId);
+  };
 
   return (
     <div className="panel-content">
@@ -241,19 +393,28 @@ export function OverlayPanel() {
       </p>
 
       {/* Preview Canvas */}
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'center' }}>
         <div style={{
           position: 'relative',
           background: '#000',
           borderRadius: 'var(--radius-lg)',
           overflow: 'hidden',
           border: '1px solid var(--border)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          maxWidth: '100%',
         }}>
           <canvas
             ref={canvasRef}
             width={outputFormat === '9:16' ? 1080 : 1920}
             height={outputFormat === '9:16' ? 1920 : 1080}
-            style={{ width: '100%', display: 'block' }}
+            style={{
+              display: 'block',
+              maxWidth: '100%',
+              maxHeight: '360px',
+              objectFit: 'contain',
+            }}
           />
         </div>
       </div>
@@ -293,15 +454,13 @@ export function OverlayPanel() {
             {overlays.map((o) => (
               <div 
                 key={o.id} 
-                className={`overlay-chip ${o === activeOverlay ? 'active' : ''}`}
+                className={`overlay-chip ${o.id === activeOverlay?.id ? 'active' : ''}`}
                 onClick={() => {
-                  // Reorder to make it active (top)
-                  useProjectStore.getState().setSubtitleStyle({}); // Force store update pattern if needed, but here we just use what we have
-                  // We'll just assume the last one is being edited for simplicity as per previous logic
+                  setActiveOverlayId(o.id);
                 }}
                 style={{
                   padding: '6px 12px',
-                  background: o === activeOverlay ? 'var(--primary)' : 'var(--bg-card)',
+                  background: o.id === activeOverlay?.id ? 'var(--primary)' : 'var(--bg-card)',
                   borderRadius: 20,
                   fontSize: 12,
                   whiteSpace: 'nowrap',
@@ -325,8 +484,17 @@ export function OverlayPanel() {
 
           {activeOverlay && (
             <div className="card" style={{ padding: 16, background: 'rgba(255,255,255,0.02)' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
-                Configurações do Elemento
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                  Configurações do Elemento
+                </div>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={duplicateOverlay}
+                  style={{ padding: '2px 8px', fontSize: 11, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 4 }}
+                >
+                  📋 Duplicar
+                </button>
               </div>
               
               {activeOverlay.type !== 'image' && (
@@ -387,6 +555,10 @@ export function OverlayPanel() {
                         <option value="Arial">Arial</option>
                         <option value="Bebas Neue">Bebas Neue</option>
                         <option value="Oswald">Oswald</option>
+                        <option value="Titan One">Titan One</option>
+                        <option value="Luckiest Guy">Luckiest Guy</option>
+                        <option value="Fredoka One">Fredoka One</option>
+                        <option value="Bangers">Bangers</option>
                       </select>
                     </div>
                     <div className="form-group">
