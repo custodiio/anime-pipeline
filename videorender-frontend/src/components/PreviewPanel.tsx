@@ -9,6 +9,9 @@ export function PreviewPanel() {
     setSelectedFrame,
     blurBand,
     cropZoom,
+    staticCrop,
+    videoPosition,
+    videoEdit,
     colorGrade,
     outputFormat,
     background,
@@ -19,6 +22,7 @@ export function PreviewPanel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fullCanvasRef = useRef<HTMLCanvasElement>(null);
   const [showFullPreview, setShowFullPreview] = useState(false);
+  const [applyEditsToGrid, setApplyEditsToGrid] = useState(false);
 
   const selectedFrame = extractedFrames.find((f) => f.id === selectedFrameId);
 
@@ -68,37 +72,75 @@ export function PreviewPanel() {
         ctx.fillRect(0, 0, outW, outH);
       }
 
-      // Main image (fit)
-      const imgAspect = img.width / img.height;
-      const outAspect = outW / outH;
-      let dw = outW, dh = outH, dx = 0, dy = 0;
-      if (imgAspect > outAspect) {
-        dh = outH;
-        dw = dh * imgAspect;
-        dx = (outW - dw) / 2;
-      } else {
-        dw = outW;
-        dh = dw / imgAspect;
-        dy = (outH - dh) / 2;
-      }
+      // Crop calculation
+      let sx = 0;
+      let sy = 0;
+      let sw = img.width;
+      let sh = img.height;
 
-      // Apply crop/zoom simulation
-      if (cropZoom.enabled) {
+      if (staticCrop?.enabled) {
+        sx = (staticCrop.x / 100) * img.width;
+        sy = (staticCrop.y / 100) * img.height;
+        sw = (staticCrop.width / 100) * img.width;
+        sh = (staticCrop.height / 100) * img.height;
+      } else if (cropZoom?.enabled) {
         let currentZoom = cropZoom.zoomStart;
         if (cropZoom.animatedZoom !== false && videoInfo && videoInfo.duration > 0) {
           const progress = selectedFrame.timeSeconds / videoInfo.duration;
           currentZoom = cropZoom.zoomStart + (cropZoom.zoomEnd - cropZoom.zoomStart) * progress;
         }
 
-        const sw = img.width / currentZoom;
-        const sh = img.height / currentZoom;
-        const sx = Math.max(0, Math.min(img.width - sw, (img.width - sw) * cropZoom.focusX));
-        const sy = Math.max(0, Math.min(img.height - sh, (img.height - sh) * cropZoom.focusY));
-        
-        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
-      } else {
-        ctx.drawImage(img, dx, dy, dw, dh);
+        const czw = img.width / currentZoom;
+        const czh = img.height / currentZoom;
+        sx = Math.max(0, Math.min(img.width - czw, (img.width - czw) * cropZoom.focusX));
+        sy = Math.max(0, Math.min(img.height - czh, (img.height - czh) * cropZoom.focusY));
+        sw = czw;
+        sh = czh;
       }
+
+      // Aspect ratio fit
+      const cropAspect = sw / sh;
+      const outAspect = outW / outH;
+      let dw = outW;
+      let dh = outH;
+      let dx = 0;
+      let dy = 0;
+
+      if (cropAspect > outAspect) {
+        dw = outW;
+        dh = dw / cropAspect;
+        dx = 0;
+        dy = (outH - dh) / 2;
+      } else {
+        dh = outH;
+        dw = dh * cropAspect;
+        dx = (outW - dw) / 2;
+        dy = 0;
+      }
+
+      // Video translation & scaling inside canvas
+      if (videoPosition?.enabled) {
+        const tx = (videoPosition.x / 100) * outW;
+        const ty = (videoPosition.y / 100) * outH;
+        dw = dw * videoPosition.scale;
+        dh = dh * videoPosition.scale;
+        dx = (outW - dw) / 2 + tx;
+        dy = (outH - dh) / 2 + ty;
+      }
+
+      // Draw original image with flips and rotation (geom transforms from videoEdit)
+      ctx.save();
+      ctx.translate(dx + dw / 2, dy + dh / 2);
+      
+      if (videoEdit?.hFlip) ctx.scale(-1, 1);
+      if (videoEdit?.vFlip) ctx.scale(1, -1);
+      if (videoEdit?.rotate && videoEdit.rotate !== 0) {
+        ctx.rotate((videoEdit.rotate * Math.PI) / 180);
+      }
+      
+      ctx.drawImage(img, sx, sy, sw, sh, -dw / 2, -dh / 2, dw, dh);
+      ctx.restore();
+
 
       // Color grade simulation (brightness/contrast)
       if (colorGrade.brightness !== 0 || colorGrade.contrast !== 0 || colorGrade.saturation !== 0) {
@@ -205,14 +247,14 @@ export function PreviewPanel() {
   // Render to small canvas
   useEffect(() => {
     renderToCanvas(canvasRef.current);
-  }, [selectedFrame, blurBand, cropZoom, colorGrade, background, outputFormat, overlays]);
+  }, [selectedFrame, blurBand, cropZoom, staticCrop, videoPosition, videoEdit, colorGrade, background, outputFormat, overlays]);
 
   // Render to full canvas when modal is open
   useEffect(() => {
     if (showFullPreview) {
       renderToCanvas(fullCanvasRef.current);
     }
-  }, [showFullPreview, selectedFrame, blurBand, cropZoom, colorGrade, background, outputFormat, overlays]);
+  }, [showFullPreview, selectedFrame, blurBand, cropZoom, staticCrop, videoPosition, videoEdit, colorGrade, background, outputFormat, overlays]);
 
   const handleFullscreen = () => {
     setShowFullPreview(true);
@@ -254,29 +296,78 @@ export function PreviewPanel() {
       </div>
 
       {/* Frame selector */}
-      {extractedFrames.length > 0 && (
-        <div className="panel-section">
-          <div className="panel-title">Frames ({extractedFrames.length})</div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: 6,
-          }}>
-            {extractedFrames.map((frame) => (
-              <div
-                key={frame.id}
-                className={`frame-card ${selectedFrameId === frame.id ? 'selected' : ''}`}
-                style={{ aspectRatio: '16/9' }}
-                onClick={() => setSelectedFrame(frame.id)}
+      {extractedFrames.length > 0 && (() => {
+        let filterStr = '';
+        if (colorGrade.brightness !== 0 || colorGrade.contrast !== 0 || colorGrade.saturation !== 0) {
+          filterStr = `brightness(${1 + colorGrade.brightness / 100}) contrast(${1 + colorGrade.contrast / 100}) saturate(${1 + colorGrade.saturation / 100})`;
+        }
+        
+        let transformStr = '';
+        if (videoEdit?.hFlip) transformStr += ' scaleX(-1)';
+        if (videoEdit?.vFlip) transformStr += ' scaleY(-1)';
+        if (videoEdit?.rotate && videoEdit.rotate !== 0) {
+          transformStr += ` rotate(${videoEdit.rotate}deg)`;
+        }
+
+        return (
+          <div className="panel-section">
+            <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Frames ({extractedFrames.length})</span>
+              <button 
+                className={`btn btn-sm ${applyEditsToGrid ? 'btn-primary' : 'btn-secondary'}`} 
+                onClick={() => setApplyEditsToGrid(!applyEditsToGrid)}
+                style={{ padding: '2px 8px', fontSize: 10, height: 20 }}
               >
-                <img src={frame.dataUrl} alt={`Frame ${frame.id}`} loading="lazy" />
-                <div className="frame-time">{formatDuration(frame.timeSeconds)}</div>
-                <div className="frame-check">✓</div>
-              </div>
-            ))}
+                {applyEditsToGrid ? '✓ Efeitos' : 'Sem Efeitos'}
+              </button>
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 6,
+            }}>
+              {extractedFrames.map((frame) => {
+                let imgStyle: React.CSSProperties = {
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  display: 'block',
+                  transition: 'transform 0.2s, filter 0.2s',
+                };
+                if (applyEditsToGrid) {
+                  imgStyle.filter = filterStr;
+                  imgStyle.transform = transformStr;
+                  if (staticCrop?.enabled) {
+                    const scaleFactor = 100 / Math.max(10, staticCrop.width);
+                    imgStyle.transform = `${transformStr} scale(${scaleFactor.toFixed(2)})`;
+                    imgStyle.transformOrigin = 'center center';
+                    // object-position is supported on img tags to shift origin
+                    imgStyle.objectPosition = `${staticCrop.x + staticCrop.width / 2}% ${staticCrop.y + staticCrop.height / 2}%`;
+                  }
+                }
+
+                return (
+                  <div
+                    key={frame.id}
+                    className={`frame-card ${selectedFrameId === frame.id ? 'selected' : ''}`}
+                    style={{ aspectRatio: '16/9', overflow: 'hidden' }}
+                    onClick={() => setSelectedFrame(frame.id)}
+                  >
+                    <img 
+                      src={frame.dataUrl} 
+                      alt={`Frame ${frame.id}`} 
+                      loading="lazy" 
+                      style={imgStyle}
+                    />
+                    <div className="frame-time">{formatDuration(frame.timeSeconds)}</div>
+                    <div className="frame-check">✓</div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Video info */}
       {videoInfo && (

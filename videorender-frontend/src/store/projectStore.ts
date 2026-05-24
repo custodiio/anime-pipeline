@@ -61,6 +61,40 @@ export interface CropZoomConfig {
   removeBottomSubtitlesPct: number;
 }
 
+export interface StaticCropConfig {
+  enabled: boolean;
+  aspectRatio: 'original' | '9:16' | '16:9' | '3:4' | '1:1' | 'custom';
+  x: number;      // 0 to 100 percentage
+  y: number;      // 0 to 100 percentage
+  width: number;  // 0 to 100 percentage
+  height: number; // 0 to 100 percentage
+  sizePct: number; // Crop size percentage (10-100)
+  posX: number;    // Crop X position percentage (0-100)
+  posY: number;    // Crop Y position percentage (0-100)
+  marginL: number; // Custom crop: Left margin (0-50)
+  marginR: number; // Custom crop: Right margin (0-50)
+  marginT: number; // Custom crop: Top margin (0-50)
+  marginB: number; // Custom crop: Bottom margin (0-50)
+}
+
+export interface VideoPositionConfig {
+  enabled: boolean;
+  x: number;     // translation X percentage (-100 to 100)
+  y: number;     // translation Y percentage (-100 to 100)
+  scale: number; // scale factor (0.5 to 2.5)
+}
+
+export interface VideoEditConfig {
+  speed: number;       // speed factor (0.5 to 2.0)
+  hFlip: boolean;      // horizontal flip
+  vFlip: boolean;      // vertical flip
+  rotate: 0 | 90 | 180 | 270;
+  volume: number;      // volume (0 to 200)
+  audioFadeIn: number;  // seconds
+  audioFadeOut: number; // seconds
+}
+
+
 export interface ColorGradeConfig {
   preset: string;
   brightness: number;
@@ -128,6 +162,9 @@ export interface ProjectState {
   };
 
   cropZoom: CropZoomConfig;
+  staticCrop: StaticCropConfig;
+  videoPosition: VideoPositionConfig;
+  videoEdit: VideoEditConfig;
   blurBand: BlurBandConfig;
   colorGrade: ColorGradeConfig;
   subtitleStyle: SubtitleStyle;
@@ -147,6 +184,9 @@ export interface ProjectState {
   setOutputFormat: (f: OutputFormat) => void;
   setBackground: (bg: Partial<ProjectState['background']>) => void;
   setCropZoom: (cfg: Partial<CropZoomConfig>) => void;
+  setStaticCrop: (cfg: Partial<StaticCropConfig>) => void;
+  setVideoPosition: (cfg: Partial<VideoPositionConfig>) => void;
+  setVideoEdit: (cfg: Partial<VideoEditConfig>) => void;
   setBlurBand: (cfg: Partial<BlurBandConfig>) => void;
   setColorGrade: (cfg: Partial<ColorGradeConfig>) => void;
   setSubtitleStyle: (style: Partial<SubtitleStyle>) => void;
@@ -229,6 +269,39 @@ const defaultBlurBand: BlurBandConfig = {
   opacity: 0.6,
 };
 
+const defaultStaticCrop: StaticCropConfig = {
+  enabled: false,
+  aspectRatio: 'original',
+  x: 0,
+  y: 0,
+  width: 100,
+  height: 100,
+  sizePct: 100,
+  posX: 50,
+  posY: 50,
+  marginL: 0,
+  marginR: 0,
+  marginT: 0,
+  marginB: 0,
+};
+
+const defaultVideoPosition: VideoPositionConfig = {
+  enabled: false,
+  x: 0,
+  y: 0,
+  scale: 1.0,
+};
+
+const defaultVideoEdit: VideoEditConfig = {
+  speed: 1.0,
+  hFlip: false,
+  vFlip: false,
+  rotate: 0,
+  volume: 100,
+  audioFadeIn: 0,
+  audioFadeOut: 0,
+};
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
   videoFile: null,
   videoObjectUrl: null,
@@ -250,6 +323,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   cropZoom: defaultCropZoom,
+  staticCrop: defaultStaticCrop,
+  videoPosition: defaultVideoPosition,
+  videoEdit: defaultVideoEdit,
   blurBand: defaultBlurBand,
   colorGrade: defaultColorGrade,
   subtitleStyle: defaultSubtitleStyle,
@@ -269,6 +345,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setOutputFormat: (f) => set({ outputFormat: f }),
   setBackground: (bg) => set((s) => ({ background: { ...s.background, ...bg } })),
   setCropZoom: (cfg) => set((s) => ({ cropZoom: { ...s.cropZoom, ...cfg } })),
+  setStaticCrop: (cfg) => set((s) => ({ staticCrop: { ...s.staticCrop, ...cfg } })),
+  setVideoPosition: (cfg) => set((s) => ({ videoPosition: { ...s.videoPosition, ...cfg } })),
+  setVideoEdit: (cfg) => set((s) => ({ videoEdit: { ...s.videoEdit, ...cfg } })),
   setBlurBand: (cfg) => set((s) => ({ blurBand: { ...s.blurBand, ...cfg } })),
   setColorGrade: (cfg) => set((s) => ({ colorGrade: { ...s.colorGrade, ...cfg } })),
   setSubtitleStyle: (style) => set((s) => ({ subtitleStyle: { ...s.subtitleStyle, ...style } })),
@@ -290,6 +369,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   loadPreset: (preset: any) => set((s) => ({
     outputFormat: preset.outputFormat ?? s.outputFormat,
     cropZoom: preset.cropZoom ? { ...s.cropZoom, ...preset.cropZoom } : s.cropZoom,
+    staticCrop: preset.staticCrop ? { ...s.staticCrop, ...preset.staticCrop } : s.staticCrop,
+    videoPosition: preset.videoPosition ? { ...s.videoPosition, ...preset.videoPosition } : s.videoPosition,
+    videoEdit: preset.videoEdit ? { ...s.videoEdit, ...preset.videoEdit } : s.videoEdit,
     blurBand: preset.blurBand ? { ...s.blurBand, ...preset.blurBand } : s.blurBand,
     colorGrade: preset.colorGrade ? { ...s.colorGrade, ...preset.colorGrade } : s.colorGrade,
     subtitleStyle: preset.subtitleStyle ? { ...s.subtitleStyle, ...preset.subtitleStyle } : s.subtitleStyle,
@@ -309,6 +391,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         background: s.background,
       },
       cropZoom: s.cropZoom,
+      staticCrop: s.staticCrop,
+      videoPosition: s.videoPosition,
+      videoEdit: s.videoEdit,
       blurBand: s.blurBand,
       colorGrade: s.colorGrade,
       subtitles: {
