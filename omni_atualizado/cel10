@@ -161,7 +161,7 @@ def run_montagem():
                 bgm = bgm + AudioSegment.silent(duration=len(final_mix) - len(bgm))
             elif len(bgm) > len(final_mix):
                 bgm = bgm[:len(final_mix)]
-            bgm = bgm.apply_gain(-15.0)  # Ducking
+            bgm = bgm.apply_gain(-5.0)  # Ducking
             final_mix = bgm.overlay(final_mix)
         else:
             print("  [BGM] AVISO: Instrumental não encontrado em", bg_audio_path)
@@ -338,6 +338,13 @@ def run_montagem():
             salvar_no_drive(OUTPUT_FILENAME, drive_mp3)
             salvar_no_drive(SRT_FILENAME,    drive_srt)
             print(f"  Backup Drive: {drive_mp3}")
+            
+            # Backup da musica de fundo
+            bg_audio_path = "/kaggle/working/demucs_out/htdemucs/anime_audio/no_vocals.wav"
+            if os.path.exists(bg_audio_path):
+                drive_bgm = f"KAGGLE/AUDIO_DUB/OUTPUT/{safe_anime}_instrumental.wav"
+                salvar_no_drive(bg_audio_path, drive_bgm)
+                print(f"  Backup BGM Drive: {drive_bgm}")
         except Exception as e:
             print(f"  Erro backup Drive: {e}")
 
