@@ -152,6 +152,20 @@ def run_montagem():
     for s in segments_to_concat[1:]:
         final_mix = final_mix + s
 
+    if globals().get('PROJECT_OPTS', {}).get('bg_audio'):
+        bg_audio_path = "/kaggle/working/demucs_out/htdemucs/anime_audio/no_vocals.wav"
+        if os.path.exists(bg_audio_path):
+            print("  [BGM] Mixando áudio instrumental de fundo...")
+            bgm = AudioSegment.from_file(bg_audio_path)
+            if len(bgm) < len(final_mix):
+                bgm = bgm + AudioSegment.silent(duration=len(final_mix) - len(bgm))
+            elif len(bgm) > len(final_mix):
+                bgm = bgm[:len(final_mix)]
+            bgm = bgm.apply_gain(-15.0)  # Ducking
+            final_mix = bgm.overlay(final_mix)
+        else:
+            print("  [BGM] AVISO: Instrumental não encontrado em", bg_audio_path)
+
     print(f'  Exportando: {OUTPUT_FILENAME}')
     final_mix.export(OUTPUT_FILENAME, format='mp3')
     del final_mix
@@ -221,10 +235,23 @@ def run_montagem():
                         line2 = full[best_pos:].lstrip()
                         return f"{line1}\\n{line2}"
 
+                    is_word_by_word = globals().get('PROJECT_OPTS', {}).get('srt_type') == 'word_by_word'
+
                     idx = 0
                     curr_block = []
                     while idx < len(all_words):
                         w = all_words[idx]
+                        
+                        if is_word_by_word:
+                            srt_entries.append({
+                                'block_idx': b_idx,
+                                'start': time_offset + w['start'],
+                                'end':   time_offset + w['end'],
+                                'text':  w['word'].strip()
+                            })
+                            idx += 1
+                            continue
+                            
                         curr_block.append(w)
 
                         has_strong = any(p in w['word'] for p in ['.', '?', '!'])
@@ -259,7 +286,7 @@ def run_montagem():
 
                         idx += 1
 
-                    if curr_block:
+                    if curr_block and not is_word_by_word:
                         text = format_sub(curr_block)
                         srt_entries.append({
                             'block_idx': b_idx,

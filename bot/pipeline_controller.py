@@ -518,6 +518,44 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                             "text": texto
                         })
 
+            project_db = get_project(project_id)
+            is_word_by_word = project_db and project_db.get("srt_type") == "word_by_word"
+            words_per_block = style.get("wordsPerBlock", 1)
+
+            if is_word_by_word and words_per_block > 1:
+                grouped_blocks = []
+                current_group = []
+                
+                for b in parsed_blocks:
+                    current_group.append(b)
+                    
+                    has_strong = any(p in b["text"] for p in ['.', '?', '!'])
+                    has_comma = ',' in b["text"]
+                    
+                    cut = False
+                    if has_strong:
+                        cut = True
+                    elif len(current_group) >= words_per_block:
+                        cut = True
+                    elif has_comma and len(current_group) >= max(1, words_per_block - 2):
+                        cut = True
+                        
+                    if cut:
+                        grouped_blocks.append({
+                            "start_ms": current_group[0]["start_ms"],
+                            "end_ms": current_group[-1]["end_ms"],
+                            "text": wrap_text(" ".join(g["text"] for g in current_group))
+                        })
+                        current_group = []
+                        
+                if current_group:
+                    grouped_blocks.append({
+                        "start_ms": current_group[0]["start_ms"],
+                        "end_ms": current_group[-1]["end_ms"],
+                        "text": wrap_text(" ".join(g["text"] for g in current_group))
+                    })
+                parsed_blocks = grouped_blocks
+
             # Ordenar por start_ms e corrigir sobreposições
             parsed_blocks.sort(key=lambda b: b["start_ms"])
             for i in range(len(parsed_blocks) - 1):

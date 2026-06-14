@@ -20,6 +20,10 @@ export function PresetsModal({ onClose }: { onClose: () => void }) {
     filter: true,
     subtitle: true,
     crop: true,
+    staticCrop: true,
+    position: true,
+    edit: true,
+    background: true,
     watermark: false,
     overlay: true,
   });
@@ -59,6 +63,10 @@ export function PresetsModal({ onClose }: { onClose: () => void }) {
     }
     if (includeConfig.subtitle) presetData.subtitleStyle = store.subtitleStyle;
     if (includeConfig.crop) presetData.cropZoom = store.cropZoom;
+    if (includeConfig.staticCrop) presetData.staticCrop = store.staticCrop;
+    if (includeConfig.position) presetData.videoPosition = store.videoPosition;
+    if (includeConfig.edit) presetData.videoEdit = store.videoEdit;
+    if (includeConfig.background) presetData.background = store.background;
     if (includeConfig.watermark) presetData.watermarks = store.watermarks;
     if (includeConfig.overlay) presetData.overlays = store.overlays;
 
@@ -131,7 +139,11 @@ export function PresetsModal({ onClose }: { onClose: () => void }) {
               { key: 'format', label: 'Formato' },
               { key: 'filter', label: 'Cor & Blur' },
               { key: 'subtitle', label: 'Legendas' },
-              { key: 'crop', label: 'Crop/Zoom' },
+              { key: 'crop', label: 'Zoom Dinâmico' },
+              { key: 'staticCrop', label: 'Crop Estático' },
+              { key: 'position', label: 'Posição do Vídeo' },
+              { key: 'edit', label: 'Corte de Vídeo' },
+              { key: 'background', label: 'Fundo' },
               { key: 'watermark', label: 'Máscaras' },
               { key: 'overlay', label: 'Overlays' },
             ].map(({ key, label }) => (

@@ -377,6 +377,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     subtitleStyle: preset.subtitleStyle ? { ...s.subtitleStyle, ...preset.subtitleStyle } : s.subtitleStyle,
     watermarks: preset.watermarks ?? s.watermarks,
     overlays: preset.overlays ?? s.overlays,
+    background: preset.background ? { ...s.background, ...preset.background } : s.background,
   })),
 
   exportProject: () => {

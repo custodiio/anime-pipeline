@@ -128,6 +128,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     buttons = [
         [InlineKeyboardButton("🚀 Novo Projeto Automático", callback_data="new_auto")],
         [InlineKeyboardButton("🛠️ Novo Projeto Manual", callback_data="new_manual")],
+        [InlineKeyboardButton("☁️ Iniciar via GDrive (Scrapper)", callback_data="start_usar_drive")],
         [InlineKeyboardButton("📂 Iniciar via Upload Local", callback_data="start_usar_local")]
     ]
     await update.message.reply_text(
@@ -349,6 +350,87 @@ async def cmd_usar_local(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _handle_local_upload_check(update, chat_id, project_name)
 
 
+async def _handle_drive_upload_check(update: Update, chat_id: str, project_name: str = None, query=None):
+    active = get_active_project(chat_id)
+    if active:
+        msg = "⚠️ Já existe um projeto ativo. Use /cancel primeiro."
+        if query:
+            await query.message.reply_text(msg)
+        else:
+            await update.message.reply_text(msg)
+        return
+
+    uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
+    
+    video_path = os.path.join(uploads_dir, "video_original.mp4")
+    audio_path = os.path.join(uploads_dir, "anime_audio.mp3")
+
+    msg_loading = "⏳ Conectando ao Google Drive e baixando arquivos de referência enviados pelo Scrapper..."
+    if query:
+        status_msg = await query.message.reply_text(msg_loading)
+    else:
+        status_msg = await update.message.reply_text(msg_loading)
+
+    # 1. Apaga arquivos locais antigos na GCP se existirem, para forçar o download limpo
+    for p in [video_path, audio_path]:
+        if os.path.exists(p):
+            try: os.remove(p)
+            except Exception as e: logger.warning(f"Erro ao remover arquivo antigo {p}: {e}")
+
+    try:
+        # 2. Executa download do Drive em thread (sincrono por debaixo dos panos)
+        drive = controller.drive
+        audio_success = await asyncio.to_thread(drive.baixar, "KAGGLE/AUDIO_DUB/INPUT/anime_audio.mp3", audio_path)
+        video_success = await asyncio.to_thread(drive.baixar, "KAGGLE/PIPELINE/ATIVO/video_original.mp4", video_path)
+
+        if not audio_success or not video_success:
+            await status_msg.edit_text(
+                "❌ **Arquivos não encontrados no Google Drive!**\n"
+                "Certifique-se de que o Scrapper local já concluiu o download e o envio para o Drive:\n"
+                "├ 🎥 `video_original.mp4` em `KAGGLE/PIPELINE/ATIVO/`\n"
+                "└ 🎵 `anime_audio.mp3` em `KAGGLE/AUDIO_DUB/INPUT/`"
+            )
+            return
+
+        await status_msg.edit_text("✅ Arquivos baixados do Google Drive com sucesso!")
+
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Erro ao baixar arquivos do Google Drive:\n`{e}`")
+        return
+
+    # Se não foi fornecido um nome, tenta pegar do chat_id
+    if not project_name:
+        project_name = f"Projeto_{chat_id[:6]}"
+
+    if chat_id not in user_uploads:
+        user_uploads[chat_id] = {}
+        
+    user_uploads[chat_id]["video"] = video_path
+    user_uploads[chat_id]["audio"] = audio_path
+    user_uploads[chat_id]["name"] = project_name
+    user_uploads[chat_id]["local"] = True  # Tratado como local, pois acabamos de baixar do Drive para a VPS
+    user_uploads[chat_id]["watermark"] = True
+    user_uploads[chat_id]["enhancer"] = False
+    user_uploads[chat_id]["thumbnail"] = True
+    user_uploads[chat_id]["manual_mode"] = False
+    user_uploads[chat_id]["bg_audio"] = False
+    user_uploads[chat_id]["srt_type"] = "normal"
+
+    if query:
+        await send_config_menu(update, chat_id, query)
+    else:
+        await send_config_menu(update, chat_id)
+
+
+@authorized
+async def cmd_usar_drive(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Inicia o projeto pegando os arquivos direto do Google Drive (enviados pelo Scrapper)."""
+    chat_id = str(update.effective_chat.id)
+    project_name = " ".join(ctx.args) if ctx.args else None
+    await _handle_drive_upload_check(update, chat_id, project_name)
+
+
 async def send_config_menu(update, chat_id, query=None):
     """Envia ou atualiza o menu completo de configurações do projeto."""
     opts = user_uploads.get(chat_id)
@@ -358,6 +440,8 @@ async def send_config_menu(update, chat_id, query=None):
     wm_text      = "✅ Remover Marca d'água" if opts.get("watermark", True)   else "❌ Remover Marca d'água"
     enhancer_text = "✅ Aumentar Qualidade"   if opts.get("enhancer", False)  else "❌ Aumentar Qualidade"
     thumb_text   = "✅ Gerar Thumbnail"       if opts.get("thumbnail", True)  else "❌ Gerar Thumbnail"
+    bg_text      = "🎵 Áudio: Fundo + Dub"    if opts.get("bg_audio", False)  else "🔇 Áudio: Apenas Dub"
+    srt_text     = "📝 SRT: Palavra/Palavra" if opts.get("srt_type", "normal") == "word_by_word" else "📝 SRT: Normal (Fluxo)"
     is_manual    = opts.get("manual_mode", False)
     mode_text    = "🛠️ Modo: Manual"         if is_manual else "🤖 Modo: Automático"
 
@@ -365,6 +449,8 @@ async def send_config_menu(update, chat_id, query=None):
         [InlineKeyboardButton(wm_text,        callback_data="toggle_wm")],
         [InlineKeyboardButton(enhancer_text,  callback_data="toggle_enhancer")],
         [InlineKeyboardButton(thumb_text,     callback_data="toggle_thumbnail")],
+        [InlineKeyboardButton(bg_text,        callback_data="toggle_bgaudio")],
+        [InlineKeyboardButton(srt_text,       callback_data="toggle_srt")],
         [InlineKeyboardButton(mode_text,      callback_data="toggle_mode")],
         [InlineKeyboardButton("▶️ Iniciar Projeto", callback_data="start_project")]
     ]
@@ -512,6 +598,10 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _handle_local_upload_check(update, chat_id, query=query)
         return
 
+    elif data == "start_usar_drive":
+        await _handle_drive_upload_check(update, chat_id, query=query)
+        return
+
     elif data == "local_force_new":
         await send_config_menu(update, chat_id, query)
         return
@@ -580,6 +670,17 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             user_uploads[chat_id]["manual_mode"] = not user_uploads[chat_id].get("manual_mode", False)
             await send_config_menu(None, chat_id, query)
             
+    elif data == "toggle_bgaudio":
+        if chat_id in user_uploads:
+            user_uploads[chat_id]["bg_audio"] = not user_uploads[chat_id].get("bg_audio", False)
+            await send_config_menu(None, chat_id, query)
+
+    elif data == "toggle_srt":
+        if chat_id in user_uploads:
+            current_srt = user_uploads[chat_id].get("srt_type", "normal")
+            user_uploads[chat_id]["srt_type"] = "word_by_word" if current_srt == "normal" else "normal"
+            await send_config_menu(None, chat_id, query)
+            
     elif data == "start_project":
         if chat_id not in user_uploads:
             await query.edit_message_text("❌ Sessão expirada. Envie os arquivos novamente.")
@@ -596,6 +697,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             manual_mode       = opts.get("manual_mode", False)
             thumbnail_enabled = opts.get("thumbnail", True)
+            bg_audio          = opts.get("bg_audio", False)
+            srt_type          = opts.get("srt_type", "normal")
 
             if manual_mode:
                 project = await asyncio.to_thread(
@@ -620,7 +723,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pid = str(project["id"])
 
             # Salvar opções no banco para o notifier consultar depois
-            set_project_opts(pid, manual_mode, thumbnail_enabled)
+            set_project_opts(pid, manual_mode, thumbnail_enabled, bg_audio, srt_type)
 
             token = gerar_session_token(pid)
             active_sessions[token] = {"project_id": pid, "chat_id": chat_id, "created_at": time.time()}
@@ -1210,6 +1313,7 @@ def main():
             BotCommand("upload", "Obter link para upload local"),
             BotCommand("cancel", "Cancela projeto ativo"),
             BotCommand("usar_local", "Iniciar projeto com arquivos do PC"),
+            BotCommand("usar_drive", "Iniciar projeto com arquivos do Google Drive"),
         ])
         print("Comandos do Telegram registrados no menu azul!")
 
@@ -1220,6 +1324,7 @@ def main():
     app.add_handler(CommandHandler("novo", cmd_novo))
     app.add_handler(CommandHandler("teste_enhancer", cmd_teste_enhancer))
     app.add_handler(CommandHandler("usar_local", cmd_usar_local))
+    app.add_handler(CommandHandler("usar_drive", cmd_usar_drive))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("cells", cmd_cells))
     app.add_handler(CommandHandler("sessao", cmd_sessao))

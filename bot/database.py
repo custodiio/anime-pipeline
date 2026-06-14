@@ -58,6 +58,8 @@ def init_db():
             -- Opções de criação do projeto
             manual_mode BOOLEAN DEFAULT FALSE,
             thumbnail_enabled BOOLEAN DEFAULT TRUE,
+            bg_audio BOOLEAN DEFAULT FALSE,
+            srt_type TEXT DEFAULT 'normal',
             
             started_at TIMESTAMPTZ,
             completed_at TIMESTAMPTZ
@@ -126,6 +128,8 @@ def _migrate_db():
     migrations = [
         "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS manual_mode BOOLEAN DEFAULT FALSE",
         "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS thumbnail_enabled BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS bg_audio BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS srt_type TEXT DEFAULT 'normal'",
     ]
     for sql in migrations:
         try:
@@ -157,15 +161,15 @@ def create_project(project_name: str, chat_id: str) -> dict:
     return project
 
 
-def set_project_opts(project_id: str, manual_mode: bool, thumbnail_enabled: bool):
-    """Salva as opções de modo e thumbnail do projeto."""
+def set_project_opts(project_id: str, manual_mode: bool, thumbnail_enabled: bool, bg_audio: bool = False, srt_type: str = 'normal'):
+    """Salva as opções de modo, thumbnail e processamento de áudio/legenda do projeto."""
     conn = _get_conn()
     cur = conn.cursor()
     cur.execute("""
         UPDATE pipeline_projects
-        SET manual_mode = %s, thumbnail_enabled = %s, updated_at = NOW()
+        SET manual_mode = %s, thumbnail_enabled = %s, bg_audio = %s, srt_type = %s, updated_at = NOW()
         WHERE id = %s::uuid
-    """, (manual_mode, thumbnail_enabled, project_id))
+    """, (manual_mode, thumbnail_enabled, bg_audio, srt_type, project_id))
     conn.commit()
     cur.close()
     conn.close()

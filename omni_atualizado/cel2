@@ -51,6 +51,7 @@ BATCH_SIZE = 50  # @param {type:"integer"}
 
 # Identificação de anime — requer modelo com boa compreensão multilíngue
 MODELS_IDENTIFICACAO = [
+    "gemini-3.5-flash"
     "gemini-3.1-pro-preview",
     "gemini-3.1-flash-lite",
     "gemini-3-flash-preview",
@@ -59,6 +60,7 @@ MODELS_IDENTIFICACAO = [
 
 # Tradução em batch — velocidade é importante, flash é suficiente
 MODELS_TRADUCAO = [
+    "gemini-3.5-flash"
     "gemini-3.1-pro-preview",
     "gemini-3.1-flash-lite",
     "gemini-2.5-pro",
@@ -69,6 +71,7 @@ MODELS_TRADUCAO = [
 # Reescrita de texto da fábrica de áudio — contagem de caracteres
 MODELS_REESCRITA = [
     "gemini-3.1-flash-lite",
+    "gemini-3.5-flash"
     "gemini-3-flash-preview",
 ]
 

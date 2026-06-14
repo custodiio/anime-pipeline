@@ -60,4 +60,21 @@ def report_step(status, msg=""):
     _db_exec(f"UPDATE pipeline_projects SET {STEP_NAME}=%s,current_step=%s,updated_at=NOW() WHERE id=%s::uuid", (status, STEP_NAME.replace("step_",""), PROJECT_ID))
     _db_exec("INSERT INTO pipeline_logs (project_id,step,status,message) VALUES (%s::uuid,%s,%s,%s)", (PROJECT_ID, STEP_NAME, status, msg))
 
-print("Tracking de celulas configurado!")
+def fetch_project_opts():
+    if not DATABASE_URL or not PROJECT_ID: return {"bg_audio": False, "srt_type": "normal"}
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        cur = conn.cursor()
+        cur.execute("SELECT bg_audio, srt_type FROM pipeline_projects WHERE id=%s::uuid", (PROJECT_ID,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return dict(row) if row else {"bg_audio": False, "srt_type": "normal"}
+    except Exception as e:
+        print(f"Erro ao buscar opts: {e}")
+        return {"bg_audio": False, "srt_type": "normal"}
+
+PROJECT_OPTS = fetch_project_opts()
+print("Tracking de celulas e opts configurados!", PROJECT_OPTS)
