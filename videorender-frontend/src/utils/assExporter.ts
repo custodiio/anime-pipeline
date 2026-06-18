@@ -93,8 +93,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
     const effFadeIn = Math.round(Math.min(style.fadeIn, maxFadeIn));
     const effFadeOut = Math.round(Math.min(style.fadeOut, maxFadeOut));
 
+    const alignment = style.alignment || 2;
+
     if (words.length > 0 && ctx) {
-      // Calculate total width of the line to center it properly
+      // Calculate total width of the line to position it properly
       const wordWidths = words.map(w => {
         const text = style.allCaps ? w.word.toUpperCase() : w.word;
         return ctx.measureText(text).width;
@@ -102,7 +104,24 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
       const spaceWidth = ctx.measureText(' ').width;
       
       const totalWidth = wordWidths.reduce((acc, val, i) => acc + val + (i < words.length - 1 ? spaceWidth : 0), 0);
+      
       let currentX = centerX - totalWidth / 2;
+      if ([1, 4, 7].includes(alignment)) {
+        currentX = centerX;
+      } else if ([3, 6, 9].includes(alignment)) {
+        currentX = centerX - totalWidth;
+      } else {
+        currentX = centerX - totalWidth / 2;
+      }
+
+      let wordAnTag = '\\an2';
+      if ([7, 8, 9].includes(alignment)) {
+        wordAnTag = '\\an8';
+      } else if ([4, 5, 6].includes(alignment)) {
+        wordAnTag = '\\an5';
+      } else {
+        wordAnTag = '\\an2';
+      }
 
       words.forEach((w, idx) => {
         const wText = style.allCaps ? w.word.toUpperCase() : w.word;
@@ -143,13 +162,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
         // Layer 0: Glow
         if (style.glow) {
           const glowEffect = `\\1c${gTag}\\3c${gTag}\\bord${Math.max(style.outlineWidth, style.glowBlur)}\\blur${style.glowBlur}`;
-          const glowLine = `Dialogue: 0,${assTime(e.startTime)},${assTime(e.endTime)},Default,,0,0,0,,{${posTag}\\an2${glowEffect}${alphaAnimGlow}${transformAnim}}${wText}`;
+          const glowLine = `Dialogue: 0,${assTime(e.startTime)},${assTime(e.endTime)},Default,,0,0,0,,{${posTag}${wordAnTag}${glowEffect}${alphaAnimGlow}${transformAnim}}${wText}`;
           assLines.push(glowLine);
         }
 
         // Layer 1: Main Text
         const mainEffect = `\\1c${pTag}\\3c${oTag}\\bord${style.outlineWidth}\\blur0`;
-        const mainLine = `Dialogue: 1,${assTime(e.startTime)},${assTime(e.endTime)},Default,,0,0,0,,{${posTag}\\an2${mainEffect}${alphaAnimMain}${transformAnim}}${wText}`;
+        const mainLine = `Dialogue: 1,${assTime(e.startTime)},${assTime(e.endTime)},Default,,0,0,0,,{${posTag}${wordAnTag}${mainEffect}${alphaAnimMain}${transformAnim}}${wText}`;
         assLines.push(mainLine);
 
         currentX += wWidth + spaceWidth;
@@ -164,13 +183,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
       else if (style.animation === 'bounce') anim = `\\fscx80\\fscy80\\t(0,${effFadeIn / 2},\\fscx120\\fscy120)\\t(${effFadeIn / 2},${effFadeIn},\\fscx100\\fscy100)`;
       else if (style.animation === 'fade' || effFadeIn > 0) anim = `\\fad(${effFadeIn},${effFadeOut})`;
       
+      const blockAnTag = `\\an${alignment}`;
+
       if (style.glow) {
         const glowEffect = `\\1c${gTag}\\3c${gTag}\\1a${gAlpha}\\3a${gAlpha}\\bord${Math.max(style.outlineWidth, style.glowBlur)}\\blur${style.glowBlur}`;
-        assLines.push(`Dialogue: 0,${assTime(e.startTime)},${assTime(e.endTime)},Default,,0,0,0,,{${posTag}\\an2${glowEffect}${anim}}${fullText}`);
+        assLines.push(`Dialogue: 0,${assTime(e.startTime)},${assTime(e.endTime)},Default,,0,0,0,,{${posTag}${blockAnTag}${glowEffect}${anim}}${fullText}`);
       }
       
       const mainEffect = `\\1c${pTag}\\3c${oTag}\\1a&H00&\\3a&H00&\\bord${style.outlineWidth}\\blur0`;
-      assLines.push(`Dialogue: 1,${assTime(e.startTime)},${assTime(e.endTime)},Default,,0,0,0,,{${posTag}\\an2${mainEffect}${anim}}${fullText}`);
+      assLines.push(`Dialogue: 1,${assTime(e.startTime)},${assTime(e.endTime)},Default,,0,0,0,,{${posTag}${blockAnTag}${mainEffect}${anim}}${fullText}`);
     }
   });
 

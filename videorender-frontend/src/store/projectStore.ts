@@ -47,6 +47,7 @@ export interface BlurBandConfig {
   feather: number;
   color: string;
   opacity: number;
+  colorOverlayEnabled: boolean;
 }
 
 export interface CropZoomConfig {
@@ -267,6 +268,7 @@ const defaultBlurBand: BlurBandConfig = {
   feather: 40,
   color: '#000000',
   opacity: 0.6,
+  colorOverlayEnabled: true,
 };
 
 const defaultStaticCrop: StaticCropConfig = {

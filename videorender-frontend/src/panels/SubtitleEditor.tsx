@@ -57,15 +57,52 @@ function drawSubtitles(
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.font = `${style.bold ? 'bold ' : ''}${style.italic ? 'italic ' : ''}${fontSize}px ${style.font}, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'bottom';
+
+  const alignment = style.alignment || 2;
+
+  // Horizontal alignment
+  let textAlign: CanvasTextAlign = 'center';
+  if ([1, 4, 7].includes(alignment)) {
+    textAlign = 'left';
+  } else if ([3, 6, 9].includes(alignment)) {
+    textAlign = 'right';
+  } else {
+    textAlign = 'center';
+  }
+  ctx.textAlign = textAlign;
+
+  // Vertical baseline
+  let textBaseline: CanvasTextBaseline = 'bottom';
+  if ([7, 8, 9].includes(alignment)) {
+    textBaseline = 'top';
+  } else if ([4, 5, 6].includes(alignment)) {
+    textBaseline = 'middle';
+  } else {
+    textBaseline = 'bottom';
+  }
+  ctx.textBaseline = textBaseline;
 
   const lineH = fontSize * 1.25;
-  const startY = y - (active.length * lineH) / 2;
+  let startY = 0;
+  if ([7, 8, 9].includes(alignment)) {
+    startY = y;
+  } else if ([4, 5, 6].includes(alignment)) {
+    startY = y - (active.length * lineH) / 2;
+  } else {
+    startY = y - active.length * lineH;
+  }
 
   active.forEach((entry, i) => {
     const text = style.allCaps ? entry.text.toUpperCase() : entry.text;
-    const ly = startY + (i + 1) * lineH;
+    
+    let ly = 0;
+    if ([7, 8, 9].includes(alignment)) {
+      ly = startY + i * lineH;
+    } else if ([4, 5, 6].includes(alignment)) {
+      ly = startY + (i + 0.5) * lineH;
+    } else {
+      ly = startY + (i + 1) * lineH;
+    }
 
     // Background box
     if (style.bgBox) {
@@ -139,6 +176,13 @@ function drawSubtitles(
     if (entry.words && entry.words.length > 0) {
       const totalWidth = ctx.measureText(text).width;
       let currentX = x - totalWidth / 2;
+      if ([1, 4, 7].includes(alignment)) {
+        currentX = x;
+      } else if ([3, 6, 9].includes(alignment)) {
+        currentX = x - totalWidth;
+      } else {
+        currentX = x - totalWidth / 2;
+      }
       ctx.textAlign = 'left';
       
       entry.words.forEach((w, idx) => {
@@ -310,6 +354,7 @@ export function SubtitleEditor() {
     if (blurBand.enabled) {
       const bandH = (blurBand.height / 100) * canvas.height;
       const bandY = (blurBand.positionY / 100) * canvas.height - bandH / 2;
+      const featherPx = bandH * (blurBand.feather / 100) / 2;
       
       const off = document.createElement('canvas');
       off.width = canvas.width;
@@ -318,19 +363,27 @@ export function SubtitleEditor() {
       octx.filter = `blur(${blurBand.blurIntensity}px)`;
       octx.drawImage(canvas, 0, 0);
 
+      // Draw color overlay on the blurred offscreen canvas if enabled
+      if (blurBand.colorOverlayEnabled && blurBand.opacity > 0) {
+        octx.fillStyle = blurBand.color;
+        octx.globalAlpha = blurBand.opacity;
+        octx.fillRect(0, 0, off.width, off.height);
+        octx.globalAlpha = 1.0;
+      }
+
       const mask = document.createElement('canvas');
       mask.width = canvas.width;
       mask.height = canvas.height;
       const mctx = mask.getContext('2d')!;
       
-      const grad = mctx.createLinearGradient(0, bandY - blurBand.feather, 0, bandY + bandH + blurBand.feather);
+      const grad = mctx.createLinearGradient(0, bandY - featherPx, 0, bandY + bandH + featherPx);
       grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(blurBand.feather / (bandH + blurBand.feather * 2), 'rgba(0,0,0,1)');
-      grad.addColorStop(1 - blurBand.feather / (bandH + blurBand.feather * 2), 'rgba(0,0,0,1)');
+      grad.addColorStop(featherPx / (bandH + featherPx * 2), 'rgba(0,0,0,1)');
+      grad.addColorStop(1 - featherPx / (bandH + featherPx * 2), 'rgba(0,0,0,1)');
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       
       mctx.fillStyle = grad;
-      mctx.fillRect(0, bandY - blurBand.feather, canvas.width, bandH + blurBand.feather * 2);
+      mctx.fillRect(0, bandY - featherPx, canvas.width, bandH + featherPx * 2);
 
       octx.globalCompositeOperation = 'destination-in';
       octx.drawImage(mask, 0, 0);

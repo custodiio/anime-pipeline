@@ -115,6 +115,7 @@ export function WatermarkPanel() {
     if (blurBand.enabled) {
       const bandH = (blurBand.height / 100) * canvas.height;
       const bandY = (blurBand.positionY / 100) * canvas.height - bandH / 2;
+      const featherPx = bandH * (blurBand.feather / 100) / 2;
       
       const off = document.createElement('canvas');
       off.width = canvas.width;
@@ -123,19 +124,27 @@ export function WatermarkPanel() {
       octx.filter = `blur(${blurBand.blurIntensity}px)`;
       octx.drawImage(canvas, 0, 0);
 
+      // Draw color overlay on the blurred offscreen canvas if enabled
+      if (blurBand.colorOverlayEnabled && blurBand.opacity > 0) {
+        octx.fillStyle = blurBand.color;
+        octx.globalAlpha = blurBand.opacity;
+        octx.fillRect(0, 0, off.width, off.height);
+        octx.globalAlpha = 1.0;
+      }
+
       const mask = document.createElement('canvas');
       mask.width = canvas.width;
       mask.height = canvas.height;
       const mctx = mask.getContext('2d')!;
       
-      const grad = mctx.createLinearGradient(0, bandY - blurBand.feather, 0, bandY + bandH + blurBand.feather);
+      const grad = mctx.createLinearGradient(0, bandY - featherPx, 0, bandY + bandH + featherPx);
       grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(blurBand.feather / (bandH + blurBand.feather * 2), 'rgba(0,0,0,1)');
-      grad.addColorStop(1 - blurBand.feather / (bandH + blurBand.feather * 2), 'rgba(0,0,0,1)');
+      grad.addColorStop(featherPx / (bandH + featherPx * 2), 'rgba(0,0,0,1)');
+      grad.addColorStop(1 - featherPx / (bandH + featherPx * 2), 'rgba(0,0,0,1)');
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       
       mctx.fillStyle = grad;
-      mctx.fillRect(0, bandY - blurBand.feather, canvas.width, bandH + blurBand.feather * 2);
+      mctx.fillRect(0, bandY - featherPx, canvas.width, bandH + featherPx * 2);
 
       octx.globalCompositeOperation = 'destination-in';
       octx.drawImage(mask, 0, 0);

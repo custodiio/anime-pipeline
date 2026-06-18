@@ -10,26 +10,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
-const POSITIONS: { value: BlurBandPosition; label: string }[] = [
-  { value: 'top', label: 'Topo' },
-  { value: 'bottom', label: 'Baixo' },
-  { value: 'both', label: 'Ambos' },
-];
-
 export function BlurBandPanel() {
   const { blurBand, setBlurBand } = useProjectStore();
-
-  const getGradientPreview = () => {
-    const h = blurBand.height;
-    const f = blurBand.feather;
-    const alpha = blurBand.opacity;
-    const hex = blurBand.color;
-
-    if (blurBand.position === 'bottom' || blurBand.position === 'both') {
-      return `linear-gradient(to top, ${hex}${Math.round(alpha * 255).toString(16).padStart(2, '0')} 0%, transparent ${f}%)`;
-    }
-    return `linear-gradient(to bottom, ${hex}${Math.round(alpha * 255).toString(16).padStart(2, '0')} 0%, transparent ${f}%)`;
-  };
 
   return (
     <div className="panel-content">
@@ -99,35 +81,46 @@ export function BlurBandPanel() {
           />
         </div>
 
-        {/* Color & Opacity */}
-        <div className="grid-2">
-          <div className="form-group">
-            <div className="form-label">Cor da Faixa</div>
-            <div className="color-row">
-              <input
-                type="text"
-                value={blurBand.color}
-                onChange={(e) => setBlurBand({ color: e.target.value })}
-              />
-              <input
-                type="color"
-                value={blurBand.color}
-                onChange={(e) => setBlurBand({ color: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="form-group">
-            <div className="form-label">
-              <span>Opacidade</span>
-              <span className="form-label-value">{Math.round(blurBand.opacity * 100)}%</span>
-            </div>
-            <input
-              type="range" min={0} max={1} step={0.05}
-              value={blurBand.opacity}
-              onChange={(e) => setBlurBand({ opacity: Number(e.target.value) })}
-            />
-          </div>
+        {/* Color Overlay Toggle */}
+        <div className="toggle-row" style={{ marginBottom: 16 }}>
+          <span className="toggle-label">Ativar Faixa de Cor</span>
+          <Toggle
+            checked={blurBand.colorOverlayEnabled}
+            onChange={(v) => setBlurBand({ colorOverlayEnabled: v })}
+          />
         </div>
+
+        {/* Color & Opacity (only when overlay is enabled) */}
+        {blurBand.colorOverlayEnabled && (
+          <div className="grid-2" style={{ marginBottom: 16 }}>
+            <div className="form-group">
+              <div className="form-label">Cor da Faixa</div>
+              <div className="color-row">
+                <input
+                  type="text"
+                  value={blurBand.color}
+                  onChange={(e) => setBlurBand({ color: e.target.value })}
+                />
+                <input
+                  type="color"
+                  value={blurBand.color}
+                  onChange={(e) => setBlurBand({ color: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <div className="form-label">
+                <span>Opacidade</span>
+                <span className="form-label-value">{Math.round(blurBand.opacity * 100)}%</span>
+              </div>
+              <input
+                type="range" min={0} max={1} step={0.05}
+                value={blurBand.opacity}
+                onChange={(e) => setBlurBand({ opacity: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Visual preview */}
         <div
@@ -162,10 +155,17 @@ export function BlurBandPanel() {
             left: 0,
             right: 0,
             height: `${blurBand.height}%`,
-            background: blurBand.opacity > 0 ? `${blurBand.color}${Math.round(blurBand.opacity * 255).toString(16).padStart(2, '0')}` : 'transparent',
-            backdropFilter: `blur(${blurBand.blurIntensity}px)`,
             WebkitMaskImage: `linear-gradient(to bottom, transparent 0%, black ${blurBand.feather / 2}%, black ${100 - blurBand.feather / 2}%, transparent 100%)`,
-          }} />
+            maskImage: `linear-gradient(to bottom, transparent 0%, black ${blurBand.feather / 2}%, black ${100 - blurBand.feather / 2}%, transparent 100%)`,
+          }}>
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              background: (blurBand.colorOverlayEnabled && blurBand.opacity > 0) ? `${blurBand.color}${Math.round(blurBand.opacity * 255).toString(16).padStart(2, '0')}` : 'transparent',
+              backdropFilter: `blur(${Math.max(1, blurBand.blurIntensity * (300 / 1920))}px)`,
+              WebkitBackdropFilter: `blur(${Math.max(1, blurBand.blurIntensity * (300 / 1920))}px)`,
+            }} />
+          </div>
 
           {/* Label */}
           <div style={{
