@@ -166,6 +166,7 @@ def run_montagem():
         else:
             print("  [BGM] AVISO: Instrumental não encontrado em", bg_audio_path)
 
+    audio_duration_seconds = len(final_mix) / 1000.0
     print(f'  Exportando: {OUTPUT_FILENAME}')
     final_mix.export(OUTPUT_FILENAME, format='mp3')
     del final_mix
@@ -312,14 +313,20 @@ def run_montagem():
             })
 
     srt_entries.sort(key=lambda x: (x.get('block_idx', 0), x['start']))
-    # Elimina sobreposicoes no SRT final
+    # Elimina sobreposicoes no SRT final e garante que nao ultrapassa a duracao do audio
     cleaned = []
     last_end = -1.0
     for entry in srt_entries:
         if entry['start'] < last_end:
             entry['start'] = last_end
+        if entry['start'] >= audio_duration_seconds:
+            continue
         if entry['end'] <= entry['start']:
             entry['end'] = entry['start'] + 0.5
+        if entry['end'] > audio_duration_seconds:
+            entry['end'] = audio_duration_seconds
+        if entry['end'] <= entry['start']:
+            continue
         cleaned.append(entry)
         last_end = entry['end']
     srt_entries = cleaned

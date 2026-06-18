@@ -155,13 +155,18 @@ export function PreviewPanel() {
         const bandY = (blurBand.positionY / 100) * outH - bandH / 2;
         const featherPx = bandH * (blurBand.feather / 100) / 2;
         
-        // Use an offscreen pattern or just a blurred area
+        // Downscale to make blur safe and fast on all browsers
+        const scale = 4;
         const off = document.createElement('canvas');
-        off.width = outW;
-        off.height = outH;
+        off.width = Math.ceil(outW / scale);
+        off.height = Math.ceil(outH / scale);
         const octx = off.getContext('2d')!;
-        octx.filter = `blur(${blurBand.blurIntensity}px)`;
-        octx.drawImage(canvas, 0, 0);
+        octx.imageSmoothingEnabled = true;
+        octx.imageSmoothingQuality = 'high';
+        
+        octx.filter = `blur(${Math.max(1, blurBand.blurIntensity / scale)}px)`;
+        octx.drawImage(canvas, 0, 0, outW, outH, 0, 0, off.width, off.height);
+        octx.filter = 'none';
 
         // Draw color overlay on the blurred offscreen canvas if enabled
         if (blurBand.colorOverlayEnabled && blurBand.opacity > 0) {
@@ -171,6 +176,15 @@ export function PreviewPanel() {
           octx.globalAlpha = 1.0;
         }
 
+        // Draw back to full size blurred canvas
+        const blurredFull = document.createElement('canvas');
+        blurredFull.width = outW;
+        blurredFull.height = outH;
+        const bfctx = blurredFull.getContext('2d')!;
+        bfctx.imageSmoothingEnabled = true;
+        bfctx.imageSmoothingQuality = 'high';
+        bfctx.drawImage(off, 0, 0, off.width, off.height, 0, 0, outW, outH);
+
         // Mask for the band
         const mask = document.createElement('canvas');
         mask.width = outW;
@@ -179,19 +193,19 @@ export function PreviewPanel() {
         
         const grad = mctx.createLinearGradient(0, bandY - featherPx, 0, bandY + bandH + featherPx);
         grad.addColorStop(0, 'rgba(0,0,0,0)');
-        grad.addColorStop(featherPx / (bandH + featherPx * 2), 'rgba(0,0,0,1)');
-        grad.addColorStop(1 - featherPx / (bandH + featherPx * 2), 'rgba(0,0,0,1)');
+        grad.addColorStop(Math.max(0, Math.min(1, featherPx / (bandH + featherPx * 2))), 'rgba(0,0,0,1)');
+        grad.addColorStop(Math.max(0, Math.min(1, 1 - featherPx / (bandH + featherPx * 2))), 'rgba(0,0,0,1)');
         grad.addColorStop(1, 'rgba(0,0,0,0)');
         
         mctx.fillStyle = grad;
         mctx.fillRect(0, bandY - featherPx, outW, bandH + featherPx * 2);
 
-        // Apply mask to offscreen
-        octx.globalCompositeOperation = 'destination-in';
-        octx.drawImage(mask, 0, 0);
+        // Apply mask to full size blurred canvas
+        bfctx.globalCompositeOperation = 'destination-in';
+        bfctx.drawImage(mask, 0, 0);
 
         // Draw back to main canvas
-        ctx.drawImage(off, 0, 0);
+        ctx.drawImage(blurredFull, 0, 0);
       }
 
       // Draw blur band guide lines
