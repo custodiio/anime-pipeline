@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useProjectStore } from './store/projectStore';
+import { useProjectStore, getOutputDimensions } from './store/projectStore';
 import { useExportActions } from './hooks/useExportActions';
 import { useSession } from './hooks/useSession';
 import { Sidebar } from './components/Sidebar';
@@ -89,7 +89,7 @@ function App() {
     // Se não tiver SRT, o pipeline gerará o ASS final depois com o SRT do Omni
     let assContent: string | undefined = undefined;
     if (store.srtEntries.length > 0) {
-      const [w, h] = store.outputFormat === '9:16' ? [1080, 1920] : [1920, 1080];
+      const [w, h] = getOutputDimensions(store.outputFormat);
       assContent = exportToAss(store.srtEntries, store.subtitleStyle, w, h);
     }
     

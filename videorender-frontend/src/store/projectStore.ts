@@ -3,6 +3,13 @@ import type { ExtractedFrame, VideoInfo, SrtEntry } from '../types';
 
 export type { ExtractedFrame, VideoInfo, SrtEntry };
 export type OutputFormat = '9:16' | '16:9' | '1:1' | '4:5';
+
+export function getOutputDimensions(format: OutputFormat): [number, number] {
+  if (format === '9:16') return [1080, 1920];
+  if (format === '1:1') return [1080, 1080];
+  if (format === '4:5') return [1080, 1350];
+  return [1920, 1080];
+}
 export type BackgroundType = 'blur' | 'solid' | 'gradient' | 'image';
 export type BlurBandPosition = 'top' | 'bottom' | 'both';
 

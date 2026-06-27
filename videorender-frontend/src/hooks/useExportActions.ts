@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useProjectStore } from '../store/projectStore';
+import { useProjectStore, getOutputDimensions } from '../store/projectStore';
 import { extractFrames } from '../utils/frameExtractor';
 import { parseSrt } from '../utils/srtParser';
 import { exportToAss, generateFFmpegScript } from '../utils/assExporter';
@@ -20,7 +20,7 @@ export function useExportActions() {
 
   const exportASS = () => {
     const info = store.videoInfo;
-    const [w, h] = store.outputFormat === '9:16' ? [1080, 1920] : [1920, 1080];
+    const [w, h] = getOutputDimensions(store.outputFormat);
     const ass = exportToAss(store.srtEntries, store.subtitleStyle, w, h);
     const blob = new Blob([ass], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);

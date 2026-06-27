@@ -398,6 +398,10 @@ class PipelineController:
             # Resolução do vídeo
             if out_format == "9:16":
                 play_w, play_h = 1080, 1920
+            elif out_format == "1:1":
+                play_w, play_h = 1080, 1080
+            elif out_format == "4:5":
+                play_w, play_h = 1080, 1350
             else:
                 play_w, play_h = 1920, 1080
 

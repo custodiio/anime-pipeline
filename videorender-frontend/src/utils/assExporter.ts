@@ -212,9 +212,18 @@ export function generateFFmpegScript(config: {
   const filters: string[] = [];
 
   // 1. Scale to output format first
-  const [wRatio, hRatio] = config.outputFormat.split(':').map(Number);
-  const outW = wRatio === 9 ? 1080 : 1920;
-  const outH = hRatio === 16 ? 1920 : 1080;
+  let outW = 1920;
+  let outH = 1080;
+  if (config.outputFormat === '9:16') {
+    outW = 1080;
+    outH = 1920;
+  } else if (config.outputFormat === '1:1') {
+    outW = 1080;
+    outH = 1080;
+  } else if (config.outputFormat === '4:5') {
+    outW = 1080;
+    outH = 1350;
+  }
 
   // 2. Crop & Zoom (before scaling to avoid quality loss)
   const cz = config.cropZoom;

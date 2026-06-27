@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useProjectStore } from '../store/projectStore';
+import { useProjectStore, getOutputDimensions } from '../store/projectStore';
 import type { SubtitleStyle } from '../store/projectStore';
 import type { SrtEntry } from '../types';
 import { secondsToTimestamp, regroupSrtEntries } from '../utils/srtParser';
@@ -589,8 +589,8 @@ export function SubtitleEditor() {
         >
           <canvas
             ref={canvasRef}
-            width={outputFormat === '9:16' ? 1080 : 1920}
-            height={outputFormat === '9:16' ? 1920 : 1080}
+            width={getOutputDimensions(outputFormat)[0]}
+            height={getOutputDimensions(outputFormat)[1]}
             style={{
               display: 'block',
               maxWidth: '100%',

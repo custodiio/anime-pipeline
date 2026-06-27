@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useProjectStore } from '../store/projectStore';
+import { useProjectStore, getOutputDimensions } from '../store/projectStore';
 import { formatDuration } from '../utils/frameExtractor';
 
 export function PreviewPanel() {
@@ -32,7 +32,7 @@ export function PreviewPanel() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const [outW, outH] = outputFormat === '9:16' ? [1080, 1920] : [1920, 1080];
+    const [outW, outH] = getOutputDimensions(outputFormat);
     canvas.width = outW;
     canvas.height = outH;
     
@@ -313,7 +313,7 @@ export function PreviewPanel() {
         </div>
         <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            {outputFormat} · {outputFormat === '9:16' ? '1080×1920' : '1920×1080'}
+            {outputFormat} · {`${getOutputDimensions(outputFormat)[0]}×${getOutputDimensions(outputFormat)[1]}`}
           </span>
         </div>
       </div>
@@ -469,7 +469,7 @@ export function PreviewPanel() {
               color: 'var(--text-muted)', fontSize: 12,
               fontFamily: 'JetBrains Mono',
             }}>
-              {outputFormat === '9:16' ? '1080×1920' : '1920×1080'} · Clique para fechar
+              {`${getOutputDimensions(outputFormat)[0]}×${getOutputDimensions(outputFormat)[1]}`} · Clique para fechar
             </div>
           </div>
         </div>

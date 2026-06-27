@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { useProjectStore } from '../store/projectStore';
+import { useProjectStore, getOutputDimensions } from '../store/projectStore';
 
 function genId() {
   return Math.random().toString(36).slice(2);
@@ -431,8 +431,8 @@ export function OverlayPanel() {
         }}>
           <canvas
             ref={canvasRef}
-            width={outputFormat === '9:16' ? 1080 : 1920}
-            height={outputFormat === '9:16' ? 1920 : 1080}
+            width={getOutputDimensions(outputFormat)[0]}
+            height={getOutputDimensions(outputFormat)[1]}
             style={{
               display: 'block',
               maxWidth: '100%',

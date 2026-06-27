@@ -210,7 +210,7 @@ export function WatermarkPanel() {
       img.src = selectedFrame.dataUrl;
       const render = () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawVideoBackground(ctx, canvas, img);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         // Dim the background a bit to highlight the masks
         ctx.fillStyle = 'rgba(0,0,0,0.3)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -223,7 +223,7 @@ export function WatermarkPanel() {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawBoxes(ctx, canvas.width, canvas.height);
     }
-  }, [selectedFrame, drawBoxes, drawVideoBackground]);
+  }, [selectedFrame, drawBoxes]);
 
   useEffect(() => {
     drawFrame();
@@ -266,8 +266,8 @@ export function WatermarkPanel() {
         }}>
           <canvas
             ref={canvasRef}
-            width={outputFormat === '9:16' ? 1080 : 1920}
-            height={outputFormat === '9:16' ? 1920 : 1080}
+            width={videoInfo ? videoInfo.width : 1920}
+            height={videoInfo ? videoInfo.height : 1080}
             style={{
               display: 'block',
               maxWidth: '100%',
