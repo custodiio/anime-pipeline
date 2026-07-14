@@ -42,12 +42,21 @@ def init_db():
             step_omni TEXT DEFAULT 'pending',
             step_watermark_pt1 TEXT DEFAULT 'pending',
             step_watermark_pt2 TEXT DEFAULT 'pending',
+            step_watermark_pt3 TEXT DEFAULT 'pending',
+            step_watermark_pt4 TEXT DEFAULT 'pending',
+            step_watermark_pt5 TEXT DEFAULT 'pending',
             step_enhancer_pt1 TEXT DEFAULT 'pending',
             step_enhancer_pt2 TEXT DEFAULT 'pending',
+            step_enhancer_pt3 TEXT DEFAULT 'pending',
+            step_enhancer_pt4 TEXT DEFAULT 'pending',
+            step_enhancer_pt5 TEXT DEFAULT 'pending',
             step_session_created TEXT DEFAULT 'pending',
             step_config_ready TEXT DEFAULT 'pending',
             step_render_pt1 TEXT DEFAULT 'pending',
             step_render_pt2 TEXT DEFAULT 'pending',
+            step_render_pt3 TEXT DEFAULT 'pending',
+            step_render_pt4 TEXT DEFAULT 'pending',
+            step_render_pt5 TEXT DEFAULT 'pending',
             step_merge TEXT DEFAULT 'pending',
             
             -- Metadados
@@ -130,6 +139,15 @@ def _migrate_db():
         "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS thumbnail_enabled BOOLEAN DEFAULT TRUE",
         "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS bg_audio BOOLEAN DEFAULT FALSE",
         "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS srt_type TEXT DEFAULT 'normal'",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_watermark_pt3 TEXT DEFAULT 'pending'",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_watermark_pt4 TEXT DEFAULT 'pending'",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_watermark_pt5 TEXT DEFAULT 'pending'",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_enhancer_pt3 TEXT DEFAULT 'pending'",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_enhancer_pt4 TEXT DEFAULT 'pending'",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_enhancer_pt5 TEXT DEFAULT 'pending'",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_render_pt3 TEXT DEFAULT 'pending'",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_render_pt4 TEXT DEFAULT 'pending'",
+        "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_render_pt5 TEXT DEFAULT 'pending'",
     ]
     for sql in migrations:
         try:
