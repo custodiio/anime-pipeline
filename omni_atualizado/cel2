@@ -132,32 +132,32 @@ MODEL_WHISPER_PATH    = "large-v3"
 # 1. Dataset Kaggle local (instantâneo)
 # 2. HuggingFace (CDN global, rápido)
 # 3. ModelScope (servidores China, lento - último recurso)
-    # Tenta encontrar o SenseVoiceSmall no /kaggle/input de forma case-insensitive
-    import os as _os
-    SENSEVOICE_MODEL_PATH = None
-    if _os.path.exists("/kaggle/input"):
-        for _root, _dirs, _files in _os.walk("/kaggle/input"):
-            for _d in _dirs:
-                if _d.lower() == "sensevoicesmall":
-                    SENSEVOICE_MODEL_PATH = _os.path.join(_root, _d)
-                    print(f"[SenseVoice] Encontrado no dataset Kaggle: {SENSEVOICE_MODEL_PATH}")
-                    break
-            if SENSEVOICE_MODEL_PATH:
+# Tenta encontrar o SenseVoiceSmall no /kaggle/input de forma case-insensitive
+import os as _os
+SENSEVOICE_MODEL_PATH = None
+if _os.path.exists("/kaggle/input"):
+    for _root, _dirs, _files in _os.walk("/kaggle/input"):
+        for _d in _dirs:
+            if _d.lower() == "sensevoicesmall":
+                SENSEVOICE_MODEL_PATH = _os.path.join(_root, _d)
+                print(f"[SenseVoice] Encontrado no dataset Kaggle: {SENSEVOICE_MODEL_PATH}")
                 break
-    
-    if not SENSEVOICE_MODEL_PATH:
-        # Se não achou localmente, tenta baixar do HuggingFace (muito mais rápido que ModelScope)
-        try:
-            from huggingface_hub import snapshot_download
-            _sv_hf = snapshot_download("FunAudioLLM/SenseVoiceSmall",
-                                       local_dir="/kaggle/working/SenseVoiceSmall",
-                                       token=HF_TOKEN if HF_TOKEN else None)
-            SENSEVOICE_MODEL_PATH = _sv_hf
-            print(f"[SenseVoice] Baixado do HuggingFace: {_sv_hf}")
-        except Exception as _hf_err:
-            print(f"[SenseVoice] HuggingFace falhou ({_hf_err}), usando ModelScope...")
-            SENSEVOICE_MODEL_PATH = "iic/SenseVoiceSmall"
-            print(f"[SenseVoice] Fallback ModelScope: {SENSEVOICE_MODEL_PATH}")
+        if SENSEVOICE_MODEL_PATH:
+            break
+
+if not SENSEVOICE_MODEL_PATH:
+    # Se não achou localmente, tenta baixar do HuggingFace (muito mais rápido que ModelScope)
+    try:
+        from huggingface_hub import snapshot_download
+        _sv_hf = snapshot_download("FunAudioLLM/SenseVoiceSmall",
+                                   local_dir="/kaggle/working/SenseVoiceSmall",
+                                   token=HF_TOKEN if HF_TOKEN else None)
+        SENSEVOICE_MODEL_PATH = _sv_hf
+        print(f"[SenseVoice] Baixado do HuggingFace: {_sv_hf}")
+    except Exception as _hf_err:
+        print(f"[SenseVoice] HuggingFace falhou ({_hf_err}), usando ModelScope...")
+        SENSEVOICE_MODEL_PATH = "iic/SenseVoiceSmall"
+        print(f"[SenseVoice] Fallback ModelScope: {SENSEVOICE_MODEL_PATH}")
 MODEL_OMNIVOICE_PATH  = "k2-fsa/OmniVoice"
 
 os.chdir("/kaggle/working")
