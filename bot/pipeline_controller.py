@@ -151,9 +151,10 @@ class PipelineController:
             if not any(a["name"] == f"pt{part}_enhanced.mp4" for a in arquivos):
                 return False, f"pt{part}_enhanced.mp4 não encontrado."
         else:
-            for i in range(1, 6):
-                if not any(a["name"] == f"pt{i}_enhanced.mp4" for a in arquivos):
-                    return False, f"Faltam partes enhanced."
+            # Para "all", precisamos que pelo menos uma parte esteja pronta no ENHANCER
+            tem_alguma = any(any(a["name"] == f"pt{i}_enhanced.mp4" for a in arquivos) for i in range(1, 6))
+            if not tem_alguma:
+                return False, "Nenhuma parte enhanced encontrada."
         
         arqs_omni = self.drive.listar_arquivos("KAGGLE/PIPELINE/OMNI")
         if not any(a["name"] == "videorender-project.json" for a in arqs_omni):
@@ -317,8 +318,14 @@ class PipelineController:
         mark_project_waiting_config(project_id, session_url)
 
     def disparar_render(self, project_id):
-        for i in range(1, 6): update_step(project_id, f"step_render_pt{i}", "running")
-        dispatch_parallel([f"render-pt{i}" for i in range(1, 6)], project_id)
+        arquivos = self.drive.listar_arquivos("KAGGLE/PIPELINE/ENHANCER")
+        parts_to_trigger = []
+        for i in range(1, 6):
+            if any(a["name"] == f"pt{i}_enhanced.mp4" for a in arquivos):
+                update_step(project_id, f"step_render_pt{i}", "running")
+                parts_to_trigger.append(f"render-pt{i}")
+        if parts_to_trigger:
+            dispatch_parallel(parts_to_trigger, project_id)
 
     def disparar_merge(self, project_id):
         """Etapa 10: Dispara merge final."""
@@ -644,6 +651,35 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         # Aguarda a etapa de upload e divisão terminar antes de despachar qualquer coisa no Kaggle
         if not split_ok:
             return
+
+        # Gerar ASS e copiar áudio do Omni assim que ambos estiverem prontos (independe do Enhancer)
+        if conf == "done" and omni == "done":
+            arqs_omni = self.drive.listar_arquivos("KAGGLE/PIPELINE/OMNI")
+            has_ass = any(a["name"] == "legendas.ass" for a in arqs_omni)
+            has_mp3 = any(a["name"] == "audio_dublado.mp3" for a in arqs_omni)
+            if not (has_ass and has_mp3):
+                print(f"[{project_id}] Preparando arquivos do Omni e gerando ASS antecipadamente...")
+                arquivos_out = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
+                mp3_file = (
+                    next((a for a in arquivos_out if '_Completo.mp3' in a['name']), None) or
+                    next((a for a in arquivos_out if a['name'].endswith('.mp3')), None)
+                )
+                srt_file = (
+                    next((a for a in arquivos_out if '_Completo.srt' in a['name']), None) or
+                    next((a for a in arquivos_out if a['name'].endswith('.srt')), None)
+                )
+
+                if mp3_file:
+                    self.drive.copiar_arquivo(
+                        f"KAGGLE/AUDIO_DUB/OUTPUT/{mp3_file['name']}",
+                        "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3"
+                    )
+                if srt_file:
+                    self.drive.copiar_arquivo(
+                        f"KAGGLE/AUDIO_DUB/OUTPUT/{srt_file['name']}",
+                        "KAGGLE/PIPELINE/OMNI/omni_output.srt"
+                    )
+                self.converter_json_para_ass(project_id)
 
         # 1. Config salva -> disparar Watermark (se pendente e não skipped)
         if conf == "done" and w_vals[0] == "pending":
