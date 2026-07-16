@@ -389,15 +389,15 @@ if __name__ == "__main__":
     
     # Gerar todas as 5 partes de Watermark Remover
     for i in range(1, 6):
-        nb = make_nb(make_watermark_cells(i), f"watermark-remover-pt-{i}", f"step_watermark_pt{i}")
-        save_nb(nb, f"watermark-remover-pt-{i}.ipynb")
+        nb = make_nb(make_watermark_cells(i), f"anime-watermark-remover-pt-{i}", f"step_watermark_pt{i}")
+        save_nb(nb, f"anime-watermark-remover-pt-{i}.ipynb")
         
     # Gerar todas as 5 partes de Video Enhancer
     for i in range(1, 6):
-        nb = make_nb(make_enhancer_cells(i), f"video-enhancer-pt-{i}", f"step_enhancer_pt{i}")
-        save_nb(nb, f"video-enhancer-pt-{i}.ipynb")
+        nb = make_nb(make_enhancer_cells(i), f"anime-video-enhancer-pt-{i}", f"step_enhancer_pt{i}")
+        save_nb(nb, f"anime-video-enhancer-pt-{i}.ipynb")
         
-    nb = make_nb(MERGE_CELLS, "merge-final", "step_merge")
-    save_nb(nb, "merge-final.ipynb")
+    nb = make_nb(MERGE_CELLS, "anime-merge-final", "step_merge")
+    save_nb(nb, "anime-merge-final.ipynb")
     
     print("\nTodos os notebooks gerados com sucesso!")

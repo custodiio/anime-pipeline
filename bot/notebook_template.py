@@ -286,12 +286,12 @@ cell_end(4, "done", "Notebook finalizado")
 
 # Mapeamento notebook → step de status
 NOTEBOOK_STEP_MAP = {
-    "watermark-remover-pt-1": "step_watermark_pt1",
-    "watermark-remover-pt-2": "step_watermark_pt2",
-    "video-enhancer-pt-1": "step_enhancer_pt1",
-    "video-enhancer-pt-2": "step_enhancer_pt2",
-    "omni-anime-ver-final": "step_omni",
-    "renderizador-kaggle-pt-1": "step_render_pt1",
-    "renderizador-kaggle-pt-2": "step_render_pt2",
-    "merge-final": "step_merge",
+    "anime-watermark-remover-pt-1": "step_watermark_pt1",
+    "anime-watermark-remover-pt-2": "step_watermark_pt2",
+    "anime-video-enhancer-pt-1": "step_enhancer_pt1",
+    "anime-video-enhancer-pt-2": "step_enhancer_pt2",
+    "anime-omni-ver-final": "step_omni",
+    "anime-renderizador-kaggle-pt-1": "step_render_pt1",
+    "anime-renderizador-kaggle-pt-2": "step_render_pt2",
+    "anime-merge-final": "step_merge",
 }
