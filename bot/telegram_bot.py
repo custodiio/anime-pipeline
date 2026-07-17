@@ -313,6 +313,9 @@ async def _handle_local_upload_check(update: Update, chat_id: str, project_name:
                 user_uploads[chat_id]["enhancer"] = False
                 user_uploads[chat_id]["thumbnail"] = True
                 user_uploads[chat_id]["manual_mode"] = False
+                user_uploads[chat_id]["bg_audio"] = False
+                user_uploads[chat_id]["srt_type"] = "normal"
+                user_uploads[chat_id]["azure_enabled"] = True
                 
                 if query:
                     await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons))
@@ -335,6 +338,9 @@ async def _handle_local_upload_check(update: Update, chat_id: str, project_name:
     user_uploads[chat_id]["enhancer"] = False
     user_uploads[chat_id]["thumbnail"] = True
     user_uploads[chat_id]["manual_mode"] = False
+    user_uploads[chat_id]["bg_audio"] = False
+    user_uploads[chat_id]["srt_type"] = "normal"
+    user_uploads[chat_id]["azure_enabled"] = True
 
     if query:
         await send_config_menu(update, chat_id, query)
@@ -442,6 +448,7 @@ async def send_config_menu(update, chat_id, query=None):
     thumb_text   = "✅ Gerar Thumbnail"       if opts.get("thumbnail", True)  else "❌ Gerar Thumbnail"
     bg_text      = "🎵 Áudio: Fundo + Dub"    if opts.get("bg_audio", False)  else "🔇 Áudio: Apenas Dub"
     srt_text     = "📝 SRT: Palavra/Palavra" if opts.get("srt_type", "normal") == "word_by_word" else "📝 SRT: Normal (Fluxo)"
+    azure_text   = "🤖 Modelo Azure: Ativo"   if opts.get("azure_enabled", True) else "🤖 Modelo Azure: Inativo"
     is_manual    = opts.get("manual_mode", False)
     mode_text    = "🛠️ Modo: Manual"         if is_manual else "🤖 Modo: Automático"
 
@@ -451,6 +458,7 @@ async def send_config_menu(update, chat_id, query=None):
         [InlineKeyboardButton(thumb_text,     callback_data="toggle_thumbnail")],
         [InlineKeyboardButton(bg_text,        callback_data="toggle_bgaudio")],
         [InlineKeyboardButton(srt_text,       callback_data="toggle_srt")],
+        [InlineKeyboardButton(azure_text,     callback_data="toggle_azure")],
         [InlineKeyboardButton(mode_text,      callback_data="toggle_mode")],
         [InlineKeyboardButton("▶️ Iniciar Projeto", callback_data="start_project")]
     ]
@@ -648,6 +656,9 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         user_uploads[chat_id]["enhancer"] = False
         user_uploads[chat_id]["thumbnail"] = True
         user_uploads[chat_id]["manual_mode"] = (data == "new_manual")
+        user_uploads[chat_id]["bg_audio"] = False
+        user_uploads[chat_id]["srt_type"] = "normal"
+        user_uploads[chat_id]["azure_enabled"] = True
         await send_config_menu(None, chat_id, query)
         
     elif data == "toggle_wm":
@@ -680,6 +691,11 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             current_srt = user_uploads[chat_id].get("srt_type", "normal")
             user_uploads[chat_id]["srt_type"] = "word_by_word" if current_srt == "normal" else "normal"
             await send_config_menu(None, chat_id, query)
+
+    elif data == "toggle_azure":
+        if chat_id in user_uploads:
+            user_uploads[chat_id]["azure_enabled"] = not user_uploads[chat_id].get("azure_enabled", True)
+            await send_config_menu(None, chat_id, query)
             
     elif data == "start_project":
         if chat_id not in user_uploads:
@@ -699,6 +715,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             thumbnail_enabled = opts.get("thumbnail", True)
             bg_audio          = opts.get("bg_audio", False)
             srt_type          = opts.get("srt_type", "normal")
+            azure_enabled     = opts.get("azure_enabled", True)
 
             if manual_mode:
                 project = await asyncio.to_thread(
@@ -723,7 +740,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pid = str(project["id"])
 
             # Salvar opções no banco para o notifier consultar depois
-            set_project_opts(pid, manual_mode, thumbnail_enabled, bg_audio, srt_type)
+            set_project_opts(pid, manual_mode, thumbnail_enabled, bg_audio, srt_type, azure_enabled)
 
             token = gerar_session_token(pid)
             active_sessions[token] = {"project_id": pid, "chat_id": chat_id, "created_at": time.time()}
