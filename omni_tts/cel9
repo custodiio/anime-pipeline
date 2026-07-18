@@ -281,41 +281,71 @@ def run_fabrica():
 
     target_list = sanitize_blocks(target_list)
 
-    # Sintetizar introdução se for a parte 1
+    # Sintetizar e calibrar introdução se for a parte 1
     if part_str == "1":
         intro_json = f"{BASE_PATH}/intro_info.json"
         if os.path.exists(intro_json):
-            print("\n[INTRO] Detectado intro_info.json. Preparando sintese da introdução (10.0s)...")
+            print("\n[INTRO] Detectado intro_info.json. Calibrando síntese e texto da introdução (10.0s)...")
             try:
                 with open(intro_json, 'r', encoding='utf-8') as f:
                     intro_data = json.load(f)
                 intro_text = intro_data.get("intro_text", "")
                 if intro_text:
-                    print(f"  [INTRO] Texto da intro: '{intro_text[:60]}...'")
+                    target_intro_dur = 10.0
                     raw_filename = os.path.join(TEMP_DIR, "block_intro_raw.mp3")
                     intro_filename = os.path.join(TEMP_DIR, "block_intro.mp3")
-                    
+
                     dur_raw = generate_tts(intro_text, raw_filename, gpu_idx=0)
-                    print(f"  [INTRO] Áudio raw gerado ({dur_raw:.2f}s). Formatando para janela de 10.0s com voz natural...")
-                    
-                    target_intro_dur = 10.0
-                    if dur_raw > target_intro_dur:
-                        # Se o áudio for maior que 10s, ajusta com atempo ligeiramente mais rápido
-                        safe_speed = dur_raw / target_intro_dur
-                        import subprocess
-                        subprocess.run([
-                            'ffmpeg', '-y', '-i', raw_filename,
-                            '-filter:a', f'atempo={safe_speed:.3f}',
-                            '-ar', '44100', intro_filename
-                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    else:
-                        # Se o áudio for menor que 10s, MANTÉM velocidade natural (1.0x) e adiciona silêncio para completar 10s
-                        sound = AudioSegment.from_file(raw_filename)
-                        pad_needed = int((target_intro_dur * 1000) - len(sound))
-                        pad_start = pad_needed // 2
-                        pad_end = pad_needed - pad_start
-                        final_intro = AudioSegment.silent(duration=pad_start) + sound + AudioSegment.silent(duration=pad_end)
-                        final_intro.export(intro_filename, format='mp3')
+                    ratio = dur_raw / target_intro_dur if dur_raw > 0 else 1.0
+
+                    attempt = 0
+                    while not (TARGET_MIN_SPEED <= ratio <= TARGET_MAX_SPEED) and attempt < MAX_TEXT_RETRIES:
+                        attempt += 1
+                        target_avg = (TARGET_MIN_SPEED + TARGET_MAX_SPEED) / 2
+                        curr_len = len(intro_text)
+                        ideal_len = int(curr_len * (target_avg / max(0.1, ratio)))
+                        p_min = max(40, int(ideal_len * 0.90))
+                        p_max = int(ideal_len * 1.10)
+
+                        print(f"  [INTRO ADAPTAÇÃO] Ratio atual: {ratio:.2f}x | Fora da faixa [{TARGET_MIN_SPEED}-{TARGET_MAX_SPEED}]. Re-escrevendo texto para {p_min}-{p_max} chars (Tentativa {attempt}/{MAX_TEXT_RETRIES})...")
+
+                        prompt = (
+                            f"TEXTO ATUAL DA INTRODUÇÃO: {intro_text}\n"
+                            f"MISSÃO: Reescreva o texto da introdução do anime para ter EXATAMENTE entre {p_min} e {p_max} caracteres.\n"
+                            f"REGRAS:\n"
+                            f"1. Mantenha um gancho épico e chamativo sobre a história do anime.\n"
+                            f"2. Use linguagem clara em 3ª pessoa.\n"
+                            f"3. Responda APENAS o texto reescrito, sem aspas ou explicações."
+                        )
+                        try:
+                            resp = gemini_generate(
+                                model_chain=MODELS_REESCRITA,
+                                contents=prompt,
+                                task_name=f"Reescrita-Intro-T{attempt}"
+                            )
+                            cand = resp.text.strip().replace('"', '')
+                            if p_min <= len(cand) <= p_max:
+                                intro_text = cand
+                                dur_raw = generate_tts(intro_text, raw_filename, gpu_idx=0)
+                                ratio = dur_raw / target_intro_dur
+                                print(f"  [INTRO ADAPTAÇÃO OK] {len(cand)} chars -> Novo Ratio: {ratio:.2f}x")
+                        except Exception as e_intro:
+                            print(f"  [INTRO ADAPTAÇÃO ERRO]: {e_intro}")
+                            break
+
+                    intro_data['intro_text'] = intro_text
+                    with open(intro_json, 'w', encoding='utf-8') as f:
+                        json.dump(intro_data, f, ensure_ascii=False, indent=4)
+                    if 'salvar_no_drive' in globals():
+                        salvar_no_drive(intro_json, "KAGGLE/AUDIO_DUB/intro_info.json")
+
+                    safe_speed = max(0.8, min(ratio, 1.5))
+                    import subprocess
+                    subprocess.run([
+                        'ffmpeg', '-y', '-i', raw_filename,
+                        '-filter:a', f'atempo={safe_speed:.3f}',
+                        '-ar', '44100', intro_filename
+                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
                     if not os.path.exists(intro_filename):
                         shutil.copy(raw_filename, intro_filename)
@@ -323,9 +353,9 @@ def run_fabrica():
                     if 'salvar_no_drive' in globals():
                         salvar_no_drive(intro_filename, "KAGGLE/AUDIO_DUB/intro_audio.mp3")
                         salvar_no_drive(intro_filename, "KAGGLE/PIPELINE/OMNI/intro_audio.mp3")
-                        print("  [INTRO] Áudio da introdução (10.0s) enviado ao Drive com sucesso!")
+                        print(f"  [INTRO] Áudio da introdução calibrado (10.0s | {ratio:.2f}x) enviado ao Drive com sucesso!")
             except Exception as e:
-                print("  [INTRO AVISO] Falha na sintese da introdução:", e)
+                print("  [INTRO AVISO] Falha na síntese/adaptação da introdução:", e)
 
     if os.path.exists(save_name):
         print(f"  Mesclando com cache existente: {save_name}")
