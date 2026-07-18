@@ -75,6 +75,8 @@ def run_montagem():
             if os.path.exists(local_json):
                 with open(local_json, 'r', encoding='utf-8') as f:
                     part_blocks = json.load(f)
+                    for b in part_blocks:
+                        b['part'] = i
                     merged_blocks.extend(part_blocks)
                 print(f"  [OK] Carregado {len(part_blocks)} blocos da parte {i}.")
         except Exception as e:
@@ -96,6 +98,24 @@ def run_montagem():
         print(f"  AVISO: Nenhum JSON encontrado. Pulando montagem.")
         return
 
+    def find_block_audio(block):
+        audio_file = block.get('current_file')
+        if audio_file and os.path.exists(audio_file):
+            return audio_file
+        part_idx = block.get('part', 1)
+        block_id = block['id']
+        p1 = os.path.join(TEMP_DIR, f"pt{part_idx}_block_{block_id}_v*.mp3")
+        p2 = os.path.join(TEMP_DIR, f"*pt{part_idx}*block_{block_id}_v*.mp3")
+        arqs = glob.glob(p1) or glob.glob(p2)
+        if arqs:
+            return max(arqs, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]) if '_v' in x else 0)
+        p3 = os.path.join(TEMP_DIR, f"*block_{block_id}_v*.mp3")
+        p4 = os.path.join(TEMP_DIR, f"*{block_id}_v*.mp3")
+        arqs = glob.glob(p3) or glob.glob(p4)
+        if arqs:
+            return max(arqs, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]) if '_v' in x else 0)
+        return None
+
     FINAL_OUTPUT_DIR = f"{BASE_PATH}/{safe_anime}/{modo_folder}"
     os.makedirs(FINAL_OUTPUT_DIR, exist_ok=True)
 
@@ -115,17 +135,12 @@ def run_montagem():
     cursor_ms = 0
     actual_starts_ms = {}
 
-    for block in tqdm(lista_render, desc=f'Mixing {modo[:5]}'):
+    for b_idx, block in enumerate(tqdm(lista_render, desc=f'Mixing {modo[:5]}')):
         block_id = block['id']
-        audio_file = block.get('current_file')
-        if not audio_file or not os.path.exists(audio_file):
-            padrao1 = os.path.join(TEMP_DIR, f"*block_{block_id}_v*.mp3")
-            padrao2 = os.path.join(TEMP_DIR, f"*{block_id}_v*.mp3")
-            arquivos = glob.glob(padrao1) or glob.glob(padrao2)
-            if not arquivos:
-                print(f"  [AVISO] Audio nao encontrado para bloco {block_id}")
-                continue
-            audio_file = max(arquivos, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]) if '_v' in x else 0)
+        audio_file = find_block_audio(block)
+        if not audio_file:
+            print(f"  [AVISO] Audio nao encontrado para bloco {block_id} (pt{block.get('part', 1)})")
+            continue
 
         seg   = AudioSegment.from_file(audio_file)
         seg   = normalize_segment(seg)
@@ -137,23 +152,22 @@ def run_montagem():
 
         if tipo == 'NARRACAO' and ratio != 1.0:
             safe_speed = max(0.5, min(ratio, 3.0))
-            tmp_wav  = f"tmp_mix_{block_id}.wav"
-            proc_wav = f"proc_mix_{block_id}.wav"
-            seg.export(tmp_wav, format='wav')
+            tmp_wav  = f"tmp_mix_{b_idx}.wav"
+            proc_wav = f"proc_mix_{b_idx}.wav"
             try:
-                import subprocess as _sp
-                result = _sp.run(
-                    ['ffmpeg', '-y', '-i', tmp_wav,
-                     '-filter:a', f'atempo={safe_speed}',
-                     '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '44100',
-                     proc_wav],
+                seg.export(tmp_wav, format="wav")
+                cmd = [
+                    'ffmpeg', '-y', '-i', tmp_wav,
+                    '-filter:a', f'atempo={safe_speed}',
+                    '-ar', '44100', proc_wav
+                ]
+                result = subprocess.run(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                     capture_output=True
                 )
                 if result.returncode == 0 and os.path.exists(proc_wav):
                     seg = AudioSegment.from_wav(proc_wav)
                     os.remove(proc_wav)
-                else:
-                    print(f"  [ERRO atempo] bloco {block_id}: ffmpeg retornou {result.returncode}")
             except Exception as e:
                 print(f'  [ERRO atempo] bloco {block_id}: {e}')
             finally:
@@ -169,7 +183,7 @@ def run_montagem():
             segments_to_concat.append(AudioSegment.silent(duration=gap))
             cursor_ms += gap
 
-        actual_starts_ms[block_id] = cursor_ms
+        actual_starts_ms[b_idx] = cursor_ms
         segments_to_concat.append(seg)
         cursor_ms += len(seg)
 
@@ -207,15 +221,12 @@ def run_montagem():
         tipo     = block.get('tipo', 'NARRACAO')
         block_id = block['id']
         if tipo == 'NARRACAO':
-            padrao1 = os.path.join(TEMP_DIR, f"*block_{block_id}_v*.mp3")
-            padrao2 = os.path.join(TEMP_DIR, f"*{block_id}_v*.mp3")
-            arquivos = glob.glob(padrao1) or glob.glob(padrao2)
-            if not arquivos: continue
-            audio_file = max(arquivos, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]) if '_v' in x else 0)
+            audio_file = find_block_audio(block)
+            if not audio_file: continue
             try:
                 if 'stable_model' in globals() and stable_model is not None:
                     result = stable_model.transcribe_stable(audio_file, language='pt', word_timestamps=True)
-                    time_offset = actual_starts_ms.get(block_id, int((block['start'] - start_offset) * 1000)) / 1000.0
+                    time_offset = actual_starts_ms.get(b_idx, int((block['start'] - start_offset) * 1000)) / 1000.0
                     all_words = []
                     ratio = block.get('speed_factor', 1.0)
                     safe_speed = max(0.5, min(ratio, 3.0)) if ratio != 1.0 else 1.0
