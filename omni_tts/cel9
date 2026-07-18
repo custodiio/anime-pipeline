@@ -1,17 +1,20 @@
 cell_start(9, "Fabrica de Audio")
 # @title 🎙️ 6. Fábrica de Áudio: Dublagem (NARRACAO) + Recorte Original (CENA)
-# @markdown Gera Video Completo com TTS clonado e recortes do anime.
+# Restauração idêntica ao Drama-pipeline com suporte a fatiamento por parte.
+
 import os
 import re
 import json
 import soundfile as sf
+import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from tqdm.notebook import tqdm
 from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
 
-# --- Lê configurações globais da Célula 1 ---
-TARGET_MIN_SPEED  = globals().get('TARGET_MIN_SPEED', 1.0)
-TARGET_MAX_SPEED  = globals().get('TARGET_MAX_SPEED', 1.25)
+TARGET_MIN_SPEED  = globals().get('TARGET_MIN_SPEED', 1.1)
+TARGET_MAX_SPEED  = globals().get('TARGET_MAX_SPEED', 1.35)
 MAX_RETRIES       = globals().get('MAX_AUDIO_RETRIES', 4)
 MAX_TEXT_RETRIES  = globals().get('MAX_TEXT_RETRIES', 3)
 BASE_PATH         = globals().get('BASE_PATH', '/kaggle/working/AUDIO_DUB')
@@ -23,7 +26,6 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 print(f"Narrador: {current_protagonist} | 3a Pessoa")
 
-# --- Voz de Clonagem ---
 _ref_audio = globals().get('REF_AUDIO_PATH', '')
 _ref_text  = globals().get('REF_TEXT', '')
 
@@ -42,19 +44,14 @@ else:
     REF_TEXT       = _ref_text
     print(f'Clonagem ativa: {REF_AUDIO_PATH}')
 
-# --- Áudio original do anime (para recortes CENA) ---
-# Carregado aqui uma vez; reutilizado por recortar_cena() em ambos os modos.
 anime_audio_full = None
 if ANIME_AUDIO_ORIGINAL and os.path.exists(ANIME_AUDIO_ORIGINAL):
     anime_audio_full = AudioSegment.from_file(ANIME_AUDIO_ORIGINAL)
-    print(f"Audio do anime carregado ({len(anime_audio_full)/1000:.1f}s)")
+    print(f"Audio original carregado ({len(anime_audio_full)/1000:.1f}s)")
 else:
     print("AVISO: Audio original nao encontrado. Blocos CENA ficarao silenciosos.")
 
-# --- Clientes OmniVoice (um por GPU) ---
 from gradio_client import Client, handle_file
-import shutil, threading
-from concurrent.futures import ThreadPoolExecutor
 
 _portas = globals().get('OMNIVOICE_PORTS', []) or [8001]
 omni_clients = []
@@ -66,7 +63,6 @@ for _p in _portas:
         print(f"Porta {_p} offline: {_e}")
 
 if not omni_clients:
-    # fallback: tenta 8001
     try:
         omni_clients.append(Client("http://127.0.0.1:8001/"))
     except:
@@ -75,10 +71,8 @@ if not omni_clients:
 _num_gpus = len(omni_clients)
 print(f"  {_num_gpus} servidor(es) ativo(s) — TTS {'paralelo' if _num_gpus > 1 else 'sequencial'}")
 
-# Lock para salvar progresso com segurança entre threads
 _save_lock = threading.Lock()
 
-# --- Funções de Áudio ---
 def limpar_texto(texto):
     return re.sub(r'[*"(){}\[\]_~]', '', texto).strip()
 
@@ -102,17 +96,18 @@ def trim_audio_silence(wav_in, mp3_out, padding_ms=50):
 def generate_tts(text, filename, gpu_idx=0):
     texto = limpar_texto(text)
     if len(texto) < 2: return create_silent_audio(filename, 1000)
-    # du = hint de duração para o OmniVoice. O loop de otimização corrige depois.
     est_duration = max(2.0, min(len(texto) / 13.0, 30.0))
     client = omni_clients[gpu_idx % len(omni_clients)] if omni_clients else None
     if not client:
         return create_silent_audio(filename, 1500)
     try:
         if REF_AUDIO_PATH and os.path.exists(REF_AUDIO_PATH):
+            # Se não tem REF_TEXT explícito, passa string vazia para evitar gagueira do OmniVoice
+            ref_txt_input = REF_TEXT if REF_TEXT else ""
             result = client.predict(
                 text=texto, lang="Portuguese",
                 ref_aud=handle_file(REF_AUDIO_PATH),
-                ref_text=REF_TEXT if REF_TEXT else texto[:50],
+                ref_text=ref_txt_input,
                 instruct="male, young adult",
                 ns=32.0, gs=2.0, dn=True, sp=1.0, du=est_duration,
                 pp=True, po=True, api_name="/_clone_fn"
@@ -140,7 +135,6 @@ def generate_tts(text, filename, gpu_idx=0):
 def recortar_cena(block, filename):
     try:
         trecho = anime_audio_full[int(block['start'] * 1000):int(block['end'] * 1000)]
-        # Fade-out de 150ms e fade-in de 50ms para evitar cliques e vazamentos do "ue" original
         if len(trecho) > 200:
             trecho = trecho.fade_in(50).fade_out(150)
         elif len(trecho) > 100:
@@ -151,15 +145,7 @@ def recortar_cena(block, filename):
         return create_silent_audio(filename, int((block['end'] - block['start']) * 1000))
 
 def get_context_window(block_list, current_id, before=4, after=4):
-    """
-    Retorna uma string com o contexto narrativo:
-    - 'before' blocos anteriores (do tipo NARRACAO) mais próximos
-    - bloco atual
-    - 'after' blocos seguintes (do tipo NARRACAO) mais próximos
-    """
     idx = next((i for i, b in enumerate(block_list) if b['id'] == current_id), 0)
-
-    # Coleta anteriores
     prev_texts = []
     i = idx - 1
     while i >= 0 and len(prev_texts) < before:
@@ -167,7 +153,6 @@ def get_context_window(block_list, current_id, before=4, after=4):
             prev_texts.insert(0, block_list[i]['translated_text'])
         i -= 1
 
-    # Coleta posteriores
     next_texts = []
     i = idx + 1
     while i < len(block_list) and len(next_texts) < after:
@@ -183,68 +168,53 @@ def get_context_window(block_list, current_id, before=4, after=4):
         parts.append("CONTEXTO POSTERIOR: " + " ".join(next_texts))
     return "\n".join(parts)
 
-MIN_FRAGMENT_CHARS = 30  # bloco com menos disso é candidato a fusão
+MIN_FRAGMENT_CHARS = 30
 
 def fundir_fragmentos_narracao(blocks):
-    """
-    Funde blocos NARRACAO consecutivos onde o bloco seguinte é um
-    fragmento curto que claramente continua o anterior.
-    Preserva blocos CENA intactos.
-    """
     result = []
     i = 0
     while i < len(blocks):
         blk = dict(blocks[i])
-        # Só tenta fundir se for NARRACAO
         if blk.get('tipo') == 'NARRACAO':
-            # Enquanto o próximo for NARRACAO e fragmento curto, absorve
             while (i + 1 < len(blocks)
                    and blocks[i+1].get('tipo') == 'NARRACAO'
                    and len(blocks[i+1].get('translated_text', '')) < MIN_FRAGMENT_CHARS):
                 next_blk = blocks[i + 1]
-                # Funde texto
                 blk['translated_text'] = (
                     blk.get('translated_text', '').rstrip()
                     + ' '
                     + next_blk.get('translated_text', '').strip()
                 )
-                # Estende o intervalo de tempo
                 blk['end'] = next_blk['end']
                 i += 1
         result.append(blk)
         i += 1
-    # Re-numera IDs
     for j, b in enumerate(result):
         b['id'] = j
     return result
 
-# ──────────────────────────────────────────────────────────────────────────────
-# FUNÇÃO PRINCIPAL DA FÁBRICA
-# ──────────────────────────────────────────────────────────────────────────────
 def run_fabrica():
     modo = "Video Completo"
     prefix   = "block_"
-    part_str = str(TTS_PART_NUM)
+    part_str = str(globals().get('TTS_PART_NUM', 1))
     save_name = f"{BASE_PATH}/ROTEIRO_ADAPTADO_COMPLETO_FINAL_pt{part_str}.json"
 
     print(f"\n{'='*60}")
-    print(f"  INICIANDO: {modo} | Parte {part_str}")
+    print(f"  INICIANDO FÁBRICA DE ÁUDIO (Parte {part_str})")
     print(f"{'='*60}")
 
-    # --- Carregar o JSON ja pre-fatiado desta parte ---
     src = f"{BASE_PATH}/roteiro_pt{part_str}.json"
     if not os.path.exists(src):
-        print(f"  AVISO: Arquivo fonte nao encontrado ({src}). Pulando {modo}.")
-        return
+        src = f"{BASE_PATH}/traducao_simplificada.json"
+        if not os.path.exists(src):
+            print(f"  AVISO: Nenhum arquivo fonte encontrado ({src}). Pulando.")
+            return
 
     with open(src, 'r', encoding='utf-8') as f:
         target_list = json.load(f)
 
-    print(f"  {len(target_list)} blocos carregados de roteiro_pt{part_str}.json")
-        
-    # Aplica fusão de fragmentos na base (garantindo que IDs novos combinem)
     target_list = fundir_fragmentos_narracao(target_list)
-    
+
     def sanitize_blocks(lista):
         lista = sorted(lista, key=lambda b: b['start'])
         out, cursor = [], 0.0
@@ -258,35 +228,35 @@ def run_fabrica():
             cursor = blk['end']
         return out
 
-    # Resolve sobreposições de tempo ANTES de avaliar a velocidade
     target_list = sanitize_blocks(target_list)
-    
-    # Se for a parte 1 ou modo unico, sintetiza a introdução
-    if TASK_KEY == "omni" or TASK_KEY == "omni-tts-pt1":
+
+    # Sintetizar introdução se for a parte 1
+    if part_str == "1":
         intro_json = f"{BASE_PATH}/intro_info.json"
         if os.path.exists(intro_json):
-            print("\n[INTRO] Detectado intro_info.json. Sintetizando áudio da introdução...")
+            print("\n[INTRO] Detectado intro_info.json. Sintetizando e ajustando áudio da introdução (10s)...")
             try:
                 with open(intro_json, 'r', encoding='utf-8') as f:
                     intro_data = json.load(f)
                 intro_text = intro_data.get("intro_text", "")
                 if intro_text:
                     intro_filename = os.path.join(TEMP_DIR, "block_intro.mp3")
-                    generate_tts(intro_text, intro_filename, gpu_idx=0)
-                    print("[INTRO] Áudio da introdução gerado com sucesso!")
+                    dur_raw = generate_tts(intro_text, intro_filename, gpu_idx=0)
+                    print(f"[INTRO] Áudio raw gerado ({dur_raw:.2f}s). Ajustando velocidade para caber nos 10.0s...")
+                    # Se exceder ou for menor, o ffmpeg atempo fará o ajuste na montagem
+                    if 'salvar_no_drive' in globals():
+                        salvar_no_drive(intro_filename, "KAGGLE/AUDIO_DUB/intro_audio.mp3")
+                        salvar_no_drive(intro_filename, "KAGGLE/PIPELINE/OMNI/intro_audio.mp3")
             except Exception as e:
-                print("[INTRO ERROR] Falha ao sintetizar áudio da introdução:", e)
-    
+                print("[INTRO ERROR] Falha na sintese da introdução:", e)
+
     if os.path.exists(save_name):
         print(f"  Mesclando com cache existente: {save_name}")
         with open(save_name, 'r', encoding='utf-8') as f:
             cache_list = json.load(f)
-            
         cache_map = {b['id']: b for b in cache_list}
-        
         for i, base_b in enumerate(target_list):
             c_b = cache_map.get(base_b['id'])
-            # Só reaproveita se o original não mudou de lugar (checando start)
             if c_b and c_b.get('start') == base_b.get('start'):
                 target_list[i]['translated_text'] = c_b.get('translated_text', base_b.get('translated_text'))
                 if 'status' in c_b: target_list[i]['status'] = c_b['status']
@@ -301,7 +271,7 @@ def run_fabrica():
             if 'salvar_no_drive' in globals():
                 salvar_no_drive(save_name, f'KAGGLE/AUDIO_DUB/{os.path.basename(save_name)}')
 
-    # --- 1. Geração Inicial (V0) — paralela entre GPU0 e GPU1 ---
+    # --- 1. Geração Inicial (V0) ---
     pending = [
         (i, b) for i, b in enumerate(target_list)
         if not (b.get('status') == 'GREEN' and os.path.exists(b.get('current_file', '')))
@@ -327,22 +297,12 @@ def run_fabrica():
             block['speed_factor']     = ratio
             block['status']           = 'GREEN' if TARGET_MIN_SPEED <= ratio <= TARGET_MAX_SPEED else 'RED'
         salvar_progresso()
-    
-    if TASK_KEY.startswith("omni-tts-pt"):
-        import shutil
-        zip_base_name = f"{BASE_PATH}/omni_tts_pt{part_str}"
-        print(f"[ZIP] Compactando TEMP_DIR para {zip_base_name}.zip ...")
-        shutil.make_archive(zip_base_name, 'zip', TEMP_DIR)
-        zip_full_path = zip_base_name + ".zip"
-        if 'salvar_no_drive' in globals():
-            salvar_no_drive(zip_full_path, f"KAGGLE/AUDIO_DUB/omni_tts_pt{part_str}.zip")
 
     with ThreadPoolExecutor(max_workers=max(1, _num_gpus)) as ex:
-        list(tqdm(ex.map(_process_v0, pending), total=len(pending), desc=f'V0 {modo[:5]}'))
+        list(tqdm(ex.map(_process_v0, pending), total=len(pending), desc=f'V0 Pt{part_str}'))
 
-    # --- 2. Loop de Otimização (PARALELIZADO) ---
+    # --- 2. Loop de Otimização GREEN (IDÊNTICO AO DRAMA-PIPELINE) ---
     def _process_correction(args):
-        """Processa um bloco RED: tenta reescrita e gera áudio, usando a GPU especificada."""
         enum_idx, block = args
         gpu_idx = enum_idx % _num_gpus
 
@@ -350,15 +310,6 @@ def run_fabrica():
         if original_dur < 0.8:
             block['status'] = 'WARNING_SHORT'
             salvar_progresso()
-    
-    if TASK_KEY.startswith("omni-tts-pt"):
-        import shutil
-        zip_base_name = f"{BASE_PATH}/omni_tts_pt{part_str}"
-        print(f"[ZIP] Compactando TEMP_DIR para {zip_base_name}.zip ...")
-        shutil.make_archive(zip_base_name, 'zip', TEMP_DIR)
-        zip_full_path = zip_base_name + ".zip"
-        if 'salvar_no_drive' in globals():
-            salvar_no_drive(zip_full_path, f"KAGGLE/AUDIO_DUB/omni_tts_pt{part_str}.zip")
             return
 
         current_len   = len(block['translated_text'])
@@ -368,7 +319,6 @@ def run_fabrica():
         REAL_MIN      = max(5, int(ideal_len * 0.90))
         REAL_MAX      = int(ideal_len * 1.10)
 
-        # NOVO: contexto expandido (4 anteriores, 4 seguintes)
         contexto = get_context_window(target_list, block['id'], before=4, after=4)
         prompt_min = REAL_MIN
         prompt_max = REAL_MAX
@@ -440,15 +390,6 @@ def run_fabrica():
         if not valid_text_found:
             print(f"  Ignorando Bloco {block['id']} — falhou em {MAX_TEXT_RETRIES} tentativas.")
             salvar_progresso()
-    
-    if TASK_KEY.startswith("omni-tts-pt"):
-        import shutil
-        zip_base_name = f"{BASE_PATH}/omni_tts_pt{part_str}"
-        print(f"[ZIP] Compactando TEMP_DIR para {zip_base_name}.zip ...")
-        shutil.make_archive(zip_base_name, 'zip', TEMP_DIR)
-        zip_full_path = zip_base_name + ".zip"
-        if 'salvar_no_drive' in globals():
-            salvar_no_drive(zip_full_path, f"KAGGLE/AUDIO_DUB/omni_tts_pt{part_str}.zip")
             return
 
         block['translated_text'] = candidate
@@ -463,46 +404,36 @@ def run_fabrica():
 
         print(f"  Speed: {ratio:.2f}x -> {block['status']}")
         salvar_progresso()
-    
-    if TASK_KEY.startswith("omni-tts-pt"):
-        import shutil
-        zip_base_name = f"{BASE_PATH}/omni_tts_pt{part_str}"
-        print(f"[ZIP] Compactando TEMP_DIR para {zip_base_name}.zip ...")
-        shutil.make_archive(zip_base_name, 'zip', TEMP_DIR)
-        zip_full_path = zip_base_name + ".zip"
-        if 'salvar_no_drive' in globals():
-            salvar_no_drive(zip_full_path, f"KAGGLE/AUDIO_DUB/omni_tts_pt{part_str}.zip")
 
     red_list  = [b for b in target_list if b.get('status') == 'RED' and b.get('tipo') == 'NARRACAO']
     iteration = 0
 
     while red_list and iteration < MAX_RETRIES:
         iteration += 1
-        print(f"\n  Loop Audio [{modo[:5]}] - Iteracao {iteration}/{MAX_RETRIES} | {len(red_list)} blocos fora do limite.")
+        print(f"\n  Loop Audio Pt{part_str} - Iteracao {iteration}/{MAX_RETRIES} | {len(red_list)} blocos fora do limite.")
 
         correction_tasks = list(enumerate(red_list))
 
         with ThreadPoolExecutor(max_workers=max(1, _num_gpus)) as ex:
             list(tqdm(ex.map(_process_correction, correction_tasks),
                       total=len(correction_tasks),
-                      desc=f'Correção {modo[:5]}'))
+                      desc=f'Correção Pt{part_str}'))
 
         red_list = [b for b in target_list if b.get('status') == 'RED' and b.get('tipo') == 'NARRACAO']
 
-    print(f"\n  FIM [{modo}]: {len(red_list)} blocos irredutíveis restantes.")
+    print(f"\n  FIM [FÁBRICA Pt{part_str}]: {len(red_list)} blocos irredutíveis restantes.")
     salvar_progresso()
-    
-    # --- Compactação Final e Upload do Zip da Parte ---
-    import shutil
+
+    # --- COMPACTAÇÃO E UPLOAD DO ZIP SÓ APÓS CONCLUIR O LOOP DE ADAPTAÇÃO ---
     zip_base_name = f"{BASE_PATH}/omni_tts_pt{part_str}"
-    print(f"[ZIP] Compactando TEMP_DIR para {zip_base_name}.zip ...")
+    print(f"[ZIP] Compactando {TEMP_DIR} para {zip_base_name}.zip ...")
     shutil.make_archive(zip_base_name, 'zip', TEMP_DIR)
     zip_full_path = zip_base_name + ".zip"
     if 'salvar_no_drive' in globals():
         salvar_no_drive(zip_full_path, f"KAGGLE/AUDIO_DUB/omni_tts_pt{part_str}.zip")
 
     if 'report_tts_part_done' in globals():
-        report_tts_part_done(part_str, f"TTS Pt{part_str} concluído e zip enviado ao Drive.")
+        report_tts_part_done(part_str, f"TTS Pt{part_str} concluído com sucesso e zip enviado ao Drive.")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # EXECUÇÃO
@@ -510,7 +441,7 @@ def run_fabrica():
 if should_run("tts"):
     run_fabrica()
     print("\nFABRICA CONCLUIDA!")
-    cell_end(9, "done", f"TTS Parte {TTS_PART_NUM} concluido")
+    cell_end(9, "done", f"TTS Parte {globals().get('TTS_PART_NUM', 1)} concluido")
 else:
     print("TTS não é necessário para esta task. Ignorando execução.")
-    cell_end(9, "done", "Gerador ignorado")
+    cell_end(9, "done", "Gerador ignorado")
