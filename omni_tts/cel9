@@ -101,28 +101,33 @@ def generate_tts(text, filename, gpu_idx=0):
     if not client:
         return create_silent_audio(filename, 1500)
     try:
-        if REF_AUDIO_PATH and os.path.exists(REF_AUDIO_PATH):
-            # Se não tem REF_TEXT explícito, passa string vazia para evitar gagueira do OmniVoice
-            ref_txt_input = REF_TEXT if REF_TEXT else ""
-            result = client.predict(
-                text=texto, lang="Portuguese",
-                ref_aud=handle_file(REF_AUDIO_PATH),
-                ref_text=ref_txt_input,
-                instruct="male, young adult",
-                ns=32.0, gs=2.0, dn=True, sp=1.0, du=est_duration,
-                pp=True, po=True, api_name="/_clone_fn"
-            )
-        else:
-            result = client.predict(
-                text=texto, lang="Portuguese",
-                ns=32.0, gs=3.0, dn=True, sp=1.2, du=est_duration,
-                pp=True, po=True,
-                param_9="Male / 男", param_10="Young Adult / 青年",
-                param_11="Moderate Pitch / 中音调",
-                param_12="Auto", param_13="Auto", param_14="Auto",
-                api_name="/_design_fn"
-            )
-        audio_path = result[0]
+        def _predict_call():
+            if REF_AUDIO_PATH and os.path.exists(REF_AUDIO_PATH):
+                ref_txt_input = REF_TEXT if REF_TEXT else texto[:50]
+                return client.predict(
+                    text=texto, lang="Portuguese",
+                    ref_aud=handle_file(REF_AUDIO_PATH),
+                    ref_text=ref_txt_input,
+                    instruct="male, young adult",
+                    ns=32.0, gs=2.0, dn=True, sp=1.0, du=est_duration,
+                    pp=True, po=True, api_name="/_clone_fn"
+                )
+            else:
+                return client.predict(
+                    text=texto, lang="Portuguese",
+                    ns=32.0, gs=3.0, dn=True, sp=1.2, du=est_duration,
+                    pp=True, po=True,
+                    param_9="Male / 男", param_10="Young Adult / 青年",
+                    param_11="Moderate Pitch / 中音调",
+                    param_12="Auto", param_13="Auto", param_14="Auto",
+                    api_name="/_design_fn"
+                )
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_predict_call)
+            result = future.result(timeout=45.0)
+
+        audio_path = result[0] if result else None
         if audio_path is None or not os.path.exists(audio_path):
             return create_silent_audio(filename, 1500)
         wav_local = filename.replace('.mp3', '.wav')
