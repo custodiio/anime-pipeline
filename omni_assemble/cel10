@@ -166,6 +166,7 @@ def run_montagem():
                 )
                 if result.returncode == 0 and os.path.exists(proc_wav):
                     seg = AudioSegment.from_wav(proc_wav)
+                    print(f"  [atempo] Bloco {block_id} (pt{block.get('part', 1)}): {dur_antes}ms -> {len(seg)}ms (speed={safe_speed:.2f}x)")
                     os.remove(proc_wav)
             except Exception as e:
                 print(f'  [ERRO atempo] bloco {block_id}: {e}')
@@ -173,7 +174,9 @@ def run_montagem():
                 if os.path.exists(tmp_wav): os.remove(tmp_wav)
 
         if slot_duration_ms > 0 and len(seg) > slot_duration_ms + 200:
+            dur_antes_corte = len(seg)
             seg = seg[:slot_duration_ms]
+            print(f"  [CORTE] Bloco {block_id} (pt{block.get('part', 1)}): Excedeu slot ({dur_antes_corte}ms > {slot_duration_ms}ms). Cortado para {slot_duration_ms}ms.")
 
         block_start_ms = int((block['start'] - start_offset) * 1000)
         gap = block_start_ms - cursor_ms
