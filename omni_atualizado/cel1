@@ -14,10 +14,27 @@ try:
     DATABASE_URL = _ks("DATABASE_URL")
     PROJECT_ID = _ks("PIPELINE_PROJECT_ID")
     PIPELINE_WEBHOOK_URL = _ks("PIPELINE_WEBHOOK_URL")
+    TASK_KEY = _ks("PIPELINE_TASK_KEY")
 except:
     DATABASE_URL = os.getenv("DATABASE_URL", "")
     PROJECT_ID = os.getenv("PIPELINE_PROJECT_ID", "")
     PIPELINE_WEBHOOK_URL = os.getenv("PIPELINE_WEBHOOK_URL", "")
+    TASK_KEY = os.getenv("PIPELINE_TASK_KEY", os.getenv("TASK_KEY", ""))
+
+if not TASK_KEY:
+    TASK_KEY = "omni"
+
+def should_run(step):
+    """Decide se um passo (translate, tts, assemble) deve ser executado."""
+    if TASK_KEY in ["omni", "omni-main", ""]:
+        return True
+    if step == "translate":
+        return TASK_KEY in ["omni", "omni-main", ""]
+    if step == "tts":
+        return TASK_KEY in ["omni", "omni-main", ""] or TASK_KEY.startswith("omni-tts")
+    if step == "assemble":
+        return TASK_KEY in ["omni", "omni-main", "omni-assemble"]
+    return True
 
 _cell_timers = {}
 
