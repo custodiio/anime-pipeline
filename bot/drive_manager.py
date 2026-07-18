@@ -108,6 +108,10 @@ class DriveManager:
                     _, done = downloader.next_chunk()
             print(f"  Baixado: {caminho_drive}")
             return True
+        except Exception as e:
+            print(f"  Erro ao baixar {caminho_drive}: {e}")
+            return False
+
     def baixar_por_id(self, file_id, destino_local):
         """Baixa um arquivo do Drive diretamente pelo file_id."""
         if not self.service or not file_id:
