@@ -949,8 +949,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if conf == "done" and omni == "done":
             arqs_omni = self.drive.listar_arquivos("KAGGLE/PIPELINE/OMNI")
             has_ass = any(a["name"] == "legendas.ass" for a in arqs_omni)
+            has_intro_ass = any(a["name"] == "intro_legendas.ass" for a in arqs_omni)
             has_mp3 = any(a["name"] == "audio_dublado.mp3" for a in arqs_omni)
-            if not (has_ass and has_mp3):
+            if not (has_ass and has_intro_ass and has_mp3):
                 print(f"[{project_id}] Preparando arquivos do Omni e gerando ASS antecipadamente...")
                 arquivos_out = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
                 mp3_file = (
