@@ -260,6 +260,11 @@ def _migrate_db():
         "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS video_parts INTEGER DEFAULT 5",
         "ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS azure_enabled BOOLEAN DEFAULT TRUE",
     ]
+    for i in range(11, 31):
+        migrations.append(f"ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_watermark_pt{i} TEXT DEFAULT 'pending'")
+        migrations.append(f"ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_enhancer_pt{i} TEXT DEFAULT 'pending'")
+        migrations.append(f"ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_render_pt{i} TEXT DEFAULT 'pending'")
+        
     for sql in migrations:
         try:
             cur.execute(sql)
