@@ -688,37 +688,67 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             self.drive.salvar(out_ass, "KAGGLE/PIPELINE/OMNI/legendas.ass")
             print(f"[{project_id}] ASS final gerado ({len(dialogues)} diálogos) e salvo no Drive.")
 
-            # Gerar intro_legendas.ass se intro_info.json existir
+            # Gerar intro_legendas.ass se intro_output.srt ou intro_info.json existir
+            intro_srt_path = os.path.join(tmp_dir, "intro_output.srt")
+            has_intro_srt = self.drive.baixar("KAGGLE/PIPELINE/OMNI/intro_output.srt", intro_srt_path) or self.drive.baixar("KAGGLE/AUDIO_DUB/intro_output.srt", intro_srt_path)
             intro_json_path = os.path.join(tmp_dir, "intro_info.json")
-            has_intro = self.drive.baixar("KAGGLE/AUDIO_DUB/intro_info.json", intro_json_path)
-            if has_intro and os.path.exists(intro_json_path):
+            has_intro_json = self.drive.baixar("KAGGLE/AUDIO_DUB/intro_info.json", intro_json_path)
+
+            if has_intro_srt or has_intro_json:
                 try:
-                    with open(intro_json_path, "r", encoding="utf-8") as fj:
-                        intro_data = json.load(fj)
-                    intro_text = intro_data.get("intro_text", "")
-                    intro_text = wrap_text(intro_text, max_chars=70)
+                    intro_blocks = []
+                    if has_intro_srt and os.path.exists(intro_srt_path):
+                        with open(intro_srt_path, "r", encoding="utf-8") as f_is:
+                            intro_srt_content = f_is.read()
+                        i_blocks = re.split(r'\n\s*\n', intro_srt_content.strip())
+                        for ib in i_blocks:
+                            i_lines = ib.strip().split('\n')
+                            if len(i_lines) >= 3 and "-->" in i_lines[1]:
+                                t_s, t_e = i_lines[1].split("-->")
+                                try:
+                                    s_ms = time_to_ms(t_s)
+                                    e_ms = time_to_ms(t_e)
+                                    raw_t = " ".join(i_lines[2:])
+                                    if all_caps: raw_t = raw_t.upper()
+                                    intro_blocks.append({"start_ms": s_ms, "end_ms": e_ms, "text": wrap_text(raw_t)})
+                                except Exception: pass
                     
-                    intro_dialogues = []
-                    start = "0:00:00.00"
-                    end = "0:00:10.00"  # Capped at 10s
-                    
-                    if glow:
-                        glow_col = hex_to_ass(glow_color)
-                        gAlpha = f"{int((1 - min(1, glow_intensity)) * 255):02X}"
-                        glow_effect = f"{pos_tag}\\1c{glow_col}\\3c{glow_col}\\1a&H{gAlpha}&\\3a&H{gAlpha}&\\bord{max(outline_width, glow_blur)}\\blur{glow_blur}"
-                        intro_dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{glow_effect}}}{intro_text}")
-                        main_effect = f"{pos_tag}\\1c{primary_col}\\3c{outline_col}\\1a&H00&\\3a&H00&\\bord{outline_width}\\blur0"
-                        intro_dialogues.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{{{main_effect}}}{intro_text}")
-                    else:
-                        intro_dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{pos_tag}}}{intro_text}")
-                        
-                    out_intro_ass = os.path.join(tmp_dir, "intro_legendas.ass")
-                    with open(out_intro_ass, "w", encoding="utf-8") as f:
-                        f.write(header)
-                        f.write("\n".join(intro_dialogues))
-                        
-                    self.drive.salvar(out_intro_ass, "KAGGLE/PIPELINE/OMNI/intro_legendas.ass")
-                    print(f"[{project_id}] ASS da introdução (intro_legendas.ass) gerado e salvo no Drive.")
+                    if not intro_blocks and has_intro_json and os.path.exists(intro_json_path):
+                        with open(intro_json_path, "r", encoding="utf-8") as fj:
+                            intro_data = json.load(fj)
+                        intro_text = intro_data.get("intro_text", "")
+                        words = intro_text.split()
+                        if words:
+                            time_per_word = 10000 / len(words)
+                            for idx_w, w in enumerate(words):
+                                s_ms = idx_w * time_per_word
+                                e_ms = (idx_w + 1) * time_per_word
+                                txt = w.upper() if all_caps else w
+                                intro_blocks.append({"start_ms": s_ms, "end_ms": e_ms, "text": wrap_text(txt)})
+
+                    if intro_blocks:
+                        intro_dialogues = []
+                        for ib in intro_blocks:
+                            st = ms_to_ass_time(ib["start_ms"])
+                            et = ms_to_ass_time(ib["end_ms"])
+                            tx = ib["text"]
+                            if glow:
+                                glow_col = hex_to_ass(glow_color)
+                                gAlpha = f"{int((1 - min(1, glow_intensity)) * 255):02X}"
+                                glow_effect = f"{pos_tag}\\1c{glow_col}\\3c{glow_col}\\1a&H{gAlpha}&\\3a&H{gAlpha}&\\bord{max(outline_width, glow_blur)}\\blur{glow_blur}"
+                                intro_dialogues.append(f"Dialogue: 0,{st},{et},Default,,0,0,0,,{{{glow_effect}}}{tx}")
+                                main_effect = f"{pos_tag}\\1c{primary_col}\\3c{outline_col}\\1a&H00&\\3a&H00&\\bord{outline_width}\\blur0"
+                                intro_dialogues.append(f"Dialogue: 1,{st},{et},Default,,0,0,0,,{{{main_effect}}}{tx}")
+                            else:
+                                intro_dialogues.append(f"Dialogue: 0,{st},{et},Default,,0,0,0,,{{{pos_tag}}}{tx}")
+
+                        out_intro_ass = os.path.join(tmp_dir, "intro_legendas.ass")
+                        with open(out_intro_ass, "w", encoding="utf-8") as f:
+                            f.write(header)
+                            f.write("\n".join(intro_dialogues))
+                            
+                        self.drive.salvar(out_intro_ass, "KAGGLE/PIPELINE/OMNI/intro_legendas.ass")
+                        print(f"[{project_id}] ASS da introdução (intro_legendas.ass) gerado com {len(intro_dialogues)} diálogos e salvo no Drive.")
                 except Exception as ie:
                     print(f"[{project_id}] Erro ao gerar ASS da introdução: {ie}")
 

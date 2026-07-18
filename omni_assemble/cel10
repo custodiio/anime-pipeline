@@ -369,6 +369,24 @@ def run_montagem():
             if os.path.exists(intro_mp3_local):
                 salvar_no_drive(intro_mp3_local, "KAGGLE/AUDIO_DUB/intro_audio.mp3")
                 salvar_no_drive(intro_mp3_local, "KAGGLE/PIPELINE/OMNI/intro_audio.mp3")
+                try:
+                    if 'stable_model' in globals() and stable_model is not None:
+                        intro_res = stable_model.transcribe_stable(intro_mp3_local, language='pt', word_timestamps=True)
+                        intro_words = []
+                        for seg in intro_res.segments:
+                            for w in seg.words:
+                                intro_words.append({'word': w.word.strip(), 'start': w.start, 'end': w.end})
+                        intro_srt_file = os.path.join(TEMP_DIR, "intro_output.srt")
+                        with open(intro_srt_file, 'w', encoding='utf-8') as f_intro_srt:
+                            for idx_i, entry_i in enumerate(intro_words, 1):
+                                f_intro_srt.write(f"{idx_i}\n")
+                                f_intro_srt.write(f"{fmt_ts(entry_i['start'])} --> {fmt_ts(entry_i['end'])}\n")
+                                f_intro_srt.write(f"{entry_i['word']}\n\n")
+                        salvar_no_drive(intro_srt_file, "KAGGLE/AUDIO_DUB/intro_output.srt")
+                        salvar_no_drive(intro_srt_file, "KAGGLE/PIPELINE/OMNI/intro_output.srt")
+                        print("  [INTRO SRT] SRT da introdução sincronizado enviado ao Drive com sucesso!")
+                except Exception as e_intro_srt:
+                    print("  [INTRO SRT AVISO] Falha ao transcrever intro:", e_intro_srt)
         except Exception as e:
             print(f"  Erro backup Drive: {e}")
 
