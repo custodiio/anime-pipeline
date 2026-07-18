@@ -980,10 +980,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         # Gerar ASS e copiar áudio do Omni assim que ambos estiverem prontos
         if conf == "done" and omni == "done":
             arqs_omni = self.drive.listar_arquivos("KAGGLE/PIPELINE/OMNI")
-            has_ass = any(a["name"] == "legendas.ass" for a in arqs_omni)
-            has_intro_ass = any(a["name"] == "intro_legendas.ass" for a in arqs_omni)
+            ass_item = next((a for a in arqs_omni if a["name"] == "legendas.ass"), None)
+            srt_item = next((a for a in arqs_omni if a["name"] == "omni_output.srt"), None)
             has_mp3 = any(a["name"] == "audio_dublado.mp3" for a in arqs_omni)
-            if not (has_ass and has_intro_ass and has_mp3):
+
+            should_regen = False
+            if not ass_item or not has_mp3:
+                should_regen = True
+            elif srt_item and srt_item.get("modifiedTime", "") > ass_item.get("modifiedTime", ""):
+                should_regen = True
+                print(f"[{project_id}] Novo omni_output.srt detectado (mais recente que legendas.ass). Regerando legendas.ass...")
+
+            if should_regen:
                 print(f"[{project_id}] Preparando arquivos do Omni e gerando ASS antecipadamente...")
                 arquivos_out = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
                 mp3_file = (
