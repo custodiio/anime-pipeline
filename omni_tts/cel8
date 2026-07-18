@@ -23,17 +23,17 @@ if should_run("tts"):
     _server_procs = []
     OMNIVOICE_PORTS = []
 
-    for gpu_idx in range(min(GPU_COUNT, 2)):   # máximo 2 servidores
-        port  = 8001 + gpu_idx
+    for gpu_idx in range(1):   # 1 servidor por notebook para total estabilidade de VRAM
+        port  = 8001
         log   = open(f"/kaggle/working/omnivoice_gpu{gpu_idx}.log", "w")
-        env   = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu_idx)}
+        env   = {**os.environ, "CUDA_VISIBLE_DEVICES": "0"}
         proc  = subprocess.Popen(
             ["omnivoice-demo", "--ip", "127.0.0.1", "--port", str(port)],
             env=env, stdout=log, stderr=subprocess.STDOUT
         )
         _server_procs.append(proc)
         OMNIVOICE_PORTS.append(port)
-        print(f"  GPU{gpu_idx} → porta {port} iniciando...")
+        print(f"  GPU0 → porta {port} iniciando...")
 
     def _aguardar_servidor(port, label):
         for i in range(40):
