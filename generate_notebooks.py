@@ -364,15 +364,23 @@ report_step("done", "Enhancer {pt.upper()} concluido")'''),
 # MERGE FINAL
 # ══════════════════════════════════════════════════════════════
 MERGE_CELLS = [
-    ("Download das Partes", '''for i in range(1, 6):
-    baixar_do_drive(f"{DRIVE_RENDER}/pt{i}_renderizado.mp4", f"{BASE_PATH}/pt{i}_renderizado.mp4")
-print("Partes baixadas!")'''),
+    ("Download das Partes", '''parts_list = []
+if baixar_do_drive(f"{DRIVE_RENDER}/pt0_renderizado.mp4", f"{BASE_PATH}/pt0_renderizado.mp4"):
+    parts_list.append(0)
+    print("  [INTRO] pt0_renderizado.mp4 baixado com sucesso!")
+
+for i in range(1, 31):
+    if baixar_do_drive(f"{DRIVE_RENDER}/pt{i}_renderizado.mp4", f"{BASE_PATH}/pt{i}_renderizado.mp4"):
+        parts_list.append(i)
+        print(f"  Parte {i} (pt{i}_renderizado.mp4) baixada!")
+
+print(f"Total de {len(parts_list)} partes baixadas para o merge: {parts_list}")'''),
     ("Merge Final", '''OUTPUT = f"{BASE_PATH}/video_final.mp4"
 concat_file = f"{BASE_PATH}/merge_concat.txt"
 with open(concat_file, "w") as f:
-    for i in range(1, 6):
+    for i in parts_list:
         f.write(f"file '{BASE_PATH}/pt{i}_renderizado.mp4'\\n")
-subprocess.run(["ffmpeg","-y","-f","concat","-safe","0","-i",concat_file,"-c","copy",OUTPUT], check=True, capture_output=True)
+subprocess.run(["ffmpeg","-y","-f","concat","-safe","0","-i",concat_file,"-c","copy",OUTPUT], check=True)
 print(f"  Merge concluido: {OUTPUT}")'''),
     ("Upload Final", '''salvar_no_drive(f"{BASE_PATH}/video_final.mp4", f"{DRIVE_FINAL}/video_final.mp4")
 report_step("done", "Merge final concluido")

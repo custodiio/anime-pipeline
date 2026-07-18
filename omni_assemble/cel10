@@ -373,7 +373,9 @@ def run_montagem():
         try:
             salvar_no_drive(OUTPUT_FILENAME, drive_mp3)
             salvar_no_drive(SRT_FILENAME,    drive_srt)
-            print(f"  Backup Drive: {drive_mp3}")
+            salvar_no_drive(OUTPUT_FILENAME, "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3")
+            salvar_no_drive(SRT_FILENAME,    "KAGGLE/PIPELINE/OMNI/omni_output.srt")
+            print(f"  Backup Drive: {drive_mp3} e OMNI/omni_output.srt")
 
             intro_mp3_local = os.path.join(TEMP_DIR, "block_intro.mp3")
             if os.path.exists(intro_mp3_local):

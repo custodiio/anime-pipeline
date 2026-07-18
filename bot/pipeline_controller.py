@@ -953,6 +953,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     self.drive.copiar_arquivo(f"KAGGLE/AUDIO_DUB/OUTPUT/{mp3_file['name']}", "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3")
                 if srt_file:
                     self.drive.copiar_arquivo(f"KAGGLE/AUDIO_DUB/OUTPUT/{srt_file['name']}", "KAGGLE/PIPELINE/OMNI/omni_output.srt")
+                else:
+                    # Busca flexível por qualquer .srt gerado no Drive
+                    try:
+                        q = "trashed=false and name contains '.srt' and not name contains 'intro'"
+                        res = self.drive.service.files().list(q=q, fields="files(id, name)").execute()
+                        f_list = res.get("files", [])
+                        if f_list:
+                            best_srt = f_list[0]
+                            print(f"[{project_id}] SRT encontrado via busca flexível: {best_srt['name']}")
+                            tmp_s = os.path.join(tempfile.gettempdir(), "omni_output.srt")
+                            if self.drive.baixar_por_id(best_srt["id"], tmp_s):
+                                self.drive.salvar(tmp_s, "KAGGLE/PIPELINE/OMNI/omni_output.srt")
+                    except Exception as ex_s:
+                        print(f"[{project_id}] Erro busca flexível SRT: {ex_s}")
+
                 self.converter_json_para_ass(project_id)
 
         # ── 1. CONFIG SALVA -> FILA WATERMARK (MÁXIMO 7) ──
