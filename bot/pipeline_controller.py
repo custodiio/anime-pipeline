@@ -245,9 +245,10 @@ class PipelineController:
              
         return True, ""
 
-    def check_merge_ready(self):
+    def check_merge_ready(self, total_parts=None):
         arquivos = self.drive.listar_arquivos("KAGGLE/PIPELINE/RENDER")
-        for i in range(1, 6):
+        parts_to_check = range(1, (total_parts or 5) + 1)
+        for i in parts_to_check:
             if not any(a["name"] == f"pt{i}_renderizado.mp4" for a in arquivos):
                 return False, f"pt{i}_renderizado.mp4 não encontrado no RENDER."
         return True, ""

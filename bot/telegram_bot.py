@@ -950,12 +950,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         project = get_active_project(chat_id)
         if project:
             pid = str(project["id"])
-            ok, err = controller.check_merge_ready(project.get("video_parts", 5) or 5)
-            if not ok:
-                await query.answer(err, show_alert=True)
-                return
             controller.disparar_merge(pid)
-            await query.edit_message_text("🚀 Merge disparado!")
+            await query.edit_message_text("🚀 *Merge Final* disparado com sucesso!", parse_mode="Markdown")
 
     elif data in ["trigger_wm_menu", "trigger_enhancer_menu", "trigger_render_menu"]:
         project = get_active_project(chat_id)
