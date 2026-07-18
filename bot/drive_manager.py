@@ -108,8 +108,22 @@ class DriveManager:
                     _, done = downloader.next_chunk()
             print(f"  Baixado: {caminho_drive}")
             return True
+    def baixar_por_id(self, file_id, destino_local):
+        """Baixa um arquivo do Drive diretamente pelo file_id."""
+        if not self.service or not file_id:
+            return False
+        try:
+            request = self.service.files().get_media(fileId=file_id)
+            os.makedirs(os.path.dirname(destino_local) or ".", exist_ok=True)
+            with open(destino_local, "wb") as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    _, done = downloader.next_chunk()
+            print(f"  Baixado por ID ({file_id}): {destino_local}")
+            return True
         except Exception as e:
-            print(f"  Erro ao baixar {caminho_drive}: {e}")
+            print(f"  Erro ao baixar por ID ({file_id}): {e}")
             return False
 
     def salvar(self, caminho_local, caminho_drive):
