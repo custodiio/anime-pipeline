@@ -266,7 +266,7 @@ You are a scriptwriter and video editor. Based on the following translated anime
    - Choose timestamps from the script blocks where there is action, drama, or something visual happening.
 
 Input script:
-{json.dumps([{ 'id': b['id'], 'tipo': b['tipo'], 'text': b.get('translated_text') or b['text'], 'start': b['start'], 'end': b['end'] } for b in final_blocks], ensure_ascii=False)}
+{json.dumps([{ 'id': b['id'], 'tipo': b['tipo'], 'text': b.get('translated_text') or b.get('texto_original', ''), 'start': b['start'], 'end': b['end'] } for b in final_blocks], ensure_ascii=False)}
 
 Respond with JSON only, using this exact format:
 {{
