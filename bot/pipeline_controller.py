@@ -415,6 +415,7 @@ class PipelineController:
         """
         import tempfile
         import shutil
+        import json
         import re
         print(f"[{project_id}] Iniciando geração do ASS final...")
         try:
