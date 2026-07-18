@@ -181,8 +181,7 @@ def run_montagem():
 
         block_start_ms = int((block['start'] - start_offset) * 1000)
         gap = block_start_ms - cursor_ms
-        if gap > 10:
-            gap = min(gap, 2000)
+        if gap > 0:
             segments_to_concat.append(AudioSegment.silent(duration=gap))
             cursor_ms += gap
 
