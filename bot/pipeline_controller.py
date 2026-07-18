@@ -869,38 +869,37 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return
 
         # ── TRANSIÇÃO DO OMNI PARALELO ──
-        if conf == "done":
-            if omni == "pending":
-                print(f"[{project_id}] Disparando etapa inicial: Omni-Main")
-                self.disparar_omni_imediatamente(project_id)
+        if omni == "pending" and conf == "done":
+            print(f"[{project_id}] Disparando etapa inicial: Omni-Main")
+            self.disparar_omni_imediatamente(project_id)
+            return
+            
+        elif omni == "main_done":
+            print(f"[{project_id}] Omni-Main concluído. Disparando 4 TTS paralelos...")
+            update_step(project_id, "step_omni", "tts_running")
+            dispatch_parallel(["omni-tts-pt1", "omni-tts-pt2", "omni-tts-pt3", "omni-tts-pt4"], project_id)
+            return
+            
+        elif omni == "tts_running":
+            # Verificar se os 4 arquivos zip de áudio já estão no Drive
+            arqs_dub = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB")
+            tts_pt1_ok = any(a["name"] == "omni_tts_pt1.zip" for a in arqs_dub)
+            tts_pt2_ok = any(a["name"] == "omni_tts_pt2.zip" for a in arqs_dub)
+            tts_pt3_ok = any(a["name"] == "omni_tts_pt3.zip" for a in arqs_dub)
+            tts_pt4_ok = any(a["name"] == "omni_tts_pt4.zip" for a in arqs_dub)
+            
+            if tts_pt1_ok and tts_pt2_ok and tts_pt3_ok and tts_pt4_ok:
+                print(f"[{project_id}] Todos os 4 TTS concluídos. Disparando Omni-Assemble...")
+                update_step(project_id, "step_omni", "assembling")
+                dispatch_workflow("omni-assemble", project_id, extra_payload={"task_key": "omni-assemble"})
                 return
-                
-            elif omni == "main_done":
-                print(f"[{project_id}] Omni-Main concluído. Disparando 4 TTS paralelos...")
-                update_step(project_id, "step_omni", "tts_running")
-                dispatch_parallel(["omni-tts-pt1", "omni-tts-pt2", "omni-tts-pt3", "omni-tts-pt4"], project_id)
-                return
-                
-            elif omni == "tts_running":
-                # Verificar se os 4 arquivos zip de áudio já estão no Drive
-                arqs_dub = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB")
-                tts_pt1_ok = any(a["name"] == "omni_tts_pt1.zip" for a in arqs_dub)
-                tts_pt2_ok = any(a["name"] == "omni_tts_pt2.zip" for a in arqs_dub)
-                tts_pt3_ok = any(a["name"] == "omni_tts_pt3.zip" for a in arqs_dub)
-                tts_pt4_ok = any(a["name"] == "omni_tts_pt4.zip" for a in arqs_dub)
-                
-                if tts_pt1_ok and tts_pt2_ok and tts_pt3_ok and tts_pt4_ok:
-                    print(f"[{project_id}] Todos os 4 TTS concluídos. Disparando Omni-Assemble...")
-                    update_step(project_id, "step_omni", "assembling")
-                    dispatch_workflow("omni-assemble", project_id, extra_payload={"task_key": "omni-assemble"})
-                    return
-                else:
-                    missing = []
-                    if not tts_pt1_ok: missing.append("pt1")
-                    if not tts_pt2_ok: missing.append("pt2")
-                    if not tts_pt3_ok: missing.append("pt3")
-                    if not tts_pt4_ok: missing.append("pt4")
-                    print(f"[{project_id}] ⏳ Aguardando zips do TTS: faltando {missing}")
+            else:
+                missing = []
+                if not tts_pt1_ok: missing.append("pt1")
+                if not tts_pt2_ok: missing.append("pt2")
+                if not tts_pt3_ok: missing.append("pt3")
+                if not tts_pt4_ok: missing.append("pt4")
+                print(f"[{project_id}] ⏳ Aguardando zips do TTS: faltando {missing}")
 
         # Gerar ASS e copiar áudio do Omni assim que ambos estiverem prontos
         if conf == "done" and omni == "done":
