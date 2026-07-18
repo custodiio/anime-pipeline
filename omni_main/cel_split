@@ -1,0 +1,36 @@
+cell_start(5, "Dividir Roteiro e Reportar Main Done")
+# Divide traducao_simplificada.json em 4 partes e faz upload ao Drive.
+# Reporta step_omni = "main_done" via webhook para o controller iniciar os 4 TTS.
+import json
+import os
+import math
+
+TRADUCAO_PATH = f"{BASE_PATH}/traducao_simplificada.json"
+
+if not os.path.exists(TRADUCAO_PATH):
+    raise FileNotFoundError(f"traducao_simplificada.json nao encontrado em {TRADUCAO_PATH}")
+
+with open(TRADUCAO_PATH, 'r', encoding='utf-8') as f:
+    all_blocks = json.load(f)
+
+total = len(all_blocks)
+num_parts = 4
+chunk_size = math.ceil(total / num_parts)
+
+print(f"Dividindo {total} blocos em {num_parts} partes (chunk_size={chunk_size})...")
+
+for i in range(1, num_parts + 1):
+    start = (i - 1) * chunk_size
+    end = min(i * chunk_size, total)
+    part_blocks = all_blocks[start:end]
+    part_path = f"{BASE_PATH}/roteiro_pt{i}.json"
+    with open(part_path, 'w', encoding='utf-8') as f:
+        json.dump(part_blocks, f, ensure_ascii=False, indent=4)
+    print(f"  Parte {i}: {len(part_blocks)} blocos (blocos {start}-{end-1}) -> {part_path}")
+    if 'salvar_no_drive' in globals():
+        salvar_no_drive(part_path, f"KAGGLE/AUDIO_DUB/roteiro_pt{i}.json")
+        print(f"  Upload Drive: KAGGLE/AUDIO_DUB/roteiro_pt{i}.json")
+
+print("\nDivisao concluida! Reportando main_done...")
+cell_end(5, "done", "Roteiro dividido em 4 partes")
+report_step("main_done", "Omni-Main concluido. Aguardando TTS paralelos.")

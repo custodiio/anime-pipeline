@@ -1,0 +1,123 @@
+cell_start(3, "Celula 3") 
+# @title 🕵️ 3. Identificação do Anime e Personagens
+# @markdown Analisa o texto transcrito (zh/ja) para identificar o anime,
+# @markdown protagonista e personagens antes da tradução.
+# @markdown Modelos e fallback configurados na Célula 1.
+
+import json
+import os
+
+IDENTIFICACAO_PATH = f"{BASE_PATH}/identificacao_anime.json"
+
+if os.path.exists(IDENTIFICACAO_PATH):
+    print("📁 Identificação já existe. Carregando cache...")
+    with open(IDENTIFICACAO_PATH, 'r', encoding='utf-8') as f:
+        anime_info = json.load(f)
+    selected_anime = anime_info.get("title", "Desconhecido")
+    protagonist    = anime_info.get("protagonist", "Narrador")
+    print("✅ Cache carregado.")
+else:
+    if 'final_blocks' not in globals() or not final_blocks:
+        try:
+            with open(TRANSCRICAO_PATH, "r", encoding='utf-8') as f:
+                final_blocks = json.load(f)
+            print("⚠️ Transcrição carregada do arquivo.")
+        except:
+            raise Exception("❌ Rode a Célula 2 primeiro.")
+
+    textos_com_fala = [b['texto_original'] for b in final_blocks
+                       if b.get("texto_original", "").strip()]
+    full_text_sample = " ".join(textos_com_fala[:60])
+
+    if not full_text_sample.strip():
+        raise Exception("❌ Nenhum texto original encontrado nos blocos.")
+
+    print("🕵️ Analisando texto para identificar o anime...")
+
+    identify_prompt = f"""
+Analyze the following anime/movie transcript deeply.
+The text may be in Chinese (Mandarin narration) and/or Japanese (character dialogue).
+
+TEXT SAMPLE:
+"{full_text_sample[:5000]}"
+
+TASK:
+1. Identify the **Anime/Movie Title** (use the most common English/Romaji name).
+2. Identify the **main protagonist** — the character performing most actions in THIS specific text.
+   - CRITICAL: Do not just pick the main franchise character.
+   - Example: If the anime is "Naruto" but the text focuses on "Sasuke seeking revenge", pick Sasuke.
+3. List ALL character names that appear or are referenced.
+4. Brief synopsis of what happens in this specific segment.
+
+OUTPUT FORMAT (JSON ONLY):
+{{
+    "title": "Anime Name",
+    "title_jp": "Japanese Title (if known)",
+    "protagonist": "Character Name",
+    "characters": ["char1", "char2", "char3"],
+    "synopsis": "Brief description of what happens",
+    "reason": "Why you identified this anime and protagonist"
+}}
+"""
+
+    anime_info = None
+    try:
+        # Tenta Gemini com fallback automático por quota (cadeias definidas na Cel1)
+        response = gemini_generate(
+            model_chain=MODELS_IDENTIFICACAO,
+            contents=identify_prompt,
+            config={'response_mime_type': 'application/json', 'temperature': 0.1},
+            task_name="Identificacao"
+        )
+        anime_info = json.loads(response.text)
+
+    except RuntimeError as e:
+        # Todos Gemini falharam — tenta OpenAI se disponível
+        if USE_OPENAI_FALLBACK and client_openai and "OPENAI_FALLBACK" in str(e):
+            print("  Tentando OpenAI como fallback final...")
+            try:
+                resp = client_openai.chat.completions.create(
+                    model=OPENAI_FALLBACK_MODEL,
+                    messages=[{"role": "user", "content": identify_prompt}],
+                    response_format={"type": "json_object"},
+                    temperature=0.1
+                )
+                anime_info = json.loads(resp.choices[0].message.content)
+                print("  OpenAI fallback OK.")
+            except Exception as oe:
+                print(f"  OpenAI também falhou: {oe}")
+
+    except Exception as e:
+        print(f"❌ Erro fatal na identificação: {e}")
+
+    if not anime_info:
+        anime_info = {
+            "title": "Desconhecido",
+            "protagonist": "Narrador",
+            "characters": [],
+            "synopsis": "",
+            "reason": "Falha em todos os modelos disponíveis."
+        }
+
+    selected_anime = anime_info.get("title", "Desconhecido")
+    protagonist    = anime_info.get("protagonist", "Narrador")
+
+    with open(IDENTIFICACAO_PATH, 'w', encoding='utf-8') as f:
+        json.dump(anime_info, f, ensure_ascii=False, indent=4)
+    print(f"💾 Salvo: {IDENTIFICACAO_PATH}")
+
+print(f"""
+╔════════════════════════════════════════════════════════╗
+║            🎬 ANIME IDENTIFICADO                       ║
+╠════════════════════════════════════════════════════════╣
+║  Título       : {selected_anime}
+║  Protagonista : {protagonist}
+║  Personagens  : {', '.join(anime_info.get('characters', [])[:8])}
+║  Sinopse      : {anime_info.get('synopsis', 'N/A')[:80]}...
+╚════════════════════════════════════════════════════════╝
+""")
+
+if 'salvar_no_drive' in globals():
+    salvar_no_drive(IDENTIFICACAO_PATH, 'KAGGLE/AUDIO_DUB/identificacao_anime.json')
+
+cell_end(3, "done", "Celula 3 concluido")

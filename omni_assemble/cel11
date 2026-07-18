@@ -1,0 +1,102 @@
+cell_start(11, "Busca Audio Clonagem")
+# @title 🧹 8. Faxina Cirúrgica (Painel de Controle)
+# @markdown Selecione exatamente o que você deseja remover para liberar espaço ou refazer etapas.
+
+import os
+import shutil
+import glob
+
+# --- PAINEL DE CONTROLE ---
+DELETE_TRANSCRIPTION = True # @param {type:"boolean"}
+DELETE_TRANSLATION = True # @param {type:"boolean"}
+DELETE_IDENTIFICATION = True # @param {type:"boolean"}
+DELETE_SHORT_DATA = True # @param {type:"boolean"}
+DELETE_AUDIO_CACHE = True # @param {type:"boolean"}
+DELETE_FINAL_FILES = True # @param {type:"boolean"}
+
+print("🧹 Iniciando Protocolo de Limpeza Seletiva...")
+
+BASE_PATH = globals().get('BASE_PATH', '/kaggle/working/AUDIO_DUB')
+
+# 1. Definição dos Alvos com BASE_PATH correto
+targets = {
+    "transcription": [f"{BASE_PATH}/transcricao_raw.json"],
+    "translation":   [f"{BASE_PATH}/traducao_simplificada.json",
+                      f"{BASE_PATH}/traducao_feita.json"],
+    "identification":[f"{BASE_PATH}/identificacao_anime.json"],
+    "short_data":    [f"{BASE_PATH}/GUIA_VIRAL_*.txt",
+                      f"{BASE_PATH}/GUIA_POSTAGEM_*.txt",
+                      f"{BASE_PATH}/roteiro_short.json",
+                      f"{BASE_PATH}/ROTEIRO_ADAPTADO_SHORT_FINAL.json"],
+    "final_files":   [f"{BASE_PATH}/**/SHORT_VIRAL_FINAL.mp3",
+                      f"{BASE_PATH}/**/VIDEO_COMPLETO_FINAL.mp3",
+                      f"{BASE_PATH}/**/DUB_FINAL_*.mp3",
+                      f"{BASE_PATH}/ROTEIRO_ADAPTADO_COMPLETO_FINAL.json"],
+}
+
+# 2. Contador de Remoções
+deleted_count = 0
+
+# --- FUNÇÃO DE REMOÇÃO ---
+def remove_pattern(pattern_list):
+    count = 0
+    for pat in pattern_list:
+        # recursive=True para pegar arquivos em subpastas (**/)
+        for f in glob.glob(pat, recursive=True):
+            try:
+                os.remove(f)
+                count += 1
+            except Exception as e:
+                print(f"   Erro ao apagar {f}: {e}")
+    return count
+
+# --- EXECUÇÃO ---
+
+# 1. Transcrição (Raw)
+if DELETE_TRANSCRIPTION:
+    n = remove_pattern(targets["transcription"])
+    if n > 0: print(f"🗑️ Transcrição Original removida ({n} arquivos).")
+
+# 2. Tradução (Base)
+if DELETE_TRANSLATION:
+    n = remove_pattern(targets["translation"])
+    if n > 0: print(f"🗑️ Tradução Base removida ({n} arquivos).")
+
+# 3. Identificação do Anime
+if DELETE_IDENTIFICATION:
+    n = remove_pattern(targets["identification"])
+    if n > 0: print(f"🗑️ Identificação do anime removida ({n} arquivos).")
+
+# 4. Dados do Short e Guias
+if DELETE_SHORT_DATA:
+    n = remove_pattern(targets["short_data"])
+    # Resetar variáveis de memória também é importante
+    if 'short_blocks' in globals():
+        short_blocks = []
+        print("   🧠 Memória 'short_blocks' limpa.")
+    if n > 0: print(f"🗑️ Guias e Shorts removidos ({n} arquivos).")
+
+# 5. Arquivos Finais (MP3 Prontos)
+if DELETE_FINAL_FILES:
+    n = remove_pattern(targets["final_files"])
+    if n > 0: print(f"🗑️ Arquivos Finais (.mp3) removidos ({n} arquivos).")
+
+# 6. Cache de Áudio (Pasta Temporária)
+if DELETE_AUDIO_CACHE:
+    temp_dir = globals().get('TEMP_PATH', '/kaggle/working/temp_audio')
+    demucs_dir = "/kaggle/working/demucs_out"
+    for d in [temp_dir, demucs_dir]:
+        if os.path.exists(d):
+            try:
+                shutil.rmtree(d)
+                os.makedirs(d, exist_ok=True)
+                print(f"🗑️ {d} limpo e recriado.")
+            except Exception as e:
+                print(f"❌ Erro na pasta {d}: {e}")
+
+# Resumo Final
+print("-" * 40)
+print("✨ Limpeza concluída conforme solicitado.")
+
+cell_end(11, "done", "Busca Audio Clonagem concluido")
+report_step("done", "Processamento Omni finalizado")

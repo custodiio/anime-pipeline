@@ -467,33 +467,64 @@ if __name__ == "__main__":
     nb = make_nb(MERGE_CELLS, "anime-merge-final", "step_merge")
     save_nb(nb, "anime-merge-final.ipynb")
     
-    # 5. Compilar o notebook do Omni a partir de omni_atualizado/
-    print("Compilando anime-omni-ver-final.ipynb a partir de omni_atualizado/...")
-    omni_cells = []
-    for i in range(1, 12):
-        cel_path = os.path.join(os.path.dirname(__file__), "omni_atualizado", f"cel{i}")
+    # 5. Compilar os 3 notebooks da nova arquitetura Omni:
+    # A) anime-omni-main.ipynb
+    print("Compilando anime-omni-main.ipynb a partir de omni_main/...")
+    main_cell_files = ["cel1", "cel2", "cel3", "cel4", "cel5", "cel_split"]
+    omni_main_cells = []
+    for cf in main_cell_files:
+        cel_path = os.path.join(os.path.dirname(__file__), "omni_main", cf)
         if os.path.exists(cel_path):
             with open(cel_path, "r", encoding="utf-8") as f_cel:
                 code = f_cel.read()
             lines = code.split("\n")
             source = [line + "\n" for line in lines[:-1]]
-            if lines[-1]:
-                source.append(lines[-1])
-            cell = {
-                "cell_type": "code",
-                "execution_count": None,
-                "metadata": {},
-                "outputs": [],
-                "source": source
-            }
-            omni_cells.append(cell)
-            
-    omni_nb = {
-        "nbformat": 4,
-        "nbformat_minor": 5,
-        "metadata": KAGGLE_META,
-        "cells": omni_cells
-    }
-    save_nb(omni_nb, "anime-omni-ver-final.ipynb")
-    
+            if lines[-1]: source.append(lines[-1])
+            omni_main_cells.append({
+                "cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": source
+            })
+    save_nb({"nbformat": 4, "nbformat_minor": 5, "metadata": KAGGLE_META, "cells": omni_main_cells}, "anime-omni-main.ipynb")
+
+    # B) anime-omni-tts-pt1.ipynb ate pt4.ipynb
+    print("Compilando anime-omni-tts-pt1.ipynb ate pt4.ipynb a partir de omni_tts/...")
+    tts_cell_files = ["cel1", "cel2", "cel8", "cel9"]
+    for pt in range(1, 5):
+        omni_tts_cells = []
+        for cf in tts_cell_files:
+            cel_path = os.path.join(os.path.dirname(__file__), "omni_tts", cf)
+            if os.path.exists(cel_path):
+                with open(cel_path, "r", encoding="utf-8") as f_cel:
+                    code = f_cel.read()
+                # Personalizar o cel1 para cada parte
+                if cf == "cel1":
+                    code = code.replace('TASK_KEY = "omni-tts-pt1"', f'TASK_KEY = "omni-tts-pt{pt}"')
+                lines = code.split("\n")
+                source = [line + "\n" for line in lines[:-1]]
+                if lines[-1]: source.append(lines[-1])
+                omni_tts_cells.append({
+                    "cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": source
+                })
+        save_nb({"nbformat": 4, "nbformat_minor": 5, "metadata": KAGGLE_META, "cells": omni_tts_cells}, f"anime-omni-tts-pt{pt}.ipynb")
+
+    # C) anime-omni-assemble.ipynb
+    print("Compilando anime-omni-assemble.ipynb a partir de omni_assemble/...")
+    assemble_cell_files = ["cel1", "cel2", "cel10", "cel11"]
+    omni_assemble_cells = []
+    for cf in assemble_cell_files:
+        cel_path = os.path.join(os.path.dirname(__file__), "omni_assemble", cf)
+        if os.path.exists(cel_path):
+            with open(cel_path, "r", encoding="utf-8") as f_cel:
+                code = f_cel.read()
+            lines = code.split("\n")
+            source = [line + "\n" for line in lines[:-1]]
+            if lines[-1]: source.append(lines[-1])
+            omni_assemble_cells.append({
+                "cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": source
+            })
+    save_nb({"nbformat": 4, "nbformat_minor": 5, "metadata": KAGGLE_META, "cells": omni_assemble_cells}, "anime-omni-assemble.ipynb")
+
+    # Manter retrocompatibilidade de nome caso necessario
+    save_nb({"nbformat": 4, "nbformat_minor": 5, "metadata": KAGGLE_META, "cells": omni_main_cells}, "anime-omni-ver-final.ipynb")
+
     print("\nTodos os notebooks gerados com sucesso!")
+

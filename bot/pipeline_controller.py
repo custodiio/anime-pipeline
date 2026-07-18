@@ -849,7 +849,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         
         # Obter estados atuais
         w_vals = [project.get(f"step_watermark_pt{i}") for i in range(1, video_parts + 1)]
-        e_vals = [project.get(f"step_enhancer_pt{i}") for i in range(0, video_parts + 1)] # Inclui pt0
+        e_vals = [project.get(f"step_enhancer_pt{i}") for i in range(1, video_parts + 1)] # Sem pt0
         r_vals = [project.get(f"step_render_pt{i}") for i in range(0, video_parts + 1)] # Inclui pt0
         
         conf = project.get("step_config_ready")
@@ -895,7 +895,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     dispatch_workflow("omni-assemble", project_id, extra_payload={"task_key": "omni-assemble"})
                     return
                 else:
-                    # Log periódico
                     missing = []
                     if not tts_pt1_ok: missing.append("pt1")
                     if not tts_pt2_ok: missing.append("pt2")
@@ -939,7 +938,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         # ── 2. WATERMARK OK -> FILA ENHANCER (MÁXIMO 7) ──
         if w_ok and not e_ok:
-            # Copiar vídeos originais para limpos caso Watermark tenha sido skipped
             all_wm_skipped = all(project.get(f"step_watermark_pt{i}") == "skipped" for i in range(1, video_parts + 1))
             if all_wm_skipped:
                 arqs_wm = self.drive.listar_arquivos("KAGGLE/PIPELINE/WATERMARK")
@@ -952,37 +950,29 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             enhancer_enabled = any(project.get(f"step_enhancer_pt{i}") != "skipped" for i in range(1, video_parts + 1))
             
             if not enhancer_enabled:
-                # Enhancer desativado: copiar limpos para enhanced e gerar intro pt0
                 arqs_enh = self.drive.listar_arquivos("KAGGLE/PIPELINE/ENHANCER")
-                has_all_enhanced = all(any(a["name"] == f"pt{i}_enhanced.mp4" for a in arqs_enh) for i in range(0, video_parts + 1))
+                has_all_enhanced = all(any(a["name"] == f"pt{i}_enhanced.mp4" for a in arqs_enh) for i in range(1, video_parts + 1))
                 if not has_all_enhanced:
-                    print(f"[{project_id}] Enhancer desativado. Copiando limpos para ENHANCER/ e gerando pt0...")
+                    print(f"[{project_id}] Enhancer desativado. Copiando limpos para ENHANCER/...")
                     for i in range(1, video_parts + 1):
                         self.drive.copiar_arquivo(f"KAGGLE/PIPELINE/WATERMARK/pt{i}_limpo.mp4", f"KAGGLE/PIPELINE/ENHANCER/pt{i}_enhanced.mp4")
-                    if self.criar_pt0_introducao(project_id, project):
-                        self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt0_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt0_enhanced.mp4")
-                        update_step(project_id, "step_enhancer_pt0", "skipped", "Intro gerada sem enhancer")
-                # e_ok se torna True no próximo ciclo quando o banco for lido novamente
             else:
-                # Enhancer ativo!
-                # Verificar se partes 1 a N terminaram para poder criar pt0
-                all_pts_1_to_n_done = all(project.get(f"step_enhancer_pt{i}") == "done" for i in range(1, video_parts + 1))
-                pt0_status = project.get("step_enhancer_pt0")
-                
-                if all_pts_1_to_n_done and pt0_status == "skipped": # Valor inicial padrão é skipped se não configurado
-                    print(f"[{project_id}] Partes 1 a {video_parts} do Enhancer concluídas. Criando pt0_limpo.mp4...")
-                    if self.criar_pt0_introducao(project_id, project):
-                        update_step(project_id, "step_enhancer_pt0", "pending")
-                        return
-
-                running_enh = sum(1 for i in range(0, video_parts + 1) if project.get(f"step_enhancer_pt{i}") == "running")
+                running_enh = sum(1 for i in range(1, video_parts + 1) if project.get(f"step_enhancer_pt{i}") == "running")
                 if running_enh < 7:
-                    pending_enh = [i for i in range(0, video_parts + 1) if project.get(f"step_enhancer_pt{i}") == "pending"]
+                    pending_enh = [i for i in range(1, video_parts + 1) if project.get(f"step_enhancer_pt{i}") == "pending"]
                     to_trigger = pending_enh[:7 - running_enh]
                     if to_trigger:
                         print(f"[{project_id}] Fila Enhancer: Disparando partes {to_trigger} (Running: {running_enh})")
                         self.disparar_enhancer(project_id, to_trigger)
                         return
+
+        # Garante que pt0_enhanced.mp4 seja criado recortando as partes 1..N quando Watermark/Enhancer estiverem OK
+        if w_ok and e_ok:
+            arqs_enh = self.drive.listar_arquivos("KAGGLE/PIPELINE/ENHANCER")
+            if not any(a["name"] == "pt0_enhanced.mp4" for a in arqs_enh):
+                print(f"[{project_id}] Partes 1..{video_parts} concluídas. Criando vídeo da introdução pt0_enhanced.mp4...")
+                if self.criar_pt0_introducao(project_id, project):
+                    self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt0_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt0_enhanced.mp4")
 
         # ── 3. WATERMARK+ENHANCER OK + OMNI OK + CONFIG OK -> FILA RENDER (MÁXIMO 7) ──
         if conf == "done" and w_ok and e_ok and omni == "done" and not r_ok:

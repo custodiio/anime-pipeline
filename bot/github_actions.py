@@ -34,13 +34,13 @@ ACCOUNT_MAP = {
 }
 
 NOTEBOOK_MAP = {
-    "omni": f"{NOTEBOOK_PREFIX}-omni-ver-final",
-    "omni-main": f"{NOTEBOOK_PREFIX}-omni-ver-final",
-    "omni-tts-pt1": f"{NOTEBOOK_PREFIX}-omni-ver-final",
-    "omni-tts-pt2": f"{NOTEBOOK_PREFIX}-omni-ver-final",
-    "omni-tts-pt3": f"{NOTEBOOK_PREFIX}-omni-ver-final",
-    "omni-tts-pt4": f"{NOTEBOOK_PREFIX}-omni-ver-final",
-    "omni-assemble": f"{NOTEBOOK_PREFIX}-omni-ver-final",
+    "omni": f"{NOTEBOOK_PREFIX}-omni-main",
+    "omni-main": f"{NOTEBOOK_PREFIX}-omni-main",
+    "omni-tts-pt1": f"{NOTEBOOK_PREFIX}-omni-tts-pt1",
+    "omni-tts-pt2": f"{NOTEBOOK_PREFIX}-omni-tts-pt2",
+    "omni-tts-pt3": f"{NOTEBOOK_PREFIX}-omni-tts-pt3",
+    "omni-tts-pt4": f"{NOTEBOOK_PREFIX}-omni-tts-pt4",
+    "omni-assemble": f"{NOTEBOOK_PREFIX}-omni-assemble",
     
     "enhancer-pt0": f"{NOTEBOOK_PREFIX}-video-enhancer-pt-0",
     "render-pt0": f"{NOTEBOOK_PREFIX}-renderizador-kaggle-pt-0",
