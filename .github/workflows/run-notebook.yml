@@ -88,8 +88,8 @@ jobs:
           python3 -c "
           import json
           meta = {
-            'id': '${KAGGLE_USER}/${NOTEBOOK}-v7',
-            'title': '${NOTEBOOK}-v7',
+            'id': '${KAGGLE_USER}/${NOTEBOOK}',
+            'title': '${NOTEBOOK}',
             'code_file': '${NOTEBOOK}.ipynb',
             'language': 'python',
             'kernel_type': 'notebook',
