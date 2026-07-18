@@ -162,8 +162,7 @@ def run_montagem():
                     '-ar', '44100', proc_wav
                 ]
                 result = subprocess.run(
-                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                    capture_output=True
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
                 )
                 if result.returncode == 0 and os.path.exists(proc_wav):
                     seg = AudioSegment.from_wav(proc_wav)
