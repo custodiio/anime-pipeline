@@ -83,9 +83,12 @@ class PipelineController:
                 if not opts.get("enhancer", False):
                     for i in range(0, 31):
                         update_step(pid, f"step_enhancer_pt{i}", "skipped", "User disabled")
+                else:
+                    # Se enhancer ativo, pt0 inicia como skipped aguardando partes 1 a N
+                    update_step(pid, "step_enhancer_pt0", "skipped", "Aguardando partes 1-N")
             
             # Marcar partes não utilizadas como skipped
-            for i in range(parts + 1, 21):
+            for i in range(parts + 1, 31):
                 update_step(pid, f"step_watermark_pt{i}", "skipped", "Excedente")
                 update_step(pid, f"step_enhancer_pt{i}", "skipped", "Excedente")
                 update_step(pid, f"step_render_pt{i}", "skipped", "Excedente")
@@ -161,7 +164,7 @@ class PipelineController:
             conn.close()
             
             # Marcar partes não utilizadas como skipped
-            for i in range(parts + 1, 21):
+            for i in range(parts + 1, 31):
                 update_step(pid, f"step_watermark_pt{i}", "skipped", "Excedente")
                 update_step(pid, f"step_enhancer_pt{i}", "skipped", "Excedente")
                 update_step(pid, f"step_render_pt{i}", "skipped", "Excedente")
@@ -183,6 +186,7 @@ class PipelineController:
             update_step(pid, "step_config_ready", "manual", "")
             for i in range(1, 31):
                 update_step(pid, f"step_watermark_pt{i}", "manual", "")
+            for i in range(0, 31):
                 update_step(pid, f"step_enhancer_pt{i}", "manual", "")
                 update_step(pid, f"step_render_pt{i}", "manual", "")
             update_step(pid, "step_merge", "manual", "")
