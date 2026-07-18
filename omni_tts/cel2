@@ -177,6 +177,7 @@ if drive_service:
     print("\nBaixando arquivos do Drive...")
     baixar_do_drive("KAGGLE/AUDIO_DUB/INPUT/anime_audio.mp3", ANIME_AUDIO_ORIGINAL)
     baixar_do_drive(f"KAGGLE/AUDIO_DUB/roteiro_pt{TTS_PART_NUM}.json", f"{BASE_PATH}/roteiro_pt{TTS_PART_NUM}.json")
+    baixar_do_drive(f"KAGGLE/AUDIO_DUB/ROTEIRO_ADAPTADO_COMPLETO_FINAL_pt{TTS_PART_NUM}.json", f"{BASE_PATH}/ROTEIRO_ADAPTADO_COMPLETO_FINAL_pt{TTS_PART_NUM}.json")
     baixar_do_drive("KAGGLE/AUDIO_DUB/identificacao_anime.json", f"{BASE_PATH}/identificacao_anime.json")
     if TTS_PART_NUM == 1:
         baixar_do_drive("KAGGLE/AUDIO_DUB/intro_info.json", f"{BASE_PATH}/intro_info.json")
