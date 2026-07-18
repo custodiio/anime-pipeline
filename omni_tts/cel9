@@ -188,15 +188,13 @@ def fundir_fragmentos_narracao(blocks):
                 blk['end'] = next_blk['end']
                 i += 1
         result.append(blk)
-        i += 1
-    for j, b in enumerate(result):
-        b['id'] = j
+    # Preserva IDs originais do bloco sem re-zerar por parte
     return result
 
 def run_fabrica():
     modo = "Video Completo"
-    prefix   = "block_"
     part_str = str(globals().get('TTS_PART_NUM', 1))
+    prefix   = f"pt{part_str}_block_"
     save_name = f"{BASE_PATH}/ROTEIRO_ADAPTADO_COMPLETO_FINAL_pt{part_str}.json"
 
     print(f"\n{'='*60}")

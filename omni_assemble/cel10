@@ -119,11 +119,13 @@ def run_montagem():
         block_id = block['id']
         audio_file = block.get('current_file')
         if not audio_file or not os.path.exists(audio_file):
-            padrao   = os.path.join(TEMP_DIR, f"{prefix}{block_id}_v*.mp3")
-            arquivos = glob.glob(padrao)
+            padrao1 = os.path.join(TEMP_DIR, f"*block_{block_id}_v*.mp3")
+            padrao2 = os.path.join(TEMP_DIR, f"*{block_id}_v*.mp3")
+            arquivos = glob.glob(padrao1) or glob.glob(padrao2)
             if not arquivos:
+                print(f"  [AVISO] Audio nao encontrado para bloco {block_id}")
                 continue
-            audio_file = max(arquivos, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]))
+            audio_file = max(arquivos, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]) if '_v' in x else 0)
 
         seg   = AudioSegment.from_file(audio_file)
         seg   = normalize_segment(seg)
@@ -205,9 +207,11 @@ def run_montagem():
         tipo     = block.get('tipo', 'NARRACAO')
         block_id = block['id']
         if tipo == 'NARRACAO':
-            arquivos = glob.glob(os.path.join(TEMP_DIR, f"{prefix}{block_id}_v*.mp3"))
+            padrao1 = os.path.join(TEMP_DIR, f"*block_{block_id}_v*.mp3")
+            padrao2 = os.path.join(TEMP_DIR, f"*{block_id}_v*.mp3")
+            arquivos = glob.glob(padrao1) or glob.glob(padrao2)
             if not arquivos: continue
-            audio_file = max(arquivos, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]))
+            audio_file = max(arquivos, key=lambda x: int(x.split('_v')[-1].split('.mp3')[0]) if '_v' in x else 0)
             try:
                 if 'stable_model' in globals() and stable_model is not None:
                     result = stable_model.transcribe_stable(audio_file, language='pt', word_timestamps=True)
