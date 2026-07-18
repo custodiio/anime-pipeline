@@ -234,19 +234,34 @@ def run_fabrica():
     if part_str == "1":
         intro_json = f"{BASE_PATH}/intro_info.json"
         if os.path.exists(intro_json):
-            print("\n[INTRO] Detectado intro_info.json. Sintetizando e ajustando áudio da introdução (10s)...")
+            print("\n[INTRO] Detectado intro_info.json. Sintetizando e ajustando áudio da introdução (10.0s)...")
             try:
                 with open(intro_json, 'r', encoding='utf-8') as f:
                     intro_data = json.load(f)
                 intro_text = intro_data.get("intro_text", "")
                 if intro_text:
+                    raw_filename = os.path.join(TEMP_DIR, "block_intro_raw.mp3")
                     intro_filename = os.path.join(TEMP_DIR, "block_intro.mp3")
-                    dur_raw = generate_tts(intro_text, intro_filename, gpu_idx=0)
-                    print(f"[INTRO] Áudio raw gerado ({dur_raw:.2f}s). Ajustando velocidade para caber nos 10.0s...")
-                    # Se exceder ou for menor, o ffmpeg atempo fará o ajuste na montagem
+                    dur_raw = generate_tts(intro_text, raw_filename, gpu_idx=0)
+                    print(f"[INTRO] Áudio raw gerado ({dur_raw:.2f}s). Ajustando via atempo para 10.0s cravados...")
+                    target_intro_dur = 10.0
+                    ratio = dur_raw / target_intro_dur if dur_raw > 0 else 1.0
+                    safe_speed = max(0.5, min(ratio, 3.0))
+                    
+                    import subprocess
+                    subprocess.run([
+                        'ffmpeg', '-y', '-i', raw_filename,
+                        '-filter:a', f'atempo={safe_speed}',
+                        '-ar', '44100', intro_filename
+                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                    if not os.path.exists(intro_filename):
+                        shutil.copy(raw_filename, intro_filename)
+
                     if 'salvar_no_drive' in globals():
                         salvar_no_drive(intro_filename, "KAGGLE/AUDIO_DUB/intro_audio.mp3")
                         salvar_no_drive(intro_filename, "KAGGLE/PIPELINE/OMNI/intro_audio.mp3")
+                        print("  [INTRO] Audio da introdução (10.0s) salvo no Drive com sucesso!")
             except Exception as e:
                 print("[INTRO ERROR] Falha na sintese da introdução:", e)
 

@@ -252,7 +252,7 @@ def run_montagem():
                             return full
                         line1 = full[:best_pos].rstrip()
                         line2 = full[best_pos:].lstrip()
-                        return f"{line1}\\n{line2}"
+                        return f"{line1}\n{line2}"
 
                     is_word_by_word = globals().get('PROJECT_OPTS', {}).get('srt_type') == 'word_by_word'
 
