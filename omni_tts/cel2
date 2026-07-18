@@ -229,7 +229,15 @@ if drive_service and NOME_NARRADOR:
                 if not os.path.exists(_ref_wav):
                     AudioSegment.from_file(_local, format='m4a').export(_ref_wav, format='wav')
                 REF_AUDIO_PATH = _ref_wav
-            print(f"  Referencia de clonagem: {REF_AUDIO_PATH}")
+            print(f"  Referência de clonagem: {REF_AUDIO_PATH}")
+
+            # Tenta carregar texto de referência .txt correspondente
+            _base_name = os.path.splitext(_melhor['name'])[0]
+            _txt_local = f"{_clonagem_local}/{_base_name}.txt"
+            if os.path.exists(_txt_local):
+                with open(_txt_local, "r", encoding="utf-8") as _tf:
+                    REF_TEXT = _tf.read().strip()
+                print(f"  Texto de referência carregado de arquivo: '{REF_TEXT[:60]}...'")
 
 # Clientes de API
 client_gemini = google_genai_client.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
