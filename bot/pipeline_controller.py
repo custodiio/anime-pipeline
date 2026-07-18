@@ -482,6 +482,7 @@ class PipelineController:
             bg_box_color = style.get("bgBoxColor", "#000000")
             bg_box_opacity = style.get("bgBoxOpacity", 0.5)
             all_caps = style.get("allCaps", False)
+            srt_type = style.get("type") or style.get("srt_type") or "normal"
 
             glow = style.get("glow", False)
             glow_color = style.get("glowColor", "#FF6B6B")
