@@ -32,6 +32,12 @@ except:
 
 print(f"[TTS] TASK_KEY={TASK_KEY} | Parte={TTS_PART_NUM}")
 
+def should_run(step):
+    """Decide se um passo (translate, tts, assemble) deve ser executado."""
+    if step == "tts":
+        return True
+    return False
+
 _cell_timers = {}
 
 def _db_exec(query, params):

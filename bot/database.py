@@ -562,13 +562,13 @@ def format_status(project: dict) -> str:
         ("step_upload", "Upload & Preparação"),
         ("step_split", f"Divisão em {video_parts} partes"),
         ("step_omni", "Omni (Geral)"),
+        ("step_omni_main", "  ├ 🧠 Omni-Main (Trad/Divisão)"),
+        ("step_omni_tts_pt1", "  ├ 🎙️ Omni TTS PT1"),
+        ("step_omni_tts_pt2", "  ├ 🎙️ Omni TTS PT2"),
+        ("step_omni_tts_pt3", "  ├ 🎙️ Omni TTS PT3"),
+        ("step_omni_tts_pt4", "  ├ 🎙️ Omni TTS PT4"),
+        ("step_omni_assemble", "  └ 🎼 Omni Assemble (Legenda/Audio)"),
     ]
-    # Se for Omni fatiado
-    if project.get("step_omni_main") and project.get("step_omni_main") != "pending":
-        steps.append(("step_omni_main", "Omni: Transcrição/Tradução"))
-        for i in range(1, 5):
-            steps.append((f"step_omni_tts_pt{i}", f"Omni: TTS PT{i}"))
-        steps.append(("step_omni_assemble", "Omni: Montagem"))
         
     for i in range(1, video_parts + 1):
         steps.append((f"step_watermark_pt{i}", f"Watermark PT{i}"))

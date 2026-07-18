@@ -895,7 +895,20 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
 
-    elif data == "trigger_omni":
+    elif data == "trigger_omni" or data == "trigger_omni_menu":
+        buttons = [
+            [InlineKeyboardButton("🧠 Omni-Main (Trad/Divisão)", callback_data="trigger_omni_main")],
+            [InlineKeyboardButton("🎙️ TTS PT1", callback_data="trigger_omni_tts_1"),
+             InlineKeyboardButton("🎙️ TTS PT2", callback_data="trigger_omni_tts_2")],
+            [InlineKeyboardButton("🎙️ TTS PT3", callback_data="trigger_omni_tts_3"),
+             InlineKeyboardButton("🎙️ TTS PT4", callback_data="trigger_omni_tts_4")],
+            [InlineKeyboardButton("🎙️ Todos os TTS (PT1-4)", callback_data="trigger_omni_tts_all")],
+            [InlineKeyboardButton("🎼 Omni Assemble (Legenda)", callback_data="trigger_omni_assemble")],
+            [InlineKeyboardButton("🔙 Voltar", callback_data="trigger_menu")]
+        ]
+        await query.edit_message_text("🎙️ *Menu de Disparo Omni*\nEscolha a etapa do Omni que deseja iniciar:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons))
+
+    elif data == "trigger_omni_main":
         project = get_active_project(chat_id)
         if project:
             pid = str(project["id"])
@@ -904,7 +917,34 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await query.answer(err, show_alert=True)
                 return
             controller.disparar_omni_imediatamente(pid)
-            await query.edit_message_text("🚀 Omni disparado!")
+            await query.edit_message_text("🚀 *Omni-Main* disparado com sucesso!")
+
+    elif data.startswith("trigger_omni_tts_"):
+        project = get_active_project(chat_id)
+        if project:
+            pid = str(project["id"])
+            part = data.replace("trigger_omni_tts_", "")
+            from bot.github_actions import dispatch_parallel
+            from bot.database import update_step
+            if part == "all":
+                update_step(pid, "step_omni", "tts_running")
+                dispatch_parallel(["omni-tts-pt1", "omni-tts-pt2", "omni-tts-pt3", "omni-tts-pt4"], pid)
+                await query.edit_message_text("🚀 *Todos os 4 TTS Paralelos* foram disparados!")
+            else:
+                update_step(pid, "step_omni", "tts_running")
+                update_step(pid, f"step_omni_tts_pt{part}", "running")
+                dispatch_parallel([f"omni-tts-pt{part}"], pid)
+                await query.edit_message_text(f"🚀 *Omni TTS PT{part}* disparado com sucesso!")
+
+    elif data == "trigger_omni_assemble":
+        project = get_active_project(chat_id)
+        if project:
+            pid = str(project["id"])
+            from bot.github_actions import dispatch_workflow
+            from bot.database import update_step
+            update_step(pid, "step_omni", "assembling")
+            dispatch_workflow("omni-assemble", pid, extra_payload={"task_key": "omni-assemble"})
+            await query.edit_message_text("🚀 *Omni Assemble* disparado com sucesso!")
 
     elif data == "trigger_merge":
         project = get_active_project(chat_id)
