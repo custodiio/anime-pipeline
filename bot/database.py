@@ -158,16 +158,7 @@ def init_db():
             completed_at TIMESTAMPTZ
         );
 
-        -- Migração dinâmica para partes pt11 a pt20 se já existirem tabelas antigas
-        FOR i IN 11..30 LOOP
-            BEGIN
-                EXECUTE 'ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_watermark_pt' || i || ' TEXT DEFAULT \'pending\'';
-                EXECUTE 'ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_enhancer_pt' || i || ' TEXT DEFAULT \'pending\'';
-                EXECUTE 'ALTER TABLE pipeline_projects ADD COLUMN IF NOT EXISTS step_render_pt' || i || ' TEXT DEFAULT \'pending\'';
-            EXCEPTION WHEN OTHERS THEN
-                NULL;
-            END;
-        END LOOP;
+
 
         -- Tabela de log genérico
         CREATE TABLE IF NOT EXISTS pipeline_logs (
