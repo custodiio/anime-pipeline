@@ -1031,11 +1031,20 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         from bot.database import update_step
         
         if part == "all":
-            parts_to_run = [i for i in range(0, video_parts + 1) if project.get(f"step_render_pt{i}") != "skipped"]
-            if not parts_to_run:
-                parts_to_run = list(range(0, video_parts + 1))
+            all_parts = [i for i in range(0, video_parts + 1) if project.get(f"step_render_pt{i}") != "skipped"]
+            if not all_parts:
+                all_parts = list(range(0, video_parts + 1))
+            
+            # Respeita o limite de 7 contas simultâneas
+            running_count = sum(1 for i in range(0, video_parts + 1) if project.get(f"step_render_pt{i}") == "running")
+            slots_avail = max(0, 7 - running_count)
+            if slots_avail == 0:
+                await query.edit_message_text("⚠️ Já existem 7 partes em execução no Render. Aguarde algumas terminarem.")
+                return
+            
+            parts_to_run = all_parts[:slots_avail]
             controller.disparar_render(pid, parts_to_run)
-            await query.edit_message_text(f"🚀 Render disparado para as partes {parts_to_run}!")
+            await query.edit_message_text(f"🚀 Render disparado para as partes {parts_to_run}! (Fila de 7 max simultâneas)")
         else:
             p_idx = int(part)
             update_step(pid, f"step_render_pt{p_idx}", "running")
