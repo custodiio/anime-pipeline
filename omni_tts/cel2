@@ -239,6 +239,24 @@ if drive_service and NOME_NARRADOR:
                     REF_TEXT = _tf.read().strip()
                 print(f"  Texto de referência carregado de arquivo: '{REF_TEXT[:60]}...'")
 
+# Carregar Whisper para STT / verificação de clonagem
+whisper_model = None
+try:
+    import whisper
+    whisper_model = whisper.load_model("base")
+    print("Modelo Whisper (base) carregado com sucesso.")
+except Exception as _e_wh:
+    print(f"Aviso ao carregar Whisper: {_e_wh}")
+
+if REF_AUDIO_PATH and os.path.exists(REF_AUDIO_PATH) and not REF_TEXT and whisper_model:
+    try:
+        print("  Transcrevendo áudio de referência de clonagem via Whisper...")
+        _r_ref = whisper_model.transcribe(REF_AUDIO_PATH, language='pt')
+        REF_TEXT = _r_ref.get('text', '').strip()
+        print(f"  Texto de referência transcrito: '{REF_TEXT[:60]}...'")
+    except Exception as _ex_ref:
+        print(f"  Aviso: Falha ao transcrever áudio de referência: {_ex_ref}")
+
 # Clientes de API
 client_gemini = google_genai_client.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 client_openai = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY and OPENAI_API_KEY.startswith("sk-") else None

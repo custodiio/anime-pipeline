@@ -157,7 +157,7 @@ def generate_tts(text, filename, gpu_idx=0):
 
             def _predict_call():
                 if REF_AUDIO_PATH and os.path.exists(REF_AUDIO_PATH):
-                    ref_txt_input = REF_TEXT if REF_TEXT else "Locução profissional de narração"
+                    ref_txt_input = REF_TEXT if REF_TEXT else ""
                     return client.predict(
                         text=texto, lang="Portuguese",
                         ref_aud=handle_file(REF_AUDIO_PATH),
