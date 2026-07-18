@@ -29,13 +29,6 @@ class PipelineController:
         pid = str(project["id"])
         print(f"Projeto criado: {pid}")
 
-        # Se opts diz que não quer, marcamos como skipped
-        if opts:
-            if not opts.get("watermark", True):
-                for i in range(1, 6): update_step(pid, f"step_watermark_pt{i}", "skipped", "User disabled")
-            if not opts.get("enhancer", False):
-                for i in range(1, 6): update_step(pid, f"step_enhancer_pt{i}", "skipped", "User disabled")
-
         try:
             update_step(pid, "step_upload", "running", "Limpando Drive...")
             # Limpa pasta ATIVO e os JSONs de sessão do AUDIO_DUB
@@ -54,15 +47,61 @@ class PipelineController:
             update_step(pid, "step_upload", "done", "Upload concluido")
 
             update_step(pid, "step_split", "running", "Dividindo video...")
+            
+            # Obter duração do vídeo
+            from bot.drive_manager import FFPROBE
+            import math
+            import subprocess
+            result = subprocess.run(
+                [FFPROBE, "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", video_path],
+                capture_output=True, text=True
+            )
+            duration = float(result.stdout.strip())
+            
+            if duration <= 600:
+                parts = 5
+            elif duration <= 1200:
+                parts = 10
+            else:
+                parts = min(30, math.ceil(duration / 110))
+            
+            # Registrar video_parts no banco
+            from bot.database import _get_conn
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute("UPDATE pipeline_projects SET video_parts = %s WHERE id = %s::uuid", (parts, pid))
+            conn.commit()
+            cur.close()
+            conn.close()
+            
+            # Se opts diz que não quer, marcamos como skipped
+            if opts:
+                if not opts.get("watermark", True):
+                    for i in range(1, 31):
+                        update_step(pid, f"step_watermark_pt{i}", "skipped", "User disabled")
+                if not opts.get("enhancer", False):
+                    for i in range(0, 31):
+                        update_step(pid, f"step_enhancer_pt{i}", "skipped", "User disabled")
+            
+            # Marcar partes não utilizadas como skipped
+            for i in range(parts + 1, 21):
+                update_step(pid, f"step_watermark_pt{i}", "skipped", "Excedente")
+                update_step(pid, f"step_enhancer_pt{i}", "skipped", "Excedente")
+                update_step(pid, f"step_render_pt{i}", "skipped", "Excedente")
+                
             temp_dir = os.path.join(os.path.dirname(video_path), "split_temp")
-            parts_paths = split_video(video_path, temp_dir, parts=5)
+            parts_paths = split_video(video_path, temp_dir, parts=parts)
             for p_path in parts_paths:
                 if p_path.endswith(".json"):
                     self.drive.salvar(p_path, f"{DRIVE_ATIVO}/split_info.json")
                 else:
-                    idx = parts_paths.index(p_path) + 1
-                    self.drive.salvar(p_path, f"{DRIVE_ATIVO}/video_pt{idx}.mp4")
-            update_step(pid, "step_split", "done", "Video dividido em 5 partes")
+                    base = os.path.basename(p_path)
+                    if "video_pt" in base:
+                        idx = int(base.split("video_pt")[-1].split(".mp4")[0])
+                        self.drive.salvar(p_path, f"{DRIVE_ATIVO}/video_pt{idx}.mp4")
+                        
+            update_step(pid, "step_split", "done", f"Video dividido em {parts} partes")
 
             return project
 
@@ -93,20 +132,56 @@ class PipelineController:
             update_step(pid, "step_upload", "done", "Upload concluido")
 
             update_step(pid, "step_split", "running", "Dividindo video...")
+            
+            # Obter duração do vídeo
+            from bot.drive_manager import FFPROBE
+            import math
+            import subprocess
+            result = subprocess.run(
+                [FFPROBE, "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", video_path],
+                capture_output=True, text=True
+            )
+            duration = float(result.stdout.strip())
+            
+            if duration <= 600:
+                parts = 5
+            elif duration <= 1200:
+                parts = 10
+            else:
+                parts = min(30, math.ceil(duration / 110))
+            
+            # Registrar video_parts no banco
+            from bot.database import _get_conn
+            conn = _get_conn()
+            cur = conn.cursor()
+            cur.execute("UPDATE pipeline_projects SET video_parts = %s WHERE id = %s::uuid", (parts, pid))
+            conn.commit()
+            cur.close()
+            conn.close()
+            
+            # Marcar partes não utilizadas como skipped
+            for i in range(parts + 1, 21):
+                update_step(pid, f"step_watermark_pt{i}", "skipped", "Excedente")
+                update_step(pid, f"step_enhancer_pt{i}", "skipped", "Excedente")
+                update_step(pid, f"step_render_pt{i}", "skipped", "Excedente")
+                
             temp_dir = os.path.join(os.path.dirname(video_path), "split_temp")
-            parts_paths = split_video(video_path, temp_dir, parts=5)
+            parts_paths = split_video(video_path, temp_dir, parts=parts)
             for p_path in parts_paths:
                 if p_path.endswith(".json"):
                     self.drive.salvar(p_path, f"{DRIVE_ATIVO}/split_info.json")
                 else:
-                    idx = parts_paths.index(p_path) + 1
-                    self.drive.salvar(p_path, f"{DRIVE_ATIVO}/video_pt{idx}.mp4")
+                    base = os.path.basename(p_path)
+                    if "video_pt" in base:
+                        idx = int(base.split("video_pt")[-1].split(".mp4")[0])
+                        self.drive.salvar(p_path, f"{DRIVE_ATIVO}/video_pt{idx}.mp4")
             
             # Definir todos os passos como 'manual'
-            update_step(pid, "step_split", "done", "Video dividido")
+            update_step(pid, "step_split", "done", f"Video dividido em {parts} partes")
             update_step(pid, "step_omni", "manual", "")
             update_step(pid, "step_config_ready", "manual", "")
-            for i in range(1, 6):
+            for i in range(1, 31):
                 update_step(pid, f"step_watermark_pt{i}", "manual", "")
                 update_step(pid, f"step_enhancer_pt{i}", "manual", "")
                 update_step(pid, f"step_render_pt{i}", "manual", "")
@@ -305,27 +380,21 @@ class PipelineController:
                 return os.path.abspath(files[0])
         return None
 
-    def disparar_watermark(self, project_id):
-        for i in range(1, 6): update_step(project_id, f"step_watermark_pt{i}", "running")
-        dispatch_parallel([f"wm-pt{i}" for i in range(1, 6)], project_id)
+    def disparar_watermark(self, project_id, parts_list):
+        for i in parts_list: update_step(project_id, f"step_watermark_pt{i}", "running")
+        dispatch_parallel([f"wm-pt{i}" for i in parts_list], project_id)
 
-    def disparar_enhancer(self, project_id):
-        for i in range(1, 6): update_step(project_id, f"step_enhancer_pt{i}", "running")
-        dispatch_parallel([f"enhancer-pt{i}" for i in range(1, 6)], project_id)
+    def disparar_enhancer(self, project_id, parts_list):
+        for i in parts_list: update_step(project_id, f"step_enhancer_pt{i}", "running")
+        dispatch_parallel([f"enhancer-pt{i}" for i in parts_list], project_id)
 
     def criar_sessao_videorender(self, project_id, session_url):
         """Etapa 7: Marca sessao criada e envia link pro Telegram."""
         mark_project_waiting_config(project_id, session_url)
 
-    def disparar_render(self, project_id):
-        arquivos = self.drive.listar_arquivos("KAGGLE/PIPELINE/ENHANCER")
-        parts_to_trigger = []
-        for i in range(1, 6):
-            if any(a["name"] == f"pt{i}_enhanced.mp4" for a in arquivos):
-                update_step(project_id, f"step_render_pt{i}", "running")
-                parts_to_trigger.append(f"render-pt{i}")
-        if parts_to_trigger:
-            dispatch_parallel(parts_to_trigger, project_id)
+    def disparar_render(self, project_id, parts_list):
+        for i in parts_list: update_step(project_id, f"step_render_pt{i}", "running")
+        dispatch_parallel([f"render-pt{i}" for i in parts_list], project_id)
 
     def disparar_merge(self, project_id):
         """Etapa 10: Dispara merge final."""
@@ -614,6 +683,40 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             self.drive.salvar(out_ass, "KAGGLE/PIPELINE/OMNI/legendas.ass")
             print(f"[{project_id}] ASS final gerado ({len(dialogues)} diálogos) e salvo no Drive.")
 
+            # Gerar intro_legendas.ass se intro_info.json existir
+            intro_json_path = os.path.join(tmp_dir, "intro_info.json")
+            has_intro = self.drive.baixar("KAGGLE/AUDIO_DUB/intro_info.json", intro_json_path)
+            if has_intro and os.path.exists(intro_json_path):
+                try:
+                    with open(intro_json_path, "r", encoding="utf-8") as fj:
+                        intro_data = json.load(fj)
+                    intro_text = intro_data.get("intro_text", "")
+                    intro_text = wrap_text(intro_text, max_chars=70)
+                    
+                    intro_dialogues = []
+                    start = "0:00:00.00"
+                    end = "0:00:10.00"  # Capped at 10s
+                    
+                    if glow:
+                        glow_col = hex_to_ass(glow_color)
+                        gAlpha = f"{int((1 - min(1, glow_intensity)) * 255):02X}"
+                        glow_effect = f"{pos_tag}\\1c{glow_col}\\3c{glow_col}\\1a&H{gAlpha}&\\3a&H{gAlpha}&\\bord{max(outline_width, glow_blur)}\\blur{glow_blur}"
+                        intro_dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{glow_effect}}}{intro_text}")
+                        main_effect = f"{pos_tag}\\1c{primary_col}\\3c{outline_col}\\1a&H00&\\3a&H00&\\bord{outline_width}\\blur0"
+                        intro_dialogues.append(f"Dialogue: 1,{start},{end},Default,,0,0,0,,{{{main_effect}}}{intro_text}")
+                    else:
+                        intro_dialogues.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{{pos_tag}}}{intro_text}")
+                        
+                    out_intro_ass = os.path.join(tmp_dir, "intro_legendas.ass")
+                    with open(out_intro_ass, "w", encoding="utf-8") as f:
+                        f.write(header)
+                        f.write("\n".join(intro_dialogues))
+                        
+                    self.drive.salvar(out_intro_ass, "KAGGLE/PIPELINE/OMNI/intro_legendas.ass")
+                    print(f"[{project_id}] ASS da introdução (intro_legendas.ass) gerado e salvo no Drive.")
+                except Exception as ie:
+                    print(f"[{project_id}] Erro ao gerar ASS da introdução: {ie}")
+
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
         except Exception as e:
@@ -622,19 +725,129 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             traceback.print_exc()
 
 
+    def criar_pt0_introducao(self, project_id, project):
+        """
+        Gera o vídeo base da introdução pt0_limpo.mp4 recortando cenas do Enhanced (ou Watermark se Enhancer desativado).
+        """
+        import tempfile
+        import shutil
+        import json
+        import subprocess
+        
+        print(f"[{project_id}] Iniciando criação do vídeo de introdução pt0...")
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            # 1. Baixar split_info.json e intro_info.json
+            split_path = os.path.join(tmp_dir, "split_info.json")
+            intro_path = os.path.join(tmp_dir, "intro_info.json")
+            
+            if not self.drive.baixar("KAGGLE/PIPELINE/ATIVO/split_info.json", split_path):
+                print(f"[{project_id}] split_info.json não encontrado no Drive.")
+                return False
+            if not self.drive.baixar("KAGGLE/AUDIO_DUB/intro_info.json", intro_path):
+                print(f"[{project_id}] intro_info.json não encontrado no Drive.")
+                return False
+                
+            with open(split_path, "r", encoding="utf-8") as f:
+                split_info = json.load(f)
+            with open(intro_path, "r", encoding="utf-8") as f:
+                intro_data = json.load(f)
+                
+            part_duration = split_info["part_duration"]
+            scenes = intro_data.get("scenes", [])
+            if not scenes:
+                print(f"[{project_id}] Sem cenas listadas no intro_info.json.")
+                return False
+                
+            # Limitar a exatamente 2 cenas conforme regra do usuário
+            scenes = scenes[:2]
+            clip_paths = []
+            
+            video_parts = project.get("video_parts", 5) or 5
+            enhancer_enabled = any(project.get(f"step_enhancer_pt{i}") != "skipped" for i in range(1, video_parts + 1))
+            
+            for idx, scene in enumerate(scenes):
+                t_start = scene["start"]
+                # Achar em qual parte do vídeo cai este timestamp
+                part_idx = int(t_start // part_duration) + 1
+                part_idx = min(part_idx, video_parts) # Prevenir overflow
+                
+                rel_start = t_start % part_duration
+                
+                # Se o trecho estiver muito no final e estourar a duração da parte, ajustamos rel_start
+                if rel_start + 5.0 > part_duration:
+                    rel_start = max(0.0, part_duration - 5.0)
+                    
+                if enhancer_enabled:
+                    drive_src = f"KAGGLE/PIPELINE/ENHANCER/pt{part_idx}_enhanced.mp4"
+                    local_src = os.path.join(tmp_dir, f"pt{part_idx}_enhanced.mp4")
+                else:
+                    drive_src = f"KAGGLE/PIPELINE/WATERMARK/pt{part_idx}_limpo.mp4"
+                    local_src = os.path.join(tmp_dir, f"pt{part_idx}_limpo.mp4")
+                    
+                print(f"[{project_id}] Baixando {drive_src} para recortar cena {idx+1}...")
+                if not self.drive.baixar(drive_src, local_src):
+                    print(f"[{project_id}] Vídeo fonte {drive_src} ainda não está pronto no Drive.")
+                    return False
+                    
+                # Recortar 5 segundos usando FFmpeg
+                clip_path = os.path.join(tmp_dir, f"clip_{idx}.mp4")
+                from bot.drive_manager import FFMPEG
+                cmd = [
+                    FFMPEG, "-y", "-ss", str(rel_start), "-i", local_src,
+                    "-t", "5.0", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+                    "-c:a", "copy", clip_path
+                ]
+                subprocess.run(cmd, check=True, capture_output=True)
+                clip_paths.append(clip_path)
+                
+            if len(clip_paths) < 2:
+                print(f"[{project_id}] Erro: não foi possível obter os 2 clipes para a intro.")
+                return False
+                
+            # Concatena os 2 clipes (totalizando 10s)
+            concat_txt = os.path.join(tmp_dir, "intro_concat.txt")
+            with open(concat_txt, "w") as f_con:
+                for c_path in clip_paths:
+                    f_con.write(f"file '{os.path.abspath(c_path)}'\n")
+                    
+            pt0_limpo_path = os.path.join(tmp_dir, "pt0_limpo.mp4")
+            cmd_concat = [
+                FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", concat_txt,
+                "-c", "copy", pt0_limpo_path
+            ]
+            subprocess.run(cmd_concat, check=True, capture_output=True)
+            
+            # Salvar no Drive como KAGGLE/PIPELINE/WATERMARK/pt0_limpo.mp4
+            self.drive.salvar(pt0_limpo_path, "KAGGLE/PIPELINE/WATERMARK/pt0_limpo.mp4")
+            print(f"[{project_id}] pt0_limpo.mp4 gerado com sucesso!")
+            return True
+            
+        except Exception as e:
+            print(f"[{project_id}] Erro ao criar pt0_limpo.mp4: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
     def verificar_e_avancar(self, project_id):
         """
         Verifica o status atual do projeto e avanca para a proxima etapa.
-        Fluxo:
-          config_ready -> Watermark (se ativo) -> Enhancer (se ativo) -> aguarda Omni -> Render -> Merge
+        Suporta fatiamento paralelo do Omni (main -> tts1..4 -> assemble)
+        e fila de execução no Kaggle limitada a 7 concorrentes.
         """
         project = get_project(project_id)
         if not project:
             return
 
-        w_vals = [project.get(f"step_watermark_pt{i}") for i in range(1, 6)]
-        e_vals = [project.get(f"step_enhancer_pt{i}") for i in range(1, 6)]
-        r_vals = [project.get(f"step_render_pt{i}") for i in range(1, 6)]
+        video_parts = project.get("video_parts", 5) or 5
+        
+        # Obter estados atuais
+        w_vals = [project.get(f"step_watermark_pt{i}") for i in range(1, video_parts + 1)]
+        e_vals = [project.get(f"step_enhancer_pt{i}") for i in range(0, video_parts + 1)] # Inclui pt0
+        r_vals = [project.get(f"step_render_pt{i}") for i in range(0, video_parts + 1)] # Inclui pt0
+        
         conf = project.get("step_config_ready")
         omni = project.get("step_omni")
 
@@ -643,16 +856,50 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         r_ok = all(v == "done" for v in r_vals)
         split_ok = project.get("step_split") == "done"
 
-        # Log de diagnóstico: mostrar estado quando render está pendente
-        if conf == "done" and w_ok and e_ok and r_vals[0] == "pending":
+        # Log de diagnóstico
+        if conf == "done" and w_ok and e_ok and r_vals[1] == "pending": # pt1
             if omni != "done":
                 print(f"[{project_id}] ⏳ Aguardando Omni (atual: {omni}) para disparar render.")
 
-        # Aguarda a etapa de upload e divisão terminar antes de despachar qualquer coisa no Kaggle
         if not split_ok:
             return
 
-        # Gerar ASS e copiar áudio do Omni assim que ambos estiverem prontos (independe do Enhancer)
+        # ── TRANSIÇÃO DO OMNI PARALELO ──
+        if conf == "done":
+            if omni == "pending":
+                print(f"[{project_id}] Disparando etapa inicial: Omni-Main")
+                self.disparar_omni_imediatamente(project_id)
+                return
+                
+            elif omni == "main_done":
+                print(f"[{project_id}] Omni-Main concluído. Disparando 4 TTS paralelos...")
+                update_step(project_id, "step_omni", "tts_running")
+                dispatch_parallel(["omni-tts-pt1", "omni-tts-pt2", "omni-tts-pt3", "omni-tts-pt4"], project_id)
+                return
+                
+            elif omni == "tts_running":
+                # Verificar se os 4 arquivos zip de áudio já estão no Drive
+                arqs_dub = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB")
+                tts_pt1_ok = any(a["name"] == "omni_tts_pt1.zip" for a in arqs_dub)
+                tts_pt2_ok = any(a["name"] == "omni_tts_pt2.zip" for a in arqs_dub)
+                tts_pt3_ok = any(a["name"] == "omni_tts_pt3.zip" for a in arqs_dub)
+                tts_pt4_ok = any(a["name"] == "omni_tts_pt4.zip" for a in arqs_dub)
+                
+                if tts_pt1_ok and tts_pt2_ok and tts_pt3_ok and tts_pt4_ok:
+                    print(f"[{project_id}] Todos os 4 TTS concluídos. Disparando Omni-Assemble...")
+                    update_step(project_id, "step_omni", "assembling")
+                    dispatch_workflow("omni-assemble", project_id, extra_payload={"task_key": "omni-assemble"})
+                    return
+                else:
+                    # Log periódico
+                    missing = []
+                    if not tts_pt1_ok: missing.append("pt1")
+                    if not tts_pt2_ok: missing.append("pt2")
+                    if not tts_pt3_ok: missing.append("pt3")
+                    if not tts_pt4_ok: missing.append("pt4")
+                    print(f"[{project_id}] ⏳ Aguardando zips do TTS: faltando {missing}")
+
+        # Gerar ASS e copiar áudio do Omni assim que ambos estiverem prontos
         if conf == "done" and omni == "done":
             arqs_omni = self.drive.listar_arquivos("KAGGLE/PIPELINE/OMNI")
             has_ass = any(a["name"] == "legendas.ass" for a in arqs_omni)
@@ -670,93 +917,81 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 )
 
                 if mp3_file:
-                    self.drive.copiar_arquivo(
-                        f"KAGGLE/AUDIO_DUB/OUTPUT/{mp3_file['name']}",
-                        "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3"
-                    )
+                    self.drive.copiar_arquivo(f"KAGGLE/AUDIO_DUB/OUTPUT/{mp3_file['name']}", "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3")
                 if srt_file:
-                    self.drive.copiar_arquivo(
-                        f"KAGGLE/AUDIO_DUB/OUTPUT/{srt_file['name']}",
-                        "KAGGLE/PIPELINE/OMNI/omni_output.srt"
-                    )
+                    self.drive.copiar_arquivo(f"KAGGLE/AUDIO_DUB/OUTPUT/{srt_file['name']}", "KAGGLE/PIPELINE/OMNI/omni_output.srt")
                 self.converter_json_para_ass(project_id)
 
-        # 1. Config salva -> disparar Watermark (se pendente e não skipped)
-        if conf == "done" and w_vals[0] == "pending":
-            print(f"[{project_id}] Config concluída -> Disparando Watermark")
-            self.disparar_watermark(project_id)
-            return
-
-        # 2. Watermark concluído/skipped -> disparar Enhancer (independe de conf)
-        #    Copiar vídeos para a pasta correta se Watermark foi pulado
-        if w_ok and e_vals[0] == "pending":
-            if w_vals[0] == "skipped":
-                print(f"[{project_id}] Watermark pulado, copiando vídeo original para limpo...")
-                all_copied = True
-                for i in range(1, 6):
-                    ok = self.drive.copiar_arquivo(f"KAGGLE/PIPELINE/ATIVO/video_pt{i}.mp4", f"KAGGLE/PIPELINE/WATERMARK/pt{i}_limpo.mp4")
-                    if not ok: all_copied = False
-                if not all_copied:
-                    print(f"[{project_id}] Falha ao copiar arquivos para o WATERMARK. Retry no próximo ciclo.")
+        # ── 1. CONFIG SALVA -> FILA WATERMARK (MÁXIMO 7) ──
+        if conf == "done" and not w_ok:
+            running_wm = sum(1 for i in range(1, video_parts + 1) if project.get(f"step_watermark_pt{i}") == "running")
+            if running_wm < 7:
+                pending_wm = [i for i in range(1, video_parts + 1) if project.get(f"step_watermark_pt{i}") == "pending"]
+                to_trigger = pending_wm[:7 - running_wm]
+                if to_trigger:
+                    print(f"[{project_id}] Fila Watermark: Disparando partes {to_trigger} (Running: {running_wm})")
+                    self.disparar_watermark(project_id, to_trigger)
                     return
 
-            print(f"[{project_id}] Watermark concluído/pulado -> Disparando Enhancer")
-            self.disparar_enhancer(project_id)
-            return
+        # ── 2. WATERMARK OK -> FILA ENHANCER (MÁXIMO 7) ──
+        if w_ok and not e_ok:
+            # Copiar vídeos originais para limpos caso Watermark tenha sido skipped
+            all_wm_skipped = all(project.get(f"step_watermark_pt{i}") == "skipped" for i in range(1, video_parts + 1))
+            if all_wm_skipped:
+                arqs_wm = self.drive.listar_arquivos("KAGGLE/PIPELINE/WATERMARK")
+                has_all_limpos = all(any(a["name"] == f"pt{i}_limpo.mp4" for a in arqs_wm) for i in range(1, video_parts + 1))
+                if not has_all_limpos:
+                    print(f"[{project_id}] Watermark pulado. Copiando vídeo original para WATERMARK/...")
+                    for i in range(1, video_parts + 1):
+                        self.drive.copiar_arquivo(f"KAGGLE/PIPELINE/ATIVO/video_pt{i}.mp4", f"KAGGLE/PIPELINE/WATERMARK/pt{i}_limpo.mp4")
 
-        # 3. Watermark+Enhancer ok e Omni ok e Config ok -> disparar Render
-        if conf == "done" and w_ok and e_ok and omni == "done" and r_vals[0] == "pending":
-            if e_vals[0] == "skipped":
-                print(f"[{project_id}] Enhancer pulado, copiando vídeo limpo para enhanced...")
-                all_copied = True
-                for i in range(1, 6):
-                    ok = self.drive.copiar_arquivo(f"KAGGLE/PIPELINE/WATERMARK/pt{i}_limpo.mp4", f"KAGGLE/PIPELINE/ENHANCER/pt{i}_enhanced.mp4")
-                    if not ok: all_copied = False
-                if not all_copied:
-                    print(f"[{project_id}] Falha ao copiar arquivos para o ENHANCER. Retry no próximo ciclo.")
+            enhancer_enabled = any(project.get(f"step_enhancer_pt{i}") != "skipped" for i in range(1, video_parts + 1))
+            
+            if not enhancer_enabled:
+                # Enhancer desativado: copiar limpos para enhanced e gerar intro pt0
+                arqs_enh = self.drive.listar_arquivos("KAGGLE/PIPELINE/ENHANCER")
+                has_all_enhanced = all(any(a["name"] == f"pt{i}_enhanced.mp4" for a in arqs_enh) for i in range(0, video_parts + 1))
+                if not has_all_enhanced:
+                    print(f"[{project_id}] Enhancer desativado. Copiando limpos para ENHANCER/ e gerando pt0...")
+                    for i in range(1, video_parts + 1):
+                        self.drive.copiar_arquivo(f"KAGGLE/PIPELINE/WATERMARK/pt{i}_limpo.mp4", f"KAGGLE/PIPELINE/ENHANCER/pt{i}_enhanced.mp4")
+                    if self.criar_pt0_introducao(project_id, project):
+                        self.drive.copiar_arquivo("KAGGLE/PIPELINE/WATERMARK/pt0_limpo.mp4", "KAGGLE/PIPELINE/ENHANCER/pt0_enhanced.mp4")
+                        update_step(project_id, "step_enhancer_pt0", "skipped", "Intro gerada sem enhancer")
+                # e_ok se torna True no próximo ciclo quando o banco for lido novamente
+            else:
+                # Enhancer ativo!
+                # Verificar se partes 1 a N terminaram para poder criar pt0
+                all_pts_1_to_n_done = all(project.get(f"step_enhancer_pt{i}") == "done" for i in range(1, video_parts + 1))
+                pt0_status = project.get("step_enhancer_pt0")
+                
+                if all_pts_1_to_n_done and pt0_status == "skipped": # Valor inicial padrão é skipped se não configurado
+                    print(f"[{project_id}] Partes 1 a {video_parts} do Enhancer concluídas. Criando pt0_limpo.mp4...")
+                    if self.criar_pt0_introducao(project_id, project):
+                        update_step(project_id, "step_enhancer_pt0", "pending")
+                        return
+
+                running_enh = sum(1 for i in range(0, video_parts + 1) if project.get(f"step_enhancer_pt{i}") == "running")
+                if running_enh < 7:
+                    pending_enh = [i for i in range(0, video_parts + 1) if project.get(f"step_enhancer_pt{i}") == "pending"]
+                    to_trigger = pending_enh[:7 - running_enh]
+                    if to_trigger:
+                        print(f"[{project_id}] Fila Enhancer: Disparando partes {to_trigger} (Running: {running_enh})")
+                        self.disparar_enhancer(project_id, to_trigger)
+                        return
+
+        # ── 3. WATERMARK+ENHANCER OK + OMNI OK + CONFIG OK -> FILA RENDER (MÁXIMO 7) ──
+        if conf == "done" and w_ok and e_ok and omni == "done" and not r_ok:
+            running_render = sum(1 for i in range(0, video_parts + 1) if project.get(f"step_render_pt{i}") == "running")
+            if running_render < 7:
+                pending_render = [i for i in range(0, video_parts + 1) if project.get(f"step_render_pt{i}") == "pending"]
+                to_trigger = pending_render[:7 - running_render]
+                if to_trigger:
+                    print(f"[{project_id}] Fila Render: Disparando partes {to_trigger} (Running: {running_render})")
+                    self.disparar_render(project_id, to_trigger)
                     return
 
-            # Copiar output do Omni para a pasta padrão do pipeline
-            # O Omni salva como: KAGGLE/AUDIO_DUB/OUTPUT/{safe_anime}_{modo_folder}.mp3/.srt
-            # Ex: Naruto_Completo.mp3, Naruto_Completo.srt  OU  Naruto_Short.mp3, Naruto_Short.srt
-            print(f"[{project_id}] Copiando output do Omni para PIPELINE/OMNI...")
-            arquivos_out = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
-
-            # Preferir _Completo se existir, senão pegar qualquer .mp3/.srt
-            mp3_file = (
-                next((a for a in arquivos_out if '_Completo.mp3' in a['name']), None) or
-                next((a for a in arquivos_out if a['name'].endswith('.mp3')), None)
-            )
-            srt_file = (
-                next((a for a in arquivos_out if '_Completo.srt' in a['name']), None) or
-                next((a for a in arquivos_out if a['name'].endswith('.srt')), None)
-            )
-
-            if mp3_file:
-                self.drive.copiar_arquivo(
-                    f"KAGGLE/AUDIO_DUB/OUTPUT/{mp3_file['name']}",
-                    "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3"
-                )
-                print(f"[{project_id}] MP3 copiado: {mp3_file['name']}")
-            else:
-                print(f"[{project_id}] AVISO: Nenhum .mp3 encontrado em AUDIO_DUB/OUTPUT!")
-
-            if srt_file:
-                # Salvar com nome padronizado para o converter_json_para_ass encontrar
-                self.drive.copiar_arquivo(
-                    f"KAGGLE/AUDIO_DUB/OUTPUT/{srt_file['name']}",
-                    "KAGGLE/PIPELINE/OMNI/omni_output.srt"
-                )
-                print(f"[{project_id}] SRT copiado: {srt_file['name']}")
-            else:
-                print(f"[{project_id}] AVISO: Nenhum .srt encontrado em AUDIO_DUB/OUTPUT!")
-
-            print(f"[{project_id}] Tudo pronto -> Gerar ASS e disparar Render")
-            self.converter_json_para_ass(project_id)
-            self.disparar_render(project_id)
-            return
-
-        # 4. Render concluído -> disparar Merge
+        # ── 4. RENDER CONCLUÍDO -> DISPARAR MERGE ──
         if r_ok and project["step_merge"] == "pending":
             print(f"[{project_id}] Render concluído -> Disparando Merge")
             self.disparar_merge(project_id)

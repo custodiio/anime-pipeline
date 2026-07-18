@@ -140,6 +140,11 @@ def generate_tts(text, filename, gpu_idx=0):
 def recortar_cena(block, filename):
     try:
         trecho = anime_audio_full[int(block['start'] * 1000):int(block['end'] * 1000)]
+        # Fade-out de 150ms e fade-in de 50ms para evitar cliques e vazamentos do "ue" original
+        if len(trecho) > 200:
+            trecho = trecho.fade_in(50).fade_out(150)
+        elif len(trecho) > 100:
+            trecho = trecho.fade_in(30).fade_out(70)
         trecho.export(filename, format='mp3')
         return len(trecho) / 1000.0
     except:
@@ -219,7 +224,12 @@ def fundir_fragmentos_narracao(blocks):
 def run_fabrica():
     modo = "Video Completo"
     prefix     = "block_"
-    save_name  = f"{BASE_PATH}/ROTEIRO_ADAPTADO_COMPLETO_FINAL.json"
+    part_str = ""
+    if TASK_KEY.startswith("omni-tts-pt"):
+        part_str = TASK_KEY.split("-pt")[-1]
+        save_name = f"{BASE_PATH}/ROTEIRO_ADAPTADO_COMPLETO_FINAL_pt{part_str}.json"
+    else:
+        save_name = f"{BASE_PATH}/ROTEIRO_ADAPTADO_COMPLETO_FINAL.json"
 
     print(f"\n{'='*60}")
     print(f"  INICIANDO: {modo}")
@@ -233,6 +243,15 @@ def run_fabrica():
         
     with open(src, 'r', encoding='utf-8') as f:
         target_list = json.load(f)
+        
+    total_blocks = len(target_list)
+    if TASK_KEY.startswith("omni-tts-pt"):
+        part_num = int(part_str)
+        chunk_size = (total_blocks + 3) // 4
+        start_idx = (part_num - 1) * chunk_size
+        end_idx = min(part_num * chunk_size, total_blocks)
+        print(f"[TTS PARTITION] Processando parte {part_num} (blocos {start_idx} ate {end_idx} de {total_blocks})")
+        target_list = target_list[start_idx:end_idx]
         
     # Aplica fusão de fragmentos na base (garantindo que IDs novos combinem)
     target_list = fundir_fragmentos_narracao(target_list)
@@ -252,6 +271,22 @@ def run_fabrica():
 
     # Resolve sobreposições de tempo ANTES de avaliar a velocidade
     target_list = sanitize_blocks(target_list)
+    
+    # Se for a parte 1 ou modo unico, sintetiza a introdução
+    if TASK_KEY == "omni" or TASK_KEY == "omni-tts-pt1":
+        intro_json = f"{BASE_PATH}/intro_info.json"
+        if os.path.exists(intro_json):
+            print("\n[INTRO] Detectado intro_info.json. Sintetizando áudio da introdução...")
+            try:
+                with open(intro_json, 'r', encoding='utf-8') as f:
+                    intro_data = json.load(f)
+                intro_text = intro_data.get("intro_text", "")
+                if intro_text:
+                    intro_filename = os.path.join(TEMP_DIR, "block_intro.mp3")
+                    generate_tts(intro_text, intro_filename, gpu_idx=0)
+                    print("[INTRO] Áudio da introdução gerado com sucesso!")
+            except Exception as e:
+                print("[INTRO ERROR] Falha ao sintetizar áudio da introdução:", e)
     
     if os.path.exists(save_name):
         print(f"  Mesclando com cache existente: {save_name}")
@@ -303,6 +338,15 @@ def run_fabrica():
             block['speed_factor']     = ratio
             block['status']           = 'GREEN' if TARGET_MIN_SPEED <= ratio <= TARGET_MAX_SPEED else 'RED'
         salvar_progresso()
+    
+    if TASK_KEY.startswith("omni-tts-pt"):
+        import shutil
+        zip_base_name = f"{BASE_PATH}/omni_tts_pt{part_str}"
+        print(f"[ZIP] Compactando TEMP_DIR para {zip_base_name}.zip ...")
+        shutil.make_archive(zip_base_name, 'zip', TEMP_DIR)
+        zip_full_path = zip_base_name + ".zip"
+        if 'salvar_no_drive' in globals():
+            salvar_no_drive(zip_full_path, f"KAGGLE/AUDIO_DUB/omni_tts_pt{part_str}.zip")
 
     with ThreadPoolExecutor(max_workers=max(1, _num_gpus)) as ex:
         list(tqdm(ex.map(_process_v0, pending), total=len(pending), desc=f'V0 {modo[:5]}'))
@@ -317,6 +361,15 @@ def run_fabrica():
         if original_dur < 0.8:
             block['status'] = 'WARNING_SHORT'
             salvar_progresso()
+    
+    if TASK_KEY.startswith("omni-tts-pt"):
+        import shutil
+        zip_base_name = f"{BASE_PATH}/omni_tts_pt{part_str}"
+        print(f"[ZIP] Compactando TEMP_DIR para {zip_base_name}.zip ...")
+        shutil.make_archive(zip_base_name, 'zip', TEMP_DIR)
+        zip_full_path = zip_base_name + ".zip"
+        if 'salvar_no_drive' in globals():
+            salvar_no_drive(zip_full_path, f"KAGGLE/AUDIO_DUB/omni_tts_pt{part_str}.zip")
             return
 
         current_len   = len(block['translated_text'])
@@ -398,6 +451,15 @@ def run_fabrica():
         if not valid_text_found:
             print(f"  Ignorando Bloco {block['id']} — falhou em {MAX_TEXT_RETRIES} tentativas.")
             salvar_progresso()
+    
+    if TASK_KEY.startswith("omni-tts-pt"):
+        import shutil
+        zip_base_name = f"{BASE_PATH}/omni_tts_pt{part_str}"
+        print(f"[ZIP] Compactando TEMP_DIR para {zip_base_name}.zip ...")
+        shutil.make_archive(zip_base_name, 'zip', TEMP_DIR)
+        zip_full_path = zip_base_name + ".zip"
+        if 'salvar_no_drive' in globals():
+            salvar_no_drive(zip_full_path, f"KAGGLE/AUDIO_DUB/omni_tts_pt{part_str}.zip")
             return
 
         block['translated_text'] = candidate
@@ -412,6 +474,15 @@ def run_fabrica():
 
         print(f"  Speed: {ratio:.2f}x -> {block['status']}")
         salvar_progresso()
+    
+    if TASK_KEY.startswith("omni-tts-pt"):
+        import shutil
+        zip_base_name = f"{BASE_PATH}/omni_tts_pt{part_str}"
+        print(f"[ZIP] Compactando TEMP_DIR para {zip_base_name}.zip ...")
+        shutil.make_archive(zip_base_name, 'zip', TEMP_DIR)
+        zip_full_path = zip_base_name + ".zip"
+        if 'salvar_no_drive' in globals():
+            salvar_no_drive(zip_full_path, f"KAGGLE/AUDIO_DUB/omni_tts_pt{part_str}.zip")
 
     red_list  = [b for b in target_list if b.get('status') == 'RED' and b.get('tipo') == 'NARRACAO']
     iteration = 0
@@ -431,12 +502,23 @@ def run_fabrica():
 
     print(f"\n  FIM [{modo}]: {len(red_list)} blocos irredutíveis restantes.")
     salvar_progresso()
+    
+    if TASK_KEY.startswith("omni-tts-pt"):
+        import shutil
+        zip_base_name = f"{BASE_PATH}/omni_tts_pt{part_str}"
+        print(f"[ZIP] Compactando TEMP_DIR para {zip_base_name}.zip ...")
+        shutil.make_archive(zip_base_name, 'zip', TEMP_DIR)
+        zip_full_path = zip_base_name + ".zip"
+        if 'salvar_no_drive' in globals():
+            salvar_no_drive(zip_full_path, f"KAGGLE/AUDIO_DUB/omni_tts_pt{part_str}.zip")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # EXECUÇÃO
 # ──────────────────────────────────────────────────────────────────────────────
-run_fabrica()
-
-print("\nFABRICA CONCLUIDA!")
-
-cell_end(9, "done", "Gerador Short + Guia concluido")
+if should_run("tts"):
+    run_fabrica()
+    print("\nFABRICA CONCLUIDA!")
+    cell_end(9, "done", "Gerador Short + Guia concluido")
+else:
+    print("TTS não é necessário para esta task. Ignorando execução.")
+    cell_end(9, "done", "Gerador ignorado")

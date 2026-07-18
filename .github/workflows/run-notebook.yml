@@ -2,24 +2,6 @@ name: Run Kaggle Notebook
 
 on:
   repository_dispatch:
-    types:
-      - run-wm-pt1
-      - run-wm-pt2
-      - run-wm-pt3
-      - run-wm-pt4
-      - run-wm-pt5
-      - run-enhancer-pt1
-      - run-enhancer-pt2
-      - run-enhancer-pt3
-      - run-enhancer-pt4
-      - run-enhancer-pt5
-      - run-omni
-      - run-render-pt1
-      - run-render-pt2
-      - run-render-pt3
-      - run-render-pt4
-      - run-render-pt5
-      - run-merge
 
 jobs:
   run-notebook:
@@ -51,6 +33,16 @@ jobs:
           KAGGLE_KEY_5: ${{ secrets.KAGGLE_KEY_5 }}
           KAGGLE_USERNAME_6: ${{ secrets.KAGGLE_USERNAME_6 }}
           KAGGLE_KEY_6: ${{ secrets.KAGGLE_KEY_6 }}
+          KAGGLE_USERNAME_7: ${{ secrets.KAGGLE_USERNAME_7 }}
+          KAGGLE_KEY_7: ${{ secrets.KAGGLE_KEY_7 }}
+          KAGGLE_USERNAME_8: ${{ secrets.KAGGLE_USERNAME_8 }}
+          KAGGLE_KEY_8: ${{ secrets.KAGGLE_KEY_8 }}
+          KAGGLE_USERNAME_9: ${{ secrets.KAGGLE_USERNAME_9 }}
+          KAGGLE_KEY_9: ${{ secrets.KAGGLE_KEY_9 }}
+          KAGGLE_USERNAME_10: ${{ secrets.KAGGLE_USERNAME_10 }}
+          KAGGLE_KEY_10: ${{ secrets.KAGGLE_KEY_10 }}
+          KAGGLE_USERNAME_11: ${{ secrets.KAGGLE_USERNAME_11 }}
+          KAGGLE_KEY_11: ${{ secrets.KAGGLE_KEY_11 }}
         run: |
           ACCOUNT_NUM=${{ github.event.client_payload.kaggle_account }}
           echo "🔑 Usando conta Kaggle #${ACCOUNT_NUM}"

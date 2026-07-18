@@ -910,7 +910,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         project = get_active_project(chat_id)
         if project:
             pid = str(project["id"])
-            ok, err = controller.check_merge_ready()
+            ok, err = controller.check_merge_ready(project.get("video_parts", 5) or 5)
             if not ok:
                 await query.answer(err, show_alert=True)
                 return
@@ -918,9 +918,13 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("🚀 Merge disparado!")
 
     elif data in ["trigger_wm_menu", "trigger_enhancer_menu", "trigger_render_menu"]:
+        project = get_active_project(chat_id)
+        video_parts = project.get("video_parts", 5) if project else 5
         prefix = data.replace("_menu", "")
         buttons = []
-        for i in range(1, 6):
+        # Para Enhancer e Render, a parte 0 (introdução) existe
+        start_idx = 0 if prefix in ["trigger_enhancer", "trigger_render"] else 1
+        for i in range(start_idx, video_parts + 1):
             buttons.append([InlineKeyboardButton(f"Parte {i}", callback_data=f"{prefix}_{i}")])
         buttons.append([InlineKeyboardButton("Todas as Partes", callback_data=f"{prefix}_all")])
         buttons.append([InlineKeyboardButton("🔙 Voltar", callback_data="trigger_menu")])
@@ -931,15 +935,20 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         project = get_active_project(chat_id)
         if not project: return
         pid = str(project["id"])
-        ok, err = controller.check_watermark_ready()
+        video_parts = project.get("video_parts", 5) or 5
+        ok, err = controller.check_watermark_ready(video_parts)
         if not ok:
             await query.answer(err, show_alert=True)
             return
         from bot.github_actions import dispatch_parallel
         part = data.split("_")[-1]
         if part == "all":
-            controller.disparar_watermark(pid)
-            await query.edit_message_text("🚀 Watermark disparado para todas as partes!")
+            pending_wm = [i for i in range(1, video_parts + 1) if project.get(f"step_watermark_pt{i}") == "pending"]
+            if pending_wm:
+                controller.disparar_watermark(pid, pending_wm)
+                await query.edit_message_text(f"🚀 Watermark disparado para as partes {pending_wm}!")
+            else:
+                await query.edit_message_text("Nenhuma parte pendente no Watermark.")
         else:
             from bot.database import update_step
             update_step(pid, f"step_watermark_pt{part}", "running")
@@ -950,16 +959,21 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         project = get_active_project(chat_id)
         if not project: return
         pid = str(project["id"])
+        video_parts = project.get("video_parts", 5) or 5
         part = data.split("_")[-1]
         p_val = int(part) if part != "all" else None
-        ok, err = controller.check_enhancer_ready(p_val)
+        ok, err = controller.check_enhancer_ready(p_val, video_parts)
         if not ok:
             await query.answer(err, show_alert=True)
             return
         from bot.github_actions import dispatch_parallel
         if part == "all":
-            controller.disparar_enhancer(pid)
-            await query.edit_message_text("🚀 Enhancer disparado para todas as partes!")
+            pending_enh = [i for i in range(0, video_parts + 1) if project.get(f"step_enhancer_pt{i}") == "pending"]
+            if pending_enh:
+                controller.disparar_enhancer(pid, pending_enh)
+                await query.edit_message_text(f"🚀 Enhancer disparado para as partes {pending_enh}!")
+            else:
+                await query.edit_message_text("Nenhuma parte pendente no Enhancer.")
         else:
             from bot.database import update_step
             update_step(pid, f"step_enhancer_pt{part}", "running")
@@ -970,6 +984,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         project = get_active_project(chat_id)
         if not project: return
         pid = str(project["id"])
+        video_parts = project.get("video_parts", 5) or 5
         part = data.split("_")[-1]
         p_val = int(part) if part != "all" else None
         ok, err = controller.check_render_ready(p_val)
@@ -978,8 +993,12 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         from bot.github_actions import dispatch_parallel
         if part == "all":
-            controller.disparar_render(pid)
-            await query.edit_message_text("🚀 Render disparado para todas as partes!")
+            pending_render = [i for i in range(0, video_parts + 1) if project.get(f"step_render_pt{i}") == "pending"]
+            if pending_render:
+                controller.disparar_render(pid, pending_render)
+                await query.edit_message_text(f"🚀 Render disparado para as partes {pending_render}!")
+            else:
+                await query.edit_message_text("Nenhuma parte pendente no Render.")
         else:
             from bot.database import update_step
             update_step(pid, f"step_render_pt{part}", "running")

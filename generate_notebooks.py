@@ -387,17 +387,113 @@ if __name__ == "__main__":
     
     print("Gerando notebooks padronizados...")
     
-    # Gerar todas as 5 partes de Watermark Remover
-    for i in range(1, 6):
+    # 1. Gerar todas as 30 partes de Watermark Remover (pt1 a pt30)
+    for i in range(1, 31):
         nb = make_nb(make_watermark_cells(i), f"anime-watermark-remover-pt-{i}", f"step_watermark_pt{i}")
         save_nb(nb, f"anime-watermark-remover-pt-{i}.ipynb")
         
-    # Gerar todas as 5 partes de Video Enhancer
-    for i in range(1, 6):
+    # 2. Gerar todas as 31 partes de Video Enhancer (pt0 a pt30)
+    for i in range(0, 31):
         nb = make_nb(make_enhancer_cells(i), f"anime-video-enhancer-pt-{i}", f"step_enhancer_pt{i}")
         save_nb(nb, f"anime-video-enhancer-pt-{i}.ipynb")
         
+    # 3. Gerar todas as 11 partes do Renderizador (pt0 a pt10) clonando o pt-1 base
+    base_render_path = os.path.join(NOTEBOOKS_DIR, "anime-renderizador-kaggle-pt-1.ipynb")
+    if os.path.exists(base_render_path):
+        with open(base_render_path, "r", encoding="utf-8") as f_base:
+            base_render_nb = json.load(f_base)
+            
+        for i in range(0, 31):
+            # Clona o base_render_nb
+            part_nb = json.loads(json.dumps(base_render_nb))
+            
+            # Ajusta o setup (célula 0)
+            setup_source = part_nb["cells"][0]["source"]
+            new_setup = []
+            for line in setup_source:
+                line = line.replace('NOTEBOOK_NAME = "renderizador-kaggle-pt-1"', f'NOTEBOOK_NAME = "renderizador-kaggle-pt-{i}"')
+                line = line.replace('STEP_NAME = "step_render_pt1"', f'STEP_NAME = "step_render_pt{i}"')
+                new_setup.append(line)
+            part_nb["cells"][0]["source"] = new_setup
+            
+            # Ajusta o download (célula 1)
+            if i == 0:
+                download_source = [
+                    "cell_start(1, \"Download Arquivos do Drive\")\n",
+                    "\n",
+                    "# Baixar video enhanced + config + legendas + audio para pt0 (introdução)\n",
+                    "baixar_do_drive(f\"{DRIVE_ENHANCER}/pt0_enhanced.mp4\", f\"{BASE_PATH}/pt0_enhanced.mp4\")\n",
+                    "if not os.path.exists(f\"{BASE_PATH}/pt0_enhanced.mp4\"):\n",
+                    "    baixar_do_drive(f\"{DRIVE_WATERMARK}/pt0_limpo.mp4\", f\"{BASE_PATH}/pt0_enhanced.mp4\")\n",
+                    "baixar_do_drive(f\"{DRIVE_OMNI}/videorender-project.json\", f\"{BASE_PATH}/videorender-project.json\")\n",
+                    "baixar_do_drive(f\"{DRIVE_OMNI}/intro_legendas.ass\", f\"{BASE_PATH}/legendas.ass\")\n",
+                    "baixar_do_drive(f\"{DRIVE_OMNI}/intro_audio.mp3\", f\"{BASE_PATH}/audio_dublado.mp3\")\n",
+                    "start_time = 0\n",
+                    "\n",
+                    "cell_end(1, \"done\", \"Download Arquivos do Drive concluido\")"
+                ]
+                part_nb["cells"][1]["source"] = [line + "\n" if not line.endswith("\n") else line for line in download_source]
+            else:
+                download_source = part_nb["cells"][1]["source"]
+                new_download = []
+                for line in download_source:
+                    line = line.replace('pt1_enhanced.mp4', f'pt{i}_enhanced.mp4')
+                    line = line.replace('pt1_limpo.mp4', f'pt{i}_limpo.mp4')
+                    line = line.replace('part_idx = 1', f'part_idx = {i}')
+                    new_download.append(line)
+                part_nb["cells"][1]["source"] = new_download
+                
+            # Ajusta a build do comando FFmpeg (célula 2)
+            build_source = part_nb["cells"][2]["source"]
+            new_build = []
+            for line in build_source:
+                line = line.replace('pt1_enhanced.mp4', f'pt{i}_enhanced.mp4')
+                new_build.append(line)
+            part_nb["cells"][2]["source"] = new_build
+            
+            # Ajusta o upload (célula 4)
+            upload_source = part_nb["cells"][4]["source"]
+            new_upload = []
+            for line in upload_source:
+                line = line.replace('pt1_renderizado.mp4', f'pt{i}_renderizado.mp4')
+                line = line.replace('Renderizacao PT1', f'Renderizacao PT{i}')
+                new_upload.append(line)
+            part_nb["cells"][4]["source"] = new_upload
+            
+            # Salva o notebook gerado
+            save_nb(part_nb, f"anime-renderizador-kaggle-pt-{i}.ipynb")
+            
+    # 4. Gerar o Merge Final
     nb = make_nb(MERGE_CELLS, "anime-merge-final", "step_merge")
     save_nb(nb, "anime-merge-final.ipynb")
+    
+    # 5. Compilar o notebook do Omni a partir de omni_atualizado/
+    print("Compilando anime-omni-ver-final.ipynb a partir de omni_atualizado/...")
+    omni_cells = []
+    for i in range(1, 12):
+        cel_path = os.path.join(os.path.dirname(__file__), "omni_atualizado", f"cel{i}")
+        if os.path.exists(cel_path):
+            with open(cel_path, "r", encoding="utf-8") as f_cel:
+                code = f_cel.read()
+            lines = code.split("\n")
+            source = [line + "\n" for line in lines[:-1]]
+            if lines[-1]:
+                source.append(lines[-1])
+            cell = {
+                "cell_type": "code",
+                "execution_count": None,
+                "metadata": {},
+                "outputs": [],
+                "source": source
+            }
+            omni_cells.append(cell)
+            
+    omni_nb = {
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": KAGGLE_META,
+        "cells": omni_cells
+    }
+    save_nb(omni_nb, "anime-omni-ver-final.ipynb")
     
     print("\nTodos os notebooks gerados com sucesso!")
