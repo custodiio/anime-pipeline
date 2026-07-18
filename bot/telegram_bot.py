@@ -1026,24 +1026,21 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pid = str(project["id"])
         video_parts = project.get("video_parts", 5) or 5
         part = data.split("_")[-1]
-        p_val = int(part) if part != "all" else None
-        ok, err = controller.check_render_ready(p_val)
-        if not ok:
-            await query.answer(err, show_alert=True)
-            return
+        
         from bot.github_actions import dispatch_parallel
+        from bot.database import update_step
+        
         if part == "all":
-            pending_render = [i for i in range(0, video_parts + 1) if project.get(f"step_render_pt{i}") == "pending"]
-            if pending_render:
-                controller.disparar_render(pid, pending_render)
-                await query.edit_message_text(f"🚀 Render disparado para as partes {pending_render}!")
-            else:
-                await query.edit_message_text("Nenhuma parte pendente no Render.")
+            parts_to_run = [i for i in range(0, video_parts + 1) if project.get(f"step_render_pt{i}") != "skipped"]
+            if not parts_to_run:
+                parts_to_run = list(range(0, video_parts + 1))
+            controller.disparar_render(pid, parts_to_run)
+            await query.edit_message_text(f"🚀 Render disparado para as partes {parts_to_run}!")
         else:
-            from bot.database import update_step
-            update_step(pid, f"step_render_pt{part}", "running")
-            dispatch_parallel([f"render-pt{part}"], pid)
-            await query.edit_message_text(f"🚀 Render PT {part} disparado!")
+            p_idx = int(part)
+            update_step(pid, f"step_render_pt{p_idx}", "running")
+            dispatch_parallel([f"render-pt{p_idx}"], pid)
+            await query.edit_message_text(f"🚀 Render PT {p_idx} disparado!")
 
 
 
