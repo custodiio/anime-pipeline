@@ -426,8 +426,20 @@ class PipelineController:
 
             # Baixar config do VideoRender
             has_config = self.drive.baixar("KAGGLE/PIPELINE/OMNI/videorender-project.json", config_path)
-            # SRT padronizado copiado pelo verificar_e_avancar
             has_srt = self.drive.baixar("KAGGLE/PIPELINE/OMNI/omni_output.srt", srt_path)
+            if not has_srt or not os.path.exists(srt_path):
+                try:
+                    q = "trashed=false and name contains '.srt' and not name contains 'intro'"
+                    res = self.drive.service.files().list(q=q, fields="files(id, name)").execute()
+                    f_list = res.get("files", [])
+                    if f_list:
+                        best_srt = f_list[0]
+                        print(f"[{project_id}] Baixando SRT flexível: {best_srt['name']}")
+                        has_srt = self.drive.baixar_por_id(best_srt["id"], srt_path)
+                        if has_srt and os.path.exists(srt_path):
+                            self.drive.salvar(srt_path, "KAGGLE/PIPELINE/OMNI/omni_output.srt")
+                except Exception as ex_s:
+                    print(f"[{project_id}] Erro ao buscar SRT flexível: {ex_s}")
 
             if not has_srt or not os.path.exists(srt_path):
                 print(f"[{project_id}] AVISO: traducao.srt não encontrado. Pulando geração de ASS.")
