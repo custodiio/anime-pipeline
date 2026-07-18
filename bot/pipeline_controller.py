@@ -737,7 +737,38 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                                 s_ms = idx_w * time_per_word
                                 e_ms = (idx_w + 1) * time_per_word
                                 txt = w.upper() if all_caps else w
-                                intro_blocks.append({"start_ms": s_ms, "end_ms": e_ms, "text": wrap_text(txt)})
+                                intro_blocks.append({"start_ms": s_ms, "end_ms": e_ms, "text": txt})
+
+                    # Se o estilo não for palavra por palavra, agrupa palavras da introdução em frases normais
+                    if srt_type != "word_by_word" and intro_blocks:
+                        grouped_intro = []
+                        curr_words = []
+                        curr_start = None
+                        curr_end = None
+                        for ib in intro_blocks:
+                            if curr_start is None:
+                                curr_start = ib["start_ms"]
+                            word = ib["text"]
+                            proposed_text = " ".join(curr_words + [word])
+                            if len(proposed_text) > 42 or (curr_end and ib["start_ms"] - curr_end > 700):
+                                if curr_words:
+                                    txt_fin = " ".join(curr_words)
+                                    if all_caps: txt_fin = txt_fin.upper()
+                                    grouped_intro.append({"start_ms": curr_start, "end_ms": curr_end, "text": wrap_text(txt_fin)})
+                                curr_words = [word]
+                                curr_start = ib["start_ms"]
+                            else:
+                                curr_words.append(word)
+                            curr_end = ib["end_ms"]
+                        if curr_words and curr_start is not None and curr_end is not None:
+                            txt_fin = " ".join(curr_words)
+                            if all_caps: txt_fin = txt_fin.upper()
+                            grouped_intro.append({"start_ms": curr_start, "end_ms": curr_end, "text": wrap_text(txt_fin)})
+                        intro_blocks = grouped_intro
+                    else:
+                        for ib in intro_blocks:
+                            if all_caps: ib["text"] = ib["text"].upper()
+                            ib["text"] = wrap_text(ib["text"])
 
                     if intro_blocks:
                         intro_dialogues = []
