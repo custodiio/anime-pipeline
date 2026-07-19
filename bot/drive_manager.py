@@ -361,7 +361,8 @@ def split_video(input_path, output_dir, parts=5):
             cmd.extend(["-t", str(part_duration)])
             
         cmd.extend([
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", "-c:a", "copy",
+            "-c:v", "copy", "-c:a", "copy",
+            "-avoid_negative_ts", "make_zero",
             pt_path
         ])
         
