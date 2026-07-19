@@ -982,17 +982,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             arqs_omni = self.drive.listar_arquivos("KAGGLE/PIPELINE/OMNI")
             ass_item = next((a for a in arqs_omni if a["name"] == "legendas.ass"), None)
             srt_item = next((a for a in arqs_omni if a["name"] == "omni_output.srt"), None)
+            cfg_item = next((a for a in arqs_omni if a["name"] == "videorender-project.json"), None)
             has_mp3 = any(a["name"] == "audio_dublado.mp3" for a in arqs_omni)
 
             should_regen = False
             if not ass_item or not has_mp3:
                 should_regen = True
-            elif srt_item and ass_item:
-                srt_mtime = srt_item.get("modifiedTime", "")
+            elif ass_item:
                 ass_mtime = ass_item.get("modifiedTime", "")
+                srt_mtime = srt_item.get("modifiedTime", "") if srt_item else ""
+                cfg_mtime = cfg_item.get("modifiedTime", "") if cfg_item else ""
                 if srt_mtime and (not ass_mtime or srt_mtime > ass_mtime):
                     should_regen = True
                     print(f"[{project_id}] Novo omni_output.srt detectado ({srt_mtime} > {ass_mtime}). Regerando legendas.ass...")
+                elif cfg_mtime and (not ass_mtime or cfg_mtime > ass_mtime):
+                    should_regen = True
+                    print(f"[{project_id}] Novo estilo em videorender-project.json detectado ({cfg_mtime} > {ass_mtime}). Regerando legendas.ass...")
 
             if should_regen:
                 print(f"[{project_id}] Preparando arquivos do Omni e gerando ASS antecipadamente...")
