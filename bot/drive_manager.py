@@ -174,7 +174,7 @@ class DriveManager:
             return []
         results = self.service.files().list(
             q=f"'{folder_id}' in parents and trashed=false",
-            fields="files(id, name, mimeType, size)"
+            fields="files(id, name, mimeType, size, modifiedTime)"
         ).execute()
         return results.get("files", [])
 

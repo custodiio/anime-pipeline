@@ -987,9 +987,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             should_regen = False
             if not ass_item or not has_mp3:
                 should_regen = True
-            elif srt_item and srt_item.get("modifiedTime", "") > ass_item.get("modifiedTime", ""):
-                should_regen = True
-                print(f"[{project_id}] Novo omni_output.srt detectado (mais recente que legendas.ass). Regerando legendas.ass...")
+            elif srt_item and ass_item:
+                srt_mtime = srt_item.get("modifiedTime", "")
+                ass_mtime = ass_item.get("modifiedTime", "")
+                if srt_mtime and (not ass_mtime or srt_mtime > ass_mtime):
+                    should_regen = True
+                    print(f"[{project_id}] Novo omni_output.srt detectado ({srt_mtime} > {ass_mtime}). Regerando legendas.ass...")
 
             if should_regen:
                 print(f"[{project_id}] Preparando arquivos do Omni e gerando ASS antecipadamente...")
