@@ -517,8 +517,29 @@ class PipelineController:
             italic_flag = "-1" if italic else "0"
             margin_v = round(play_h * (1 - position_y / 100))
 
-            # Gerar ASS
-            header = f"""[Script Info]
+            # Tentar extrair o cabeçalho de estilos do legendas.ass placeholder do frontend se existir
+            placeholder_ass_path = os.path.join(tmp_dir, "placeholder_legendas.ass")
+            has_placeholder = (
+                self.drive.baixar("KAGGLE/PIPELINE/OMNI/legendas.ass", placeholder_ass_path) or
+                self.drive.baixar("KAGGLE/AUDIO_DUB/legendas.ass", placeholder_ass_path)
+            )
+
+            custom_header = None
+            if has_placeholder and os.path.exists(placeholder_ass_path):
+                try:
+                    with open(placeholder_ass_path, "r", encoding="utf-8") as f_ph:
+                        ph_text = f_ph.read()
+                    if "[V4+ Styles]" in ph_text and "[Events]" in ph_text:
+                        header_part = ph_text.split("[Events]")[0].strip()
+                        custom_header = f"{header_part}\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+                        print(f"[{project_id}] Estilo extraído diretamente do legendas.ass placeholder do frontend!")
+                except Exception as ex_ph:
+                    print(f"[{project_id}] Aviso ao ler placeholder legendas.ass: {ex_ph}")
+
+            if custom_header:
+                header = custom_header
+            else:
+                header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {play_w}
 PlayResY: {play_h}
