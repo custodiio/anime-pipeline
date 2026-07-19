@@ -88,33 +88,18 @@ def create_silent_audio(filename, duration_ms=1000):
     AudioSegment.silent(duration=duration_ms).export(filename, format='mp3')
     return duration_ms / 1000.0
 
-def trim_audio_silence(wav_in, mp3_out, padding_ms=40):
+def trim_audio_silence(wav_in, mp3_out, padding_ms=30):
+    """Corte rápido e preciso de silêncio (janela de 5ms) com fade anti-click nas bordas."""
     try:
         sound = AudioSegment.from_file(wav_in)
+        # Detecção rápida e precisa com janela de 5ms e limiar de -45dBFS
+        st = detect_leading_silence(sound, -45.0, 5)
+        en = detect_leading_silence(sound.reverse(), -45.0, 5)
+        trimmed = sound[st:max(st + 50, len(sound) - en)]
 
-        # 1. Se o Whisper estiver disponível, corta qualquer ruído/som vazado antes da 1ª palavra
-        leading_cut_ms = 0
-        if 'whisper_model' in globals() and whisper_model is not None:
-            try:
-                res = whisper_model.transcribe(wav_in, language='pt', word_timestamps=True)
-                segments = res.get('segments', [])
-                if segments and segments[0].get('words'):
-                    first_word_start = segments[0]['words'][0].get('start', 0.0)
-                    if first_word_start > 0.08:
-                        leading_cut_ms = max(0, int((first_word_start - 0.03) * 1000))
-            except:
-                pass
-
-        if leading_cut_ms > 0 and leading_cut_ms < len(sound) - 200:
-            sound = sound[leading_cut_ms:]
-
-        # 2. Trim de silêncio residual com limiar de -48dB
-        st = detect_leading_silence(sound, -48.0, 10)
-        en = detect_leading_silence(sound.reverse(), -48.0, 10)
-        trimmed = sound[st:max(st + 100, len(sound) - en)]
-
-        # 3. Fade-in ultrarrápido (15ms) no início para eliminar qualquer mini-pop/click 'ue' residual
-        trimmed = trimmed.fade_in(15)
+        # Fade suave de 12ms nas bordas para eliminar estalos e ruídos residuais
+        if len(trimmed) > 30:
+            trimmed = trimmed.fade_in(12).fade_out(12)
 
         final = AudioSegment.silent(duration=padding_ms) + trimmed + AudioSegment.silent(duration=padding_ms)
         final.export(mp3_out, format='mp3')
