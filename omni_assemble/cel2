@@ -385,11 +385,16 @@ def gemini_generate(model_chain: list, contents, config: dict = None, task_name:
             print(f"  [AZURE] Tentando Azure OpenAI ({AZURE_OPENAI_DEPLOYMENT}) como fallback...")
             try:
                 sys_inst = None
-                if config and "system_instruction" in config:
-                    sys_inst = config["system_instruction"]
                 resp_fmt = None
-                if config and config.get("response_mime_type") == "application/json":
-                    resp_fmt = {"type": "json_object"}
+                if config:
+                    if isinstance(config, dict):
+                        sys_inst = config.get("system_instruction")
+                        if config.get("response_mime_type") == "application/json":
+                            resp_fmt = {"type": "json_object"}
+                    else:
+                        sys_inst = getattr(config, "system_instruction", None)
+                        if getattr(config, "response_mime_type", None) == "application/json":
+                            resp_fmt = {"type": "json_object"}
                 
                 azure_text = azure_generate(contents, resp_fmt, sys_inst)
                 print(f"  [OK] {task_name or 'gemini_generate'} -> Azure ({AZURE_OPENAI_DEPLOYMENT})")

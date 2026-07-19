@@ -296,14 +296,24 @@ def gemini_generate(model_chain, contents, config=None, task_name=None):
     except Exception as e:
         if AZURE_ENABLED and client_azure:
             try:
-                sys_inst = config.get("system_instruction") if config else None
-                resp_fmt = {"type": "json_object"} if config and config.get("response_mime_type") == "application/json" else None
+                sys_inst = None
+                resp_fmt = None
+                if config:
+                    if isinstance(config, dict):
+                        sys_inst = config.get("system_instruction")
+                        if config.get("response_mime_type") == "application/json":
+                            resp_fmt = {"type": "json_object"}
+                    else:
+                        sys_inst = getattr(config, "system_instruction", None)
+                        if getattr(config, "response_mime_type", None) == "application/json":
+                            resp_fmt = {"type": "json_object"}
                 azure_text = azure_generate(contents, resp_fmt, sys_inst)
                 print(f"  [OK] {task_name or 'gemini_generate'} -> Azure")
                 class FakeResp:
                     def __init__(self, text): self.text = text
                 return FakeResp(azure_text)
-            except: pass
+            except Exception as ae:
+                print(f"  [AZURE FAIL] Azure OpenAI falhou: {ae}")
         last_exc = e
         for model in model_chain[1:]:
             try:
