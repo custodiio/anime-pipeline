@@ -1019,6 +1019,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
                 if mp3_file:
                     self.drive.copiar_arquivo(f"KAGGLE/AUDIO_DUB/OUTPUT/{mp3_file['name']}", "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3")
+                else:
+                    arqs_in = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB/INPUT")
+                    in_mp3 = next((a for a in arqs_in if a["name"] == "anime_audio.mp3"), None)
+                    if in_mp3:
+                        self.drive.copiar_arquivo("KAGGLE/AUDIO_DUB/INPUT/anime_audio.mp3", "KAGGLE/PIPELINE/OMNI/audio_dublado.mp3")
                 if srt_file:
                     self.drive.copiar_arquivo(f"KAGGLE/AUDIO_DUB/OUTPUT/{srt_file['name']}", "KAGGLE/PIPELINE/OMNI/omni_output.srt")
                 else:

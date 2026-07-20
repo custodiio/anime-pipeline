@@ -447,6 +447,13 @@ if __name__ == "__main__":
                     "baixar_do_drive(f\"{DRIVE_OMNI}/intro_audio.mp3\", AUDIO_INPUT)\n",
                     "if not os.path.exists(AUDIO_INPUT):\n",
                     "    baixar_do_drive(f\"{DRIVE_OMNI}/audio_dublado.mp3\", AUDIO_INPUT)\n",
+                    "if not os.path.exists(AUDIO_INPUT):\n",
+                    "    baixar_do_drive(\"KAGGLE/AUDIO_DUB/OUTPUT/audio_dublado_Completo.mp3\", AUDIO_INPUT)\n",
+                    "if not os.path.exists(AUDIO_INPUT):\n",
+                    "    baixar_do_drive(\"KAGGLE/AUDIO_DUB/INPUT/anime_audio.mp3\", AUDIO_INPUT)\n",
+                    "if not os.path.exists(AUDIO_INPUT):\n",
+                    "    print(\"  AVISO: Nenhum audio encontrado! Gerando faixa silenciosa de emergencia...\")\n",
+                    "    subprocess.run([\"ffmpeg\", \"-y\", \"-f\", \"lavfi\", \"-i\", \"anullsrc=r=44100:cl=stereo\", \"-t\", \"60\", AUDIO_INPUT])\n",
                     "\n",
                     "if os.path.exists(ASS_LOCAL):\n",
                     "    with open(ASS_LOCAL, 'r', encoding='utf-8') as f_ass:\n",
@@ -470,6 +477,16 @@ if __name__ == "__main__":
                     line = line.replace('pt1_enhanced.mp4', f'pt{i}_enhanced.mp4')
                     line = line.replace('pt1_limpo.mp4', f'pt{i}_limpo.mp4')
                     line = line.replace('part_idx = 1', f'part_idx = {i}')
+                    if 'baixar_do_drive(f"{DRIVE_OMNI}/audio_dublado.mp3"' in line:
+                        line = (
+                            'AUDIO_INPUT = f"{BASE_PATH}/audio_dublado.mp3"\n'
+                            'if not baixar_do_drive(f"{DRIVE_OMNI}/audio_dublado.mp3", AUDIO_INPUT):\n'
+                            '    if not baixar_do_drive("KAGGLE/AUDIO_DUB/OUTPUT/audio_dublado_Completo.mp3", AUDIO_INPUT):\n'
+                            '        baixar_do_drive("KAGGLE/AUDIO_DUB/INPUT/anime_audio.mp3", AUDIO_INPUT)\n'
+                            'if not os.path.exists(AUDIO_INPUT):\n'
+                            '    print("  AVISO: Nenhum audio encontrado! Gerando faixa silenciosa de emergencia...")\n'
+                            '    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "60", AUDIO_LOCAL if "AUDIO_LOCAL" in locals() else AUDIO_INPUT])\n'
+                        )
                     new_download.append(line)
                 part_nb["cells"][1]["source"] = new_download
                 
