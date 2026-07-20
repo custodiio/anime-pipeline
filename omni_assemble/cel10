@@ -199,7 +199,26 @@ def run_montagem():
         final_mix = final_mix + s
 
     if globals().get('PROJECT_OPTS', {}).get('bg_audio'):
-        bg_audio_path = "/kaggle/working/demucs_out/htdemucs/anime_audio/no_vocals.wav"
+        bg_audio_path = "/kaggle/working/no_vocals.wav"
+        if not os.path.exists(bg_audio_path):
+            print("  [BGM] Buscando áudio de fundo (no_vocals.wav) no Drive...")
+            baixar_do_drive("KAGGLE/AUDIO_DUB/INPUT/no_vocals.wav", bg_audio_path)
+            
+        if not os.path.exists(bg_audio_path):
+            audio_orig = "/kaggle/working/anime_audio.mp3"
+            if not os.path.exists(audio_orig):
+                baixar_do_drive("KAGGLE/AUDIO_DUB/INPUT/anime_audio.mp3", audio_orig)
+                
+            if os.path.exists(audio_orig):
+                print("  [DEMUCS] Gerando áudio instrumental de fundo (no_vocals.wav)...")
+                os.system("pip install -q demucs")
+                os.system(f"demucs --two-stems=vocals -n htdemucs '{audio_orig}' -o /kaggle/working/demucs_out")
+                demucs_nobg = "/kaggle/working/demucs_out/htdemucs/anime_audio/no_vocals.wav"
+                if os.path.exists(demucs_nobg):
+                    shutil.copy2(demucs_nobg, bg_audio_path)
+                    salvar_no_drive(bg_audio_path, "KAGGLE/AUDIO_DUB/INPUT/no_vocals.wav")
+                    print("  [DEMUCS] no_vocals.wav gerado e salvo no Drive com sucesso!")
+
         if os.path.exists(bg_audio_path):
             print("  [BGM] Mixando áudio instrumental de fundo...")
             bgm = AudioSegment.from_file(bg_audio_path)
@@ -209,6 +228,8 @@ def run_montagem():
                 bgm = bgm[:len(final_mix)]
             bgm = bgm.apply_gain(-5.0)
             final_mix = bgm.overlay(final_mix)
+        else:
+            print("  [BGM AVISO] Não foi possível carregar ou gerar no_vocals.wav para mixagem de fundo.")
 
     audio_duration_seconds = len(final_mix) / 1000.0
     print(f'  Exportando: {OUTPUT_FILENAME}')
