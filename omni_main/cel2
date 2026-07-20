@@ -257,6 +257,24 @@ def salvar_no_drive(caminho_local, caminho_destino_drive):
     except Exception as e:
         print(f"  Erro ao salvar {caminho_destino_drive}: {e}")
 
+# --- Limpeza de arquivos residuais de roteiros e zips de execuções anteriores ---
+import glob
+print("🧹 Limpando arquivos temporários e caches antigos de roteiros/zips...")
+residual_files = (
+    glob.glob("/kaggle/working/roteiro_adaptado*.json") +
+    glob.glob("/kaggle/working/*.zip") +
+    glob.glob(f"{BASE_PATH}/roteiro_adaptado*.json") +
+    glob.glob(f"{BASE_PATH}/*.zip") +
+    glob.glob(f"{BASE_PATH}/OUTPUT/*.zip") +
+    glob.glob(f"{BASE_PATH}/OUTPUT/roteiro_adaptado*.json")
+)
+for rf in residual_files:
+    try:
+        os.remove(rf)
+        print(f"  🗑️ Removido arquivo antigo: {os.path.basename(rf)}")
+    except Exception as ex_rf:
+        pass
+
 # Download de cache do Drive
 if drive_service:
     print("\nBaixando arquivos do Drive...")

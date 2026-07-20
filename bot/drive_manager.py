@@ -267,7 +267,7 @@ class DriveManager:
         """
         if not self.service:
             return
-        # 1. Limpar arquivos soltos na raiz do AUDIO_DUB (transcrições, roteiros, guias)
+        # 1. Limpar arquivos soltos na raiz do AUDIO_DUB (transcrições, roteiros, zips, guias)
         try:
             arqs_raiz = self.listar_arquivos("KAGGLE/AUDIO_DUB")
             for arq in arqs_raiz:
@@ -275,8 +275,8 @@ class DriveManager:
                 # Proteger pastas (INPUT, OUTPUT, CLONAGEM, etc)
                 if arq.get("mimeType") == "application/vnd.google-apps.folder":
                     continue
-                # Foca apenas em arquivos soltos que o omni gera (.json, .txt)
-                if nome.endswith(".json") or nome.endswith(".txt"):
+                # Apagar qualquer arquivo solto que o omni gera (.json, .txt, .zip, .srt, .ass)
+                if nome.endswith(".json") or nome.endswith(".txt") or nome.endswith(".zip") or nome.endswith(".srt") or nome.endswith(".ass"):
                     try:
                         self.service.files().delete(fileId=arq["id"]).execute()
                         print(f"  Resquício removido da raiz: {arq['name']}")
