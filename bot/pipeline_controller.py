@@ -204,45 +204,30 @@ class PipelineController:
             return False, "anime_audio.mp3 não encontrado em KAGGLE/AUDIO_DUB/INPUT"
         return True, ""
 
-    def check_watermark_ready(self):
+    def check_watermark_ready(self, part=None, total_parts=None):
         arquivos_ativo = self.drive.listar_arquivos(DRIVE_ATIVO)
-        if not any(a["name"] == "mask.png" for a in arquivos_ativo):
-            return False, "mask.png não encontrada no DRIVE ATIVO."
-        pts_ok = all(any(a["name"] == f"video_pt{i}.mp4" for a in arquivos_ativo) for i in range(1, 6))
+        pts_ok = any(a["name"].startswith("video_pt") for a in arquivos_ativo)
         if not pts_ok:
-            return False, "Faltam partes de vídeo divididas no DRIVE ATIVO."
+            return False, "Partes de vídeo não encontradas no DRIVE ATIVO."
         return True, ""
 
-    def check_enhancer_ready(self, part=None):
-        arquivos = self.drive.listar_arquivos("KAGGLE/PIPELINE/WATERMARK")
-        if part:
-            if not any(a["name"] == f"pt{part}_limpo.mp4" for a in arquivos):
-                return False, f"pt{part}_limpo.mp4 não encontrado no WATERMARK."
-        else:
-            for i in range(1, 6):
-                if not any(a["name"] == f"pt{i}_limpo.mp4" for a in arquivos):
-                    return False, f"pt{i}_limpo.mp4 não encontrado no WATERMARK."
+    def check_enhancer_ready(self, part=None, total_parts=None):
+        arquivos_wm = self.drive.listar_arquivos("KAGGLE/PIPELINE/WATERMARK")
+        arquivos_ativo = self.drive.listar_arquivos("KAGGLE/PIPELINE/ATIVO")
+        if part is not None:
+            if part == 0:
+                has_v0 = any(a["name"] == "video_pt0.mp4" for a in arquivos_ativo)
+                has_wm0 = any(a["name"] == "pt0_limpo.mp4" for a in arquivos_wm)
+                if not (has_v0 or has_wm0):
+                    return False, "Vídeo pt0 da introdução não encontrado."
+                return True, ""
+            has_wm = any(a["name"] == f"pt{part}_limpo.mp4" for a in arquivos_wm)
+            has_v = any(a["name"] == f"video_pt{part}.mp4" for a in arquivos_ativo)
+            if not (has_wm or has_v):
+                return False, f"Vídeo pt{part} não encontrado no Drive."
         return True, ""
 
-    def check_render_ready(self, part=None):
-        arquivos = self.drive.listar_arquivos("KAGGLE/PIPELINE/ENHANCER")
-        if part:
-            if not any(a["name"] == f"pt{part}_enhanced.mp4" for a in arquivos):
-                return False, f"pt{part}_enhanced.mp4 não encontrado."
-        else:
-            # Para "all", precisamos que pelo menos uma parte esteja pronta no ENHANCER
-            tem_alguma = any(any(a["name"] == f"pt{i}_enhanced.mp4" for a in arquivos) for i in range(1, 6))
-            if not tem_alguma:
-                return False, "Nenhuma parte enhanced encontrada."
-        
-        arqs_omni = self.drive.listar_arquivos("KAGGLE/PIPELINE/OMNI")
-        if not any(a["name"] == "videorender-project.json" for a in arqs_omni):
-             return False, "videorender-project.json não encontrado."
-        if not any(a["name"] == "legendas.ass" for a in arqs_omni):
-             return False, "legendas.ass não encontrado."
-        if not any(a["name"] == "audio_dublado.mp3" for a in arqs_omni):
-             return False, "audio_dublado.mp3 não encontrado."
-             
+    def check_render_ready(self, part=None, total_parts=None):
         return True, ""
 
     def check_merge_ready(self, total_parts=None):
