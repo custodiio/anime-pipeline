@@ -59,6 +59,52 @@ controller = PipelineController()
 user_uploads = {}  # chat_id -> {"video": path, "audio": path, "mask": path}
 active_sessions = {}  # session_token -> {"project_id": ..., "chat_id": ..., "created_at": ...}
 
+PREFERENCES_FILE = os.path.join(os.path.dirname(__file__), "user_preferences.json")
+
+def load_user_preferences(chat_id):
+    defaults = {
+        "watermark": True,
+        "enhancer": False,
+        "thumbnail": True,
+        "manual_mode": False,
+        "bg_audio": False,
+        "srt_type": "normal",
+        "azure_enabled": True
+    }
+    if os.path.exists(PREFERENCES_FILE):
+        try:
+            with open(PREFERENCES_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                chat_prefs = data.get(str(chat_id))
+                if chat_prefs and isinstance(chat_prefs, dict):
+                    defaults.update(chat_prefs)
+        except Exception:
+            pass
+    return defaults
+
+def save_user_preferences(chat_id, prefs):
+    data = {}
+    if os.path.exists(PREFERENCES_FILE):
+        try:
+            with open(PREFERENCES_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    
+    chat_str = str(chat_id)
+    if chat_str not in data:
+        data[chat_str] = {}
+        
+    for k in ["watermark", "enhancer", "thumbnail", "manual_mode", "bg_audio", "srt_type", "azure_enabled"]:
+        if k in prefs:
+            data[chat_str][k] = prefs[k]
+            
+    try:
+        with open(PREFERENCES_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Erro ao salvar preferências do usuário: {e}")
+
 # Mapeamento de step -> nome amigável
 STEP_LABELS = {
     "step_watermark_pt1": "🧹 WM PT1",
@@ -230,13 +276,10 @@ async def cmd_novo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     project_name = " ".join(ctx.args) if ctx.args else f"Projeto_{chat_id[:6]}"
     
-    # Prepara o estado temporário
+    # Prepara o estado temporário carregando as últimas preferências do usuário
     user_uploads[chat_id]["name"] = project_name
     user_uploads[chat_id]["local"] = False
-    user_uploads[chat_id]["watermark"] = True
-    user_uploads[chat_id]["enhancer"] = False
-    user_uploads[chat_id]["thumbnail"] = True
-    user_uploads[chat_id]["manual_mode"] = False
+    user_uploads[chat_id].update(load_user_preferences(chat_id))
     
     await send_config_menu(update, chat_id)
 
@@ -309,13 +352,7 @@ async def _handle_local_upload_check(update: Update, chat_id: str, project_name:
                 user_uploads[chat_id]["audio"] = audio_path
                 user_uploads[chat_id]["name"] = project_name
                 user_uploads[chat_id]["local"] = True
-                user_uploads[chat_id]["watermark"] = True
-                user_uploads[chat_id]["enhancer"] = False
-                user_uploads[chat_id]["thumbnail"] = True
-                user_uploads[chat_id]["manual_mode"] = False
-                user_uploads[chat_id]["bg_audio"] = False
-                user_uploads[chat_id]["srt_type"] = "normal"
-                user_uploads[chat_id]["azure_enabled"] = True
+                user_uploads[chat_id].update(load_user_preferences(chat_id))
                 
                 if query:
                     await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons))
@@ -334,13 +371,7 @@ async def _handle_local_upload_check(update: Update, chat_id: str, project_name:
     user_uploads[chat_id]["audio"] = audio_path
     user_uploads[chat_id]["name"] = project_name
     user_uploads[chat_id]["local"] = True
-    user_uploads[chat_id]["watermark"] = True
-    user_uploads[chat_id]["enhancer"] = False
-    user_uploads[chat_id]["thumbnail"] = True
-    user_uploads[chat_id]["manual_mode"] = False
-    user_uploads[chat_id]["bg_audio"] = False
-    user_uploads[chat_id]["srt_type"] = "normal"
-    user_uploads[chat_id]["azure_enabled"] = True
+    user_uploads[chat_id].update(load_user_preferences(chat_id))
 
     if query:
         await send_config_menu(update, chat_id, query)
@@ -416,12 +447,7 @@ async def _handle_drive_upload_check(update: Update, chat_id: str, project_name:
     user_uploads[chat_id]["audio"] = audio_path
     user_uploads[chat_id]["name"] = project_name
     user_uploads[chat_id]["local"] = True  # Tratado como local, pois acabamos de baixar do Drive para a VPS
-    user_uploads[chat_id]["watermark"] = True
-    user_uploads[chat_id]["enhancer"] = False
-    user_uploads[chat_id]["thumbnail"] = True
-    user_uploads[chat_id]["manual_mode"] = False
-    user_uploads[chat_id]["bg_audio"] = False
-    user_uploads[chat_id]["srt_type"] = "normal"
+    user_uploads[chat_id].update(load_user_preferences(chat_id))
 
     if query:
         await send_config_menu(update, chat_id, query)
@@ -652,49 +678,51 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
         user_uploads[chat_id]["name"] = f"Projeto_{chat_id[:6]}"
         user_uploads[chat_id]["local"] = False
-        user_uploads[chat_id]["watermark"] = True
-        user_uploads[chat_id]["enhancer"] = False
-        user_uploads[chat_id]["thumbnail"] = True
+        user_uploads[chat_id].update(load_user_preferences(chat_id))
         user_uploads[chat_id]["manual_mode"] = (data == "new_manual")
-        user_uploads[chat_id]["bg_audio"] = False
-        user_uploads[chat_id]["srt_type"] = "normal"
-        user_uploads[chat_id]["azure_enabled"] = True
         await send_config_menu(None, chat_id, query)
         
     elif data == "toggle_wm":
         if chat_id in user_uploads:
             user_uploads[chat_id]["watermark"] = not user_uploads[chat_id].get("watermark", True)
+            save_user_preferences(chat_id, user_uploads[chat_id])
             await send_config_menu(None, chat_id, query)
             
     elif data == "toggle_enhancer":
         if chat_id in user_uploads:
             user_uploads[chat_id]["enhancer"] = not user_uploads[chat_id].get("enhancer", False)
+            save_user_preferences(chat_id, user_uploads[chat_id])
             await send_config_menu(None, chat_id, query)
 
     elif data == "toggle_thumbnail":
         if chat_id in user_uploads:
             user_uploads[chat_id]["thumbnail"] = not user_uploads[chat_id].get("thumbnail", True)
+            save_user_preferences(chat_id, user_uploads[chat_id])
             await send_config_menu(None, chat_id, query)
 
     elif data == "toggle_mode":
         if chat_id in user_uploads:
             user_uploads[chat_id]["manual_mode"] = not user_uploads[chat_id].get("manual_mode", False)
+            save_user_preferences(chat_id, user_uploads[chat_id])
             await send_config_menu(None, chat_id, query)
             
     elif data == "toggle_bgaudio":
         if chat_id in user_uploads:
             user_uploads[chat_id]["bg_audio"] = not user_uploads[chat_id].get("bg_audio", False)
+            save_user_preferences(chat_id, user_uploads[chat_id])
             await send_config_menu(None, chat_id, query)
 
     elif data == "toggle_srt":
         if chat_id in user_uploads:
             current_srt = user_uploads[chat_id].get("srt_type", "normal")
             user_uploads[chat_id]["srt_type"] = "word_by_word" if current_srt == "normal" else "normal"
+            save_user_preferences(chat_id, user_uploads[chat_id])
             await send_config_menu(None, chat_id, query)
 
     elif data == "toggle_azure":
         if chat_id in user_uploads:
             user_uploads[chat_id]["azure_enabled"] = not user_uploads[chat_id].get("azure_enabled", True)
+            save_user_preferences(chat_id, user_uploads[chat_id])
             await send_config_menu(None, chat_id, query)
             
     elif data == "start_project":
@@ -703,6 +731,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
             
         opts = user_uploads[chat_id]
+        save_user_preferences(chat_id, opts)
         
         await query.edit_message_text(
             f"🚀 Iniciando projeto: *{opts['name']}*\n"
