@@ -257,31 +257,37 @@ def salvar_no_drive(caminho_local, caminho_destino_drive):
     except Exception as e:
         print(f"  Erro ao salvar {caminho_destino_drive}: {e}")
 
-# --- Limpeza de arquivos residuais de roteiros e zips de execuções anteriores ---
-import glob
-print("🧹 Limpando arquivos temporários e caches antigos de roteiros/zips...")
-residual_files = (
-    glob.glob("/kaggle/working/roteiro_adaptado*.json") +
-    glob.glob("/kaggle/working/*.zip") +
-    glob.glob(f"{BASE_PATH}/roteiro_adaptado*.json") +
-    glob.glob(f"{BASE_PATH}/*.zip") +
-    glob.glob(f"{BASE_PATH}/OUTPUT/*.zip") +
-    glob.glob(f"{BASE_PATH}/OUTPUT/roteiro_adaptado*.json")
-)
-for rf in residual_files:
-    try:
-        os.remove(rf)
-        print(f"  🗑️ Removido arquivo antigo: {os.path.basename(rf)}")
-    except Exception as ex_rf:
-        pass
-
-# Download de cache do Drive
+# Download de cache do Drive (Preserva se for um projeto retomado)
+has_cached_translation = False
 if drive_service:
-    print("\nBaixando arquivos do Drive...")
+    print("\nBaixando arquivos de cache do Drive...")
     baixar_do_drive("KAGGLE/AUDIO_DUB/INPUT/anime_audio.mp3",      "/kaggle/working/input/anime_audio.mp3")
-    baixar_do_drive("KAGGLE/AUDIO_DUB/transcricao_raw.json",        f"{BASE_PATH}/transcricao_raw.json")
-    baixar_do_drive("KAGGLE/AUDIO_DUB/traducao_simplificada.json",  f"{BASE_PATH}/traducao_simplificada.json")
+    has_trans = baixar_do_drive("KAGGLE/AUDIO_DUB/transcricao_raw.json",        f"{BASE_PATH}/transcricao_raw.json")
+    has_trad  = baixar_do_drive("KAGGLE/AUDIO_DUB/traducao_simplificada.json",  f"{BASE_PATH}/traducao_simplificada.json")
     baixar_do_drive("KAGGLE/AUDIO_DUB/identificacao_anime.json",    f"{BASE_PATH}/identificacao_anime.json")
+    baixar_do_drive("KAGGLE/AUDIO_DUB/roteiro_adaptado.json",       f"{BASE_PATH}/roteiro_adaptado.json")
+    has_cached_translation = has_trans or has_trad
+
+# Se NÃO havia nenhum cache no Drive (novo projeto ou limpo do zero), remove resquícios locais de containers anteriores
+if not has_cached_translation:
+    import glob
+    print("🧹 Nenhum cache no Drive (Novo Projeto). Limpando resquícios locais de containers anteriores...")
+    residual_files = (
+        glob.glob("/kaggle/working/roteiro_adaptado*.json") +
+        glob.glob("/kaggle/working/*.zip") +
+        glob.glob(f"{BASE_PATH}/roteiro_adaptado*.json") +
+        glob.glob(f"{BASE_PATH}/*.zip") +
+        glob.glob(f"{BASE_PATH}/OUTPUT/*.zip") +
+        glob.glob(f"{BASE_PATH}/OUTPUT/roteiro_adaptado*.json")
+    )
+    for rf in residual_files:
+        try:
+            os.remove(rf)
+            print(f"  🗑️ Removido resquício antigo: {os.path.basename(rf)}")
+        except Exception as ex_rf:
+            pass
+else:
+    print("✨ Projeto retomado! Cache de tradução/roteiro carregado com sucesso do Google Drive.")
 
 # --- Busca e download automático do áudio de referência para clonagem ---
 REF_AUDIO_PATH = ""
