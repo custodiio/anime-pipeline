@@ -81,11 +81,11 @@ if should_run('translate'):
     3. REPETITION — Never repeat the same word or phrase twice in a row across consecutive lines.
        - Vary pronouns and synonyms naturally.
 
-    4. PROPER NOUNS & LOCALIZATION — Keep the original Japanese name/term only the FIRST time it is introduced in the narration.
-       - For subsequent occurrences, do not repeat the complex Japanese names or terms. Instead, substitute them naturally with pronouns, relationship words, or roles to make the storytelling easier to follow (e.g., "seu irmão", "o protagonista", "o jovem", "o garoto", "o guerreiro", "seu amigo").
-       - Kinship/role words are NOT proper nouns: "pai", "mãe", "mestre", "rei", "imperador", etc.
-         Translate them normally — do NOT keep "Father", "Master", "Lord" in English mid-sentence.
-       - Example: "Father said..." → "Seu pai disse..." ✅ | "Father disse..." ❌
+    4. PROPER NOUNS & LOCALIZATION:
+       - ALL character names, places, and terms MUST be translated into Latin alphabet (Romaji/Portuguese) or Portuguese equivalents (e.g., "Isagi", "Bachira", "Rin", "Ego").
+       - NEVER leave Chinese/Japanese characters (Kanji/Hiragana/Katakana, like 潔, 蜂楽, 凛, 本田) in the translated text under ANY circumstances.
+       - Keep the character/place name only the FIRST time it is introduced in the narration. For subsequent occurrences, substitute naturally with pronouns, relationship words, or roles (e.g., "seu irmão", "o jovem", "o garoto", "ele").
+       - Kinship/role words are NOT proper nouns: "pai", "mãe", "mestre", "rei", etc. Translate them normally into Portuguese.
 
     5. NARRATIVE FLOW — Cinema narration, not a fact report.
        - Never start two consecutive blocks with the same pronoun/subject.
@@ -125,8 +125,11 @@ if should_run('translate'):
        - Timid character → speak softly/hesitantly.
     3. VOCABULARY: Colloquial Brazilian Portuguese. Natural speech, not literary.
     4. SYNC: Keep length similar to the original for lip-sync timing.
-    5. NAMES & LOCALIZATION: Keep the original Japanese name/term only the FIRST time it is introduced.
-       - For subsequent occurrences, avoid repeating complex Japanese names or terms. Instead, substitute them naturally with pronouns, relationship words, or roles to make it easy for the audience to follow (e.g., "seu irmão", "o garoto", "sua amiga", "ele").
+    5. NAMES & ROMANIZATION (CRITICAL):
+       - ALWAYS write character names in Western/Latin alphabet (Romaji/Portuguese, e.g. "Isagi", "Kira", "Bachira").
+       - NEVER leave Kanji, Hiragana or Katakana characters (e.g. 潔, 蜂楽, 凛, ちゃん, さん) anywhere in the Portuguese output.
+       - Translate honorifics naturally or drop them (e.g., "-san" → drop or "senhor", "-kun/-chan" → drop).
+       - Keep the original name only the FIRST time it is introduced. For subsequent occurrences, use pronouns or roles ("o garoto", "ele", "seu companheiro").
 
     OUTPUT FORMAT (JSON ONLY):
     {{ "translations": ["string 1", "string 2", ...] }}
@@ -207,11 +210,15 @@ if should_run('translate'):
                 if len(translated_list) != expected:
                     print(f"  Recebidos {len(translated_list)} vs esperados {expected}. Ajustando...")
 
+                import re
                 for j, block in enumerate(chunk):
-                    block["translated_text"] = (
+                    raw_txt = (
                         translated_list[j] if j < len(translated_list)
                         else f"[FALHA] {block['texto_original']}"
                     )
+                    # Remove resquícios de ideogramas CJK (chineses/japoneses) se o modelo os mantiver por engano
+                    clean_txt = re.sub(r'[\u4e00-\u9fff\u3040-\u30ff\u31f0-\u31ff]+', '', raw_txt).strip()
+                    block["translated_text"] = clean_txt if clean_txt else raw_txt
                     block["status"] = "TRANSLATED"
 
 
