@@ -1514,6 +1514,19 @@ def main():
             conn.commit()
             conn.close()
 
+            # Atualiza episódios em processing_dubbing no history.db do scrapper
+            try:
+                _sc_path = "/app/scrapper_douyin/data/history.db"
+                if os.path.exists(_sc_path):
+                    _sc_conn = sqlite3.connect(_sc_path)
+                    _sc_cur = _sc_conn.cursor()
+                    _sc_cur.execute("UPDATE collection_episodes SET status = 'published' WHERE status = 'processing_dubbing'")
+                    _sc_conn.commit()
+                    _sc_conn.close()
+                    logger.info("[POSTRECAP INTEGRATION] Status dos episódios no scrapper atualizados para 'published'.")
+            except Exception as _e_sc:
+                logger.warning(f"[POSTRECAP INTEGRATION] Falha ao atualizar scrapper DB: {_e_sc}")
+
             logger.info(f"[POSTRECAP INTEGRATION] Sucesso! Post #{post_id} reservado e agendado para {now_str}.")
             return True
 
