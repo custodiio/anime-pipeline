@@ -7,6 +7,8 @@ Protegido por lista de IDs autorizados.
 import os
 import sys
 import asyncio
+import threading
+import sqlite3
 import tempfile
 import logging
 import uuid
