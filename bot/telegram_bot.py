@@ -1534,6 +1534,8 @@ def main():
             logger.error(f"[POSTRECAP INTEGRATION] Erro ao integrar com Post_recap: {e}")
             return False
 
+    globals()['agendar_publicacao_automatica_postrecap'] = agendar_publicacao_automatica_postrecap
+
     def _pipeline_poll_loop():
         """Thread que verifica o banco a cada 30s e avança o pipeline."""
         while True:
@@ -1545,6 +1547,7 @@ def main():
                     controller.verificar_e_avancar(pid)
                     
                     from bot.database import get_project
+                    proj_depois = get_project(pid)
                     if status_antes != "completed" and proj_depois and proj_depois.get("status") == "completed":
                         chat_id = proj_depois.get("telegram_chat_id") or proj_depois.get("chat_id")
                         link = controller.drive.get_file_link("KAGGLE/PIPELINE/FINAL/anime_final.mp4")
