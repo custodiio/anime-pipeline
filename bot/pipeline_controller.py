@@ -942,6 +942,37 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         r_ok = all(v == "done" for v in r_vals)
         split_ok = project.get("step_split") == "done"
 
+        # ── RECONCILIAÇÃO AUTOMÁTICA VIA DRIVE ──
+        if any(v not in ["done", "skipped"] for v in e_vals):
+            try:
+                arqs_enh = self.drive.listar_arquivos("KAGGLE/PIPELINE/ENHANCER")
+                for i in range(1, video_parts + 1):
+                    if project.get(f"step_enhancer_pt{i}") not in ["done", "skipped"]:
+                        if any(a["name"] == f"pt{i}_enhanced.mp4" for a in arqs_enh):
+                            print(f"[{project_id}] Auto-sync Drive: pt{i}_enhanced.mp4 detectado. Atualizando step_enhancer_pt{i} = done.")
+                            update_step(project_id, f"step_enhancer_pt{i}", "done")
+                            project[f"step_enhancer_pt{i}"] = "done"
+            except Exception as ex_sync_e:
+                print(f"[{project_id}] Erro auto-sync enhancer: {ex_sync_e}")
+
+        if any(v != "done" for v in r_vals):
+            try:
+                arqs_ren = self.drive.listar_arquivos("KAGGLE/PIPELINE/RENDER")
+                for i in range(0, video_parts + 1):
+                    if project.get(f"step_render_pt{i}") != "done":
+                        if any(a["name"] == f"pt{i}_renderizado.mp4" for a in arqs_ren):
+                            print(f"[{project_id}] Auto-sync Drive: pt{i}_renderizado.mp4 detectado. Atualizando step_render_pt{i} = done.")
+                            update_step(project_id, f"step_render_pt{i}", "done")
+                            project[f"step_render_pt{i}"] = "done"
+            except Exception as ex_sync_r:
+                print(f"[{project_id}] Erro auto-sync render: {ex_sync_r}")
+
+        # Re-avalia os estados após a reconciliação
+        e_vals = [project.get(f"step_enhancer_pt{i}") for i in range(1, video_parts + 1)]
+        r_vals = [project.get(f"step_render_pt{i}") for i in range(0, video_parts + 1)]
+        e_ok = all(v in ["done", "skipped"] for v in e_vals)
+        r_ok = all(v == "done" for v in r_vals)
+
         # Log de diagnóstico
         if conf == "done" and w_ok and e_ok and r_vals[1] == "pending": # pt1
             if omni != "done":
