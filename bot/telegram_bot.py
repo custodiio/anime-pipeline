@@ -1442,7 +1442,7 @@ def main():
             now_str = scheduled_dt.strftime("%Y-%m-%d %H:%M:%S")
             logger.info(f"[POSTRECAP INTEGRATION] Próximo slot de postagem calculado: {now_str}")
 
-            _post_yt, _post_shorts, _post_tiktok, _post_insta = 1, 1, 1, 0
+            _post_yt, _post_shorts, _post_tiktok, _post_insta = 0, 1, 1, 0
             try:
                 import sqlite3 as _sqlite3
                 _scrapper_db_path = "/app/scrapper_douyin/data/history.db"
