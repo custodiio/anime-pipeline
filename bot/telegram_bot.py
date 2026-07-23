@@ -1373,8 +1373,151 @@ def main():
 
     controller.on_omni_done = notificar_omni_concluido
 
-    # Polling periódico via thread (não depende de job_queue extra)
-    import threading
+    def agendar_publicacao_automatica_postrecap(project_id):
+        """
+        Lê o guia_postagem.json e video_final.mp4 do Drive e registra o agendamento no Post_recap (posts.db).
+        Baixa o vídeo para a pasta física de staging local /home/ubuntu/apps/Post_recap/scheduled_posts/post_<id>/video.mp4.
+        Calcula o próximo slot disponível de 12h ou 18h no horário local de Brasília.
+        """
+        try:
+            proj = get_project(project_id)
+            if not proj:
+                logger.error(f"[POSTRECAP INTEGRATION] Projeto {project_id} não encontrado.")
+                return False
+
+            # 1. Carregar guia_postagem.json do Drive
+            guia_path = controller.drive.baixar_temp("KAGGLE/PIPELINE/FINAL/guia_postagem.json")
+            guia = {}
+            if guia_path and os.path.exists(guia_path):
+                try:
+                    with open(guia_path, "r", encoding="utf-8") as f:
+                        guia = json.load(f)
+                except Exception as e_json:
+                    logger.warning(f"[POSTRECAP INTEGRATION] Falha ao ler guia_postagem.json: {e_json}")
+
+            title_yt = guia.get("titulo_principal") or proj.get("project_name", "Vídeo AnimeRecap")
+            desc_yt = guia.get("descricao") or ""
+            tiktok_guia = guia.get("tiktok_guia") or ""
+            tiktok_caption = tiktok_guia if tiktok_guia else f"{title_yt}\n\n#anime #recap #shorts"
+            desc_shorts = f"{desc_yt}\n\n#Shorts" if desc_yt else title_yt
+
+            # 2. Conectar ao posts.db do Post_recap
+            post_recap_db_path = "/home/ubuntu/apps/Post_recap/posts.db"
+            if not os.path.exists(post_recap_db_path):
+                logger.error(f"[POSTRECAP INTEGRATION] Banco do Post_recap não localizado em: {post_recap_db_path}")
+                return False
+
+            conn = sqlite3.connect(post_recap_db_path)
+            cursor = conn.cursor()
+
+            from datetime import datetime, timedelta
+            import sqlite3 as _sl3_slot
+            _POSTING_HOURS = [12, 18]
+
+            def _proximo_slot_disponivel():
+                """Retorna o datetime do próximo slot livre de autoposting (12h ou 18h Brasília)."""
+                _db = _sl3_slot.connect(post_recap_db_path)
+                _c = _db.cursor()
+                now = datetime.now()
+                for dias in range(7):
+                    for hora in _POSTING_HOURS:
+                        candidato = now.replace(hour=hora, minute=0, second=0, microsecond=0) + timedelta(days=dias)
+                        if candidato <= now:
+                            continue
+                        slot_str = candidato.strftime("%Y-%m-%d %H:%M:%S")
+                        _c.execute(
+                            "SELECT COUNT(*) FROM scheduled_posts WHERE scheduled_time = ? AND status NOT IN ('completed','failed')",
+                            (slot_str,)
+                        )
+                        count = _c.fetchone()[0]
+                        if count == 0:
+                            _db.close()
+                            return candidato
+                _db.close()
+                return now + timedelta(hours=2)
+
+            scheduled_dt = _proximo_slot_disponivel()
+            now_str = scheduled_dt.strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(f"[POSTRECAP INTEGRATION] Próximo slot de postagem calculado: {now_str}")
+
+            _post_yt, _post_shorts, _post_tiktok, _post_insta = 1, 1, 1, 0
+            try:
+                import sqlite3 as _sqlite3
+                _scrapper_db_path = "/app/scrapper_douyin/data/history.db"
+                if os.path.exists(_scrapper_db_path):
+                    _sc = _sqlite3.connect(_scrapper_db_path)
+                    _sc_cur = _sc.cursor()
+                    _sc_cur.execute("SELECT key, value FROM user_settings WHERE key IN ('default_post_youtube', 'default_post_shorts', 'default_post_tiktok', 'default_post_instagram')")
+                    _settings = dict(_sc_cur.fetchall())
+                    _sc.close()
+                    _post_yt      = int(_settings.get("default_post_youtube", 1))
+                    _post_shorts  = int(_settings.get("default_post_shorts", 1))
+                    _post_tiktok  = int(_settings.get("default_post_tiktok", 1))
+                    _post_insta   = int(_settings.get("default_post_instagram", 0))
+            except Exception as _e_set:
+                logger.warning(f"[POSTRECAP] Não foi possível ler user_settings do scrapper: {_e_set}")
+
+            yt_tags_val = guia.get("tags_youtube") or guia.get("tags") or ""
+            if isinstance(yt_tags_val, list):
+                yt_tags_val = ", ".join(yt_tags_val)
+
+            cursor.execute("""
+                INSERT INTO scheduled_posts (
+                    video_path, thumbnail_youtube, thumbnail_tiktok,
+                    title_youtube, title_shorts, tiktok_caption, instagram_caption,
+                    post_youtube, post_shorts, post_tiktok, post_instagram,
+                    tiktok_privacy, scheduled_time, status, shorts_description, youtube_tags
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                "", "", "",
+                title_yt, title_yt, tiktok_caption, tiktok_caption,
+                _post_yt, _post_shorts, _post_tiktok, _post_insta,
+                "Public", now_str, "downloading", desc_shorts, yt_tags_val
+            ))
+            post_id = cursor.lastrowid
+            conn.commit()
+
+            # 3. Baixar vídeo final diretamente para o staging isolado local da VPS
+            post_dir = f"/home/ubuntu/apps/Post_recap/scheduled_posts/post_{post_id}"
+            os.makedirs(post_dir, exist_ok=True)
+            local_video_path = os.path.join(post_dir, "video.mp4")
+
+            logger.info(f"[POSTRECAP INTEGRATION] Baixando vídeo final do Drive para {local_video_path}...")
+            caminho_video = "KAGGLE/PIPELINE/FINAL/video_final.mp4"
+            success_video = controller.drive.baixar(caminho_video, local_video_path)
+            if not success_video or not os.path.exists(local_video_path):
+                caminho_video_alt = "KAGGLE/PIPELINE/FINAL/anime_final.mp4"
+                success_video = controller.drive.baixar(caminho_video_alt, local_video_path)
+
+            if not success_video or not os.path.exists(local_video_path):
+                logger.error(f"[POSTRECAP INTEGRATION] Vídeo final não localizado no Drive!")
+                cursor.execute("UPDATE scheduled_posts SET status = 'failed', error_message = 'Vídeo final não encontrado no Drive' WHERE id = ?", (post_id,))
+                conn.commit()
+                conn.close()
+                return False
+
+            # Salva o guia localmente também
+            try:
+                local_guia_path = os.path.join(post_dir, "guia.json")
+                with open(local_guia_path, "w", encoding="utf-8") as f_g:
+                    json.dump(guia, f_g, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+            cursor.execute("""
+                UPDATE scheduled_posts
+                SET video_path = ?, status = 'pending'
+                WHERE id = ?
+            """, (local_video_path, post_id))
+            conn.commit()
+            conn.close()
+
+            logger.info(f"[POSTRECAP INTEGRATION] Sucesso! Post #{post_id} reservado e agendado para {now_str}.")
+            return True
+
+        except Exception as e:
+            logger.error(f"[POSTRECAP INTEGRATION] Erro ao integrar com Post_recap: {e}")
+            return False
 
     def _pipeline_poll_loop():
         """Thread que verifica o banco a cada 30s e avança o pipeline."""
@@ -1383,14 +1526,12 @@ def main():
                 projects = get_running_projects()
                 for proj in projects:
                     pid = str(proj["id"])
-                    # Se antes era running e agora o controller.verificar_e_avancar marcar como completed, podemos checar
                     status_antes = proj.get("status")
                     controller.verificar_e_avancar(pid)
                     
                     from bot.database import get_project
                     proj_depois = get_project(pid)
                     if status_antes != "completed" and proj_depois and proj_depois.get("status") == "completed":
-                        # Projeto acabou de finalizar!
                         chat_id = proj_depois["chat_id"]
                         link = controller.drive.get_file_link("KAGGLE/PIPELINE/FINAL/anime_final.mp4")
                         if link:
@@ -1401,6 +1542,14 @@ def main():
                         import requests
                         api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
                         requests.post(api_url, json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
+
+                        # Dispara postagem automática se for modo automático
+                        is_manual = proj_depois.get("manual_mode", False)
+                        if not is_manual:
+                            logger.info(f"[POSTRECAP INTEGRATION] Projeto {pid} finalizado em modo AUTOMÁTICO. Reservando e agendando...")
+                            threading.Thread(target=agendar_publicacao_automatica_postrecap, args=(pid,), daemon=True).start()
+                        else:
+                            logger.info(f"[POSTRECAP INTEGRATION] Projeto {pid} finalizado em modo MANUAL. Postagem automática ignorada.")
             except Exception as e:
                 logger.error(f"Erro no polling do pipeline: {e}")
             time.sleep(30)

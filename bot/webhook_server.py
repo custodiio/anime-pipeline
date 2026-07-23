@@ -723,16 +723,6 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                 pid = data.get("project_id")
                 cell_end(pid, nb, cell_idx, cell_status, data.get("message", ""))
 
-                # Trigger SEO automático quando cel4 (tradução simplificada) finaliza
-                if cell_idx == 4 and cell_status == "done" and pid and _seo_notifier:
-                    import threading
-                    threading.Thread(
-                        target=_seo_notifier,
-                        args=(pid,),
-                        daemon=True
-                    ).start()
-                    logger.info(f"[SEO] Trigger disparado para projeto {pid} (cel4 done)")
-
                 self._set_headers(200)
                 self.wfile.write(json.dumps({"ok": True}).encode())
 

@@ -1110,5 +1110,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return
 
         if project["step_merge"] == "done" and project["status"] != "completed":
+            print(f"[{project_id}] Merge done -> Gerando guia de postagem (SEO)...")
+            try:
+                self.gerar_seo_automatico(project_id)
+            except Exception as e:
+                print(f"[{project_id}] Erro ao gerar guia SEO: {e}")
             mark_project_completed(project_id)
             print(f"[{project_id}] Projeto concluido!")
