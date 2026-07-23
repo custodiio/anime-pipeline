@@ -967,6 +967,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             except Exception as ex_sync_r:
                 print(f"[{project_id}] Erro auto-sync render: {ex_sync_r}")
 
+        if project.get("step_merge") != "done":
+            try:
+                arqs_fin = self.drive.listar_arquivos("KAGGLE/PIPELINE/FINAL")
+                if any(a["name"] in ["video_final.mp4", "anime_final.mp4"] for a in arqs_fin):
+                    print(f"[{project_id}] Auto-sync Drive: video_final.mp4 detectado em FINAL. Atualizando step_merge = done.")
+                    update_step(project_id, "step_merge", "done")
+                    project["step_merge"] = "done"
+            except Exception as ex_sync_m:
+                print(f"[{project_id}] Erro auto-sync merge: {ex_sync_m}")
+
         # Re-avalia os estados após a reconciliação
         e_vals = [project.get(f"step_enhancer_pt{i}") for i in range(1, video_parts + 1)]
         r_vals = [project.get(f"step_render_pt{i}") for i in range(0, video_parts + 1)]
