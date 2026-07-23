@@ -1014,6 +1014,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 if not tts_pt4_ok: missing.append("pt4")
                 print(f"[{project_id}] ⏳ Aguardando zips do TTS: faltando {missing}")
 
+        elif omni == "assembling":
+            arqs_out = self.drive.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
+            arqs_omni = self.drive.listar_arquivos("KAGGLE/PIPELINE/OMNI")
+            has_out_mp3 = any("_Completo.mp3" in a["name"] or a["name"].endswith(".mp3") for a in arqs_out)
+            has_omni_mp3 = any(a["name"] == "audio_dublado.mp3" for a in arqs_omni)
+            has_omni_srt = any(a["name"] == "omni_output.srt" for a in arqs_omni)
+            has_out_srt = any(a["name"].endswith(".srt") for a in arqs_out)
+
+            if (has_out_mp3 or has_omni_mp3) and (has_omni_srt or has_out_srt):
+                print(f"[{project_id}] Auto-sync Drive: Omni-Assemble finalizado (áudio e srt encontrados). Atualizando step_omni = done.")
+                update_step(project_id, "step_omni", "done")
+                omni = "done"
+
         # Gerar ASS e copiar áudio do Omni assim que ambos estiverem prontos
         if conf == "done" and omni == "done":
             arqs_omni = self.drive.listar_arquivos("KAGGLE/PIPELINE/OMNI")

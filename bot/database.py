@@ -509,6 +509,14 @@ def cell_end(project_id: str, notebook: str, cell_index: int,
         WHERE project_id = %s::uuid AND notebook = %s AND cell_index = %s
     """, (status, message, project_id, notebook, cell_index))
 
+    # Se for a conclusão do omni-assemble, atualiza o step_omni para 'done' na tabela pipeline_projects
+    if status == "done" and (notebook == "omni-assemble" or "assemble" in str(notebook).lower()):
+        try:
+            cur.execute("UPDATE pipeline_projects SET step_omni = 'done' WHERE id = %s::uuid", (project_id,))
+            print(f"[{project_id}] cell_end: omni-assemble concluído. step_omni atualizado para 'done'.")
+        except Exception as e_omni:
+            print(f"[{project_id}] Erro ao atualizar step_omni no cell_end: {e_omni}")
+
     conn.commit()
     cur.close()
     conn.close()
