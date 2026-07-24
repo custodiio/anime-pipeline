@@ -943,7 +943,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         split_ok = project.get("step_split") == "done"
 
         # ── RECONCILIAÇÃO AUTOMÁTICA VIA DRIVE ──
-        if any(v not in ["done", "skipped"] for v in e_vals):
+        if w_ok and any(v not in ["done", "skipped"] for v in e_vals):
             try:
                 arqs_enh = self.drive.listar_arquivos("KAGGLE/PIPELINE/ENHANCER")
                 for i in range(1, video_parts + 1):
@@ -955,7 +955,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             except Exception as ex_sync_e:
                 print(f"[{project_id}] Erro auto-sync enhancer: {ex_sync_e}")
 
-        if any(v != "done" for v in r_vals):
+        if conf == "done" and w_ok and e_ok and omni == "done" and any(v != "done" for v in r_vals):
             try:
                 arqs_ren = self.drive.listar_arquivos("KAGGLE/PIPELINE/RENDER")
                 for i in range(0, video_parts + 1):
@@ -967,11 +967,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             except Exception as ex_sync_r:
                 print(f"[{project_id}] Erro auto-sync render: {ex_sync_r}")
 
-        if project.get("step_merge") != "done":
+        if r_ok and project.get("step_merge") != "done":
             try:
                 arqs_fin = self.drive.listar_arquivos("KAGGLE/PIPELINE/FINAL")
                 if any(a["name"] in ["video_final.mp4", "anime_final.mp4"] for a in arqs_fin):
-                    print(f"[{project_id}] Auto-sync Drive: video_final.mp4 detectado em FINAL. Atualizando step_merge = done.")
+                    print(f"[{project_id}] Auto-sync Drive: video_final.mp4 detectado em FINAL (com Renders OK). Atualizando step_merge = done.")
                     update_step(project_id, "step_merge", "done")
                     project["step_merge"] = "done"
             except Exception as ex_sync_m:
