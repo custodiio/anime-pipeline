@@ -1388,9 +1388,11 @@ def main():
                 return False
 
             # 1. Carregar guia_postagem.json do Drive
-            guia_path = controller.drive.baixar_temp("KAGGLE/PIPELINE/FINAL/guia_postagem.json")
+            import tempfile
+            guia_path = os.path.join(tempfile.gettempdir(), f"guia_{project_id[:8]}.json")
+            controller.drive.baixar("KAGGLE/PIPELINE/FINAL/guia_postagem.json", guia_path)
             guia = {}
-            if guia_path and os.path.exists(guia_path):
+            if os.path.exists(guia_path):
                 try:
                     with open(guia_path, "r", encoding="utf-8") as f:
                         guia = json.load(f)
