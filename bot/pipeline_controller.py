@@ -980,6 +980,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             except Exception as ex_sync_r:
                 print(f"[{project_id}] Erro auto-sync render: {ex_sync_r}")
 
+        # Sanity check render: se marcado como done no banco mas o arquivo não está no Drive, reseta para pending
+        if any(v == "done" for v in r_vals):
+            try:
+                arqs_ren = self.drive.listar_arquivos("KAGGLE/PIPELINE/RENDER")
+                for i in range(0, video_parts + 1):
+                    if project.get(f"step_render_pt{i}") == "done":
+                        if not any(a["name"] == f"pt{i}_renderizado.mp4" for a in arqs_ren):
+                            print(f"[{project_id}] Drive sanity check: pt{i}_renderizado.mp4 ausente no Drive. Resetando step_render_pt{i} = pending.")
+                            update_step(project_id, f"step_render_pt{i}", "pending")
+                            project[f"step_render_pt{i}"] = "pending"
+            except Exception as ex_sc_r:
+                print(f"[{project_id}] Erro sanity check render: {ex_sc_r}")
+
         if r_ok and project.get("step_merge") != "done":
             try:
                 arqs_fin = self.drive.listar_arquivos("KAGGLE/PIPELINE/FINAL")
