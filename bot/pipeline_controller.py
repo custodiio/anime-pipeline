@@ -955,6 +955,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             except Exception as ex_sync_e:
                 print(f"[{project_id}] Erro auto-sync enhancer: {ex_sync_e}")
 
+        # Sanity check: se marcado como done no banco mas o arquivo não está no Drive, reseta para pending
+        if any(v == "done" for v in e_vals):
+            try:
+                arqs_enh = self.drive.listar_arquivos("KAGGLE/PIPELINE/ENHANCER")
+                for i in range(1, video_parts + 1):
+                    if project.get(f"step_enhancer_pt{i}") == "done":
+                        if not any(a["name"] == f"pt{i}_enhanced.mp4" for a in arqs_enh):
+                            print(f"[{project_id}] Drive sanity check: pt{i}_enhanced.mp4 ausente no Drive. Resetando step_enhancer_pt{i} = pending.")
+                            update_step(project_id, f"step_enhancer_pt{i}", "pending")
+                            project[f"step_enhancer_pt{i}"] = "pending"
+            except Exception as ex_sc_e:
+                print(f"[{project_id}] Erro sanity check enhancer: {ex_sc_e}")
+
         if conf == "done" and w_ok and e_ok and omni == "done" and any(v != "done" for v in r_vals):
             try:
                 arqs_ren = self.drive.listar_arquivos("KAGGLE/PIPELINE/RENDER")
