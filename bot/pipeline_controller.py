@@ -270,7 +270,18 @@ class PipelineController:
                 timeout=120)
             resp.raise_for_status()
             data = resp.json()
-            return data.get("guia"), roteiro, identificacao
+            guia = data.get("guia")
+
+            if guia:
+                guia_file = os.path.join(tmp, "guia_postagem.json")
+                with open(guia_file, "w", encoding="utf-8") as f:
+                    json.dump(guia, f, ensure_ascii=False, indent=2)
+
+                print(f"[{project_id}] Uploading guia_postagem.json para Drive (KAGGLE/PIPELINE/FINAL)...")
+                self.drive.upload(guia_file, "KAGGLE/PIPELINE/FINAL/guia_postagem.json")
+                print(f"[{project_id}] guia_postagem.json enviado com sucesso para o Drive!")
+
+            return guia, roteiro, identificacao
         except Exception as e:
             print(f"[SEO] Erro ao gerar SEO: {e}")
             return None, None, None
