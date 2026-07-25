@@ -4,6 +4,7 @@ Gerencia o fluxo completo de processamento de video.
 """
 
 import os
+import re
 import asyncio
 from bot.database import (
     create_project, update_step, get_project,
