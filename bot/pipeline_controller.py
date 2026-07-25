@@ -58,7 +58,10 @@ class PipelineController:
                  "-of", "default=noprint_wrappers=1:nokey=1", video_path],
                 capture_output=True, text=True
             )
-            duration = float(result.stdout.strip())
+            try:
+                duration = float(result.stdout.strip())
+            except Exception:
+                duration = 165.0
             
             if duration <= 600:
                 parts = 5
