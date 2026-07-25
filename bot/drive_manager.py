@@ -130,6 +130,10 @@ class DriveManager:
             print(f"  Erro ao baixar por ID ({file_id}): {e}")
             return False
 
+    def upload(self, caminho_local, caminho_drive):
+        """Alias para salvar."""
+        return self.salvar(caminho_local, caminho_drive)
+
     def salvar(self, caminho_local, caminho_drive):
         """Salva arquivo local no Drive (cria ou atualiza)."""
         if not self.service or not os.path.exists(caminho_local):
