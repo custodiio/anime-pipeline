@@ -265,6 +265,17 @@ class PipelineController:
             with open(ident_path, "r", encoding="utf-8") as f:
                 identificacao = json.load(f)
 
+            proj = get_project(project_id)
+            ep_num = 1
+            if proj and proj.get("project_name"):
+                m = re.search(r"_EP(\d+)", proj.get("project_name"), re.IGNORECASE)
+                if m:
+                    ep_num = int(m.group(1))
+
+            if isinstance(identificacao, dict):
+                identificacao["episodio_num"] = ep_num
+                identificacao["sequencia"] = f"EP {ep_num}"
+
             resp = requests.post(f"{SEO_URL}/api/auto-guide",
                 json={"roteiro": roteiro, "identificacao": identificacao},
                 timeout=120)
