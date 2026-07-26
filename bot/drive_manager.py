@@ -147,22 +147,31 @@ class DriveManager:
             query = f"'{parent_id}' in parents and trashed=false"
             results = self.service.files().list(q=query, fields="files(id, name)", orderBy="modifiedTime desc").execute()
             existentes = [f for f in results.get("files", []) if f["name"] == nome_arquivo]
-            media = MediaFileUpload(caminho_local, resumable=True)
+            media = MediaFileUpload(caminho_local, resumable=True, chunksize=5*1024*1024)
 
-            if existentes:
-                self.service.files().update(fileId=existentes[0]["id"], media_body=media).execute()
-                # Limpar quaisquer arquivos duplicados adicionais mais antigos com o mesmo nome
-                for ext in existentes[1:]:
-                    try:
-                        self.service.files().delete(fileId=ext["id"]).execute()
-                        print(f"  Deletado duplicado histórico do arquivo no salvar: {caminho_drive} (ID: {ext['id']})")
-                    except Exception as ed:
-                        print(f"  Erro ao deletar duplicado antigo no salvar: {ed}")
-            else:
-                self.service.files().create(
-                    body={"name": nome_arquivo, "parents": [parent_id]},
-                    media_body=media, fields="id"
-                ).execute()
+            for tentativa in range(3):
+                try:
+                    if existentes:
+                        self.service.files().update(fileId=existentes[0]["id"], media_body=media).execute()
+                        # Limpar quaisquer arquivos duplicados adicionais mais antigos com o mesmo nome
+                        for ext in existentes[1:]:
+                            try:
+                                self.service.files().delete(fileId=ext["id"]).execute()
+                                print(f"  Deletado duplicado histórico do arquivo no salvar: {caminho_drive} (ID: {ext['id']})")
+                            except Exception as ed:
+                                print(f"  Erro ao deletar duplicado antigo no salvar: {ed}")
+                    else:
+                        self.service.files().create(
+                            body={"name": nome_arquivo, "parents": [parent_id]},
+                            media_body=media, fields="id"
+                        ).execute()
+                    break
+                except Exception as ex_up:
+                    if tentativa == 2:
+                        raise ex_up
+                    import time
+                    print(f"  [RETRY {tentativa+1}/3] Falha temporária no upload de {nome_arquivo}: {ex_up}")
+                    time.sleep(2)
             print(f"  Salvo: {caminho_drive}")
             return True
         except Exception as e:
@@ -357,6 +366,12 @@ def split_video(input_path, output_dir, parts=5):
         pt_path = os.path.join(output_dir, f"video_pt{i+1}.mp4")
         start_time = i * part_duration
         
+        # Se a parte já foi gerada anteriormente e tem tamanho válido, reaproveita
+        if os.path.exists(pt_path) and os.path.getsize(pt_path) > 1000:
+            print(f"  Reaproveitando parte já dividida: video_pt{i+1}.mp4")
+            paths.append(pt_path)
+            continue
+
         cmd = [
             FFMPEG, "-y", "-ss", str(start_time), "-i", input_path
         ]
@@ -370,7 +385,11 @@ def split_video(input_path, output_dir, parts=5):
             pt_path
         ])
         
-        subprocess.run(cmd, check=True, capture_output=True)
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if res.returncode != 0:
+            err_msg = res.stderr.decode("utf-8", errors="ignore")
+            print(f"  ❌ Erro no FFmpeg ao dividir parte {i+1}: {err_msg}")
+            raise RuntimeError(f"FFmpeg falhou ao dividir parte {i+1}: {err_msg}")
         paths.append(pt_path)
 
     import json
