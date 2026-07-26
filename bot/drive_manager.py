@@ -144,9 +144,9 @@ class DriveManager:
             pasta_drive = "/".join(partes[:-1]) if len(partes) > 1 else ""
             parent_id = self._garantir_pasta(pasta_drive) if pasta_drive else "root"
 
-            query = f"name='{self._esc(nome_arquivo)}' and '{parent_id}' in parents and trashed=false"
-            results = self.service.files().list(q=query, fields="files(id)", orderBy="modifiedTime desc").execute()
-            existentes = results.get("files", [])
+            query = f"'{parent_id}' in parents and trashed=false"
+            results = self.service.files().list(q=query, fields="files(id, name)", orderBy="modifiedTime desc").execute()
+            existentes = [f for f in results.get("files", []) if f["name"] == nome_arquivo]
             media = MediaFileUpload(caminho_local, resumable=True)
 
             if existentes:

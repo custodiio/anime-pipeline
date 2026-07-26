@@ -1459,10 +1459,10 @@ def main():
                 if os.path.exists(_scrapper_db_path):
                     _sc = _sqlite3.connect(_scrapper_db_path)
                     _sc_cur = _sc.cursor()
-                    _sc_cur.execute("SELECT key, value FROM user_settings WHERE key IN ('default_post_youtube', 'default_post_shorts', 'default_post_tiktok', 'default_post_instagram')")
+                    _sc_cur.execute("SELECT key, value FROM user_settings WHERE key IN ('default_post_shorts', 'default_post_tiktok', 'default_post_instagram')")
                     _settings = dict(_sc_cur.fetchall())
                     _sc.close()
-                    _post_yt      = int(_settings.get("default_post_youtube", 1))
+                    _post_yt      = 0  # Desativado por regra: apenas Shorts no YouTube
                     _post_shorts  = int(_settings.get("default_post_shorts", 1))
                     _post_tiktok  = int(_settings.get("default_post_tiktok", 1))
                     _post_insta   = int(_settings.get("default_post_instagram", 0))
