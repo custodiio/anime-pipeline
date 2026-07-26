@@ -369,7 +369,16 @@ if baixar_do_drive(f"{DRIVE_RENDER}/pt0_renderizado.mp4", f"{BASE_PATH}/pt0_rend
     parts_list.append(0)
     print("  [INTRO] pt0_renderizado.mp4 baixado com sucesso!")
 
-for i in range(1, 31):
+total_parts = 30
+if baixar_do_drive(f"{DRIVE_ATIVO}/split_info.json", f"{BASE_PATH}/split_info.json"):
+    try:
+        with open(f"{BASE_PATH}/split_info.json", "r") as f:
+            total_parts = json.load(f).get("parts", 30)
+            print(f"  [INFO] Projeto ativo possui {total_parts} partes.")
+    except Exception as ex:
+        print(f"  [AVISO] Erro lendo split_info.json: {ex}")
+
+for i in range(1, total_parts + 1):
     if baixar_do_drive(f"{DRIVE_RENDER}/pt{i}_renderizado.mp4", f"{BASE_PATH}/pt{i}_renderizado.mp4"):
         parts_list.append(i)
         print(f"  Parte {i} (pt{i}_renderizado.mp4) baixada!")
