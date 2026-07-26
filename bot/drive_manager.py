@@ -12,6 +12,8 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
+import threading
+
 # Caminhos padronizados no Drive
 DRIVE_BASE = "KAGGLE/PIPELINE"
 DRIVE_ATIVO = f"{DRIVE_BASE}/ATIVO"
@@ -31,6 +33,7 @@ class DriveManager:
         self.client_id = client_id or os.getenv("DRIVE_CLIENT_ID", "")
         self.client_secret = client_secret or os.getenv("DRIVE_CLIENT_SECRET", "")
         self.service = None
+        self._lock = threading.Lock()
         self._authenticate()
 
     def _authenticate(self):
@@ -58,35 +61,37 @@ class DriveManager:
 
     def _buscar_id(self, caminho_no_drive):
         """Resolve caminho do Drive para file ID."""
-        partes = caminho_no_drive.strip("/").split("/")
-        parent_id = "root"
-        for parte in partes:
-            query = f"name='{self._esc(parte)}' and '{parent_id}' in parents and trashed=false"
-            # Adicionado orderBy para garantir que arquivos mais novos fiquem no topo se houver duplicidade
-            results = self.service.files().list(q=query, fields="files(id, mimeType)", orderBy="modifiedTime desc").execute()
-            arquivos = results.get("files", [])
-            if not arquivos:
-                return None
-            parent_id = arquivos[0]["id"]
-        return parent_id
+        with self._lock:
+            partes = caminho_no_drive.strip("/").split("/")
+            parent_id = "root"
+            for parte in partes:
+                query = f"name='{self._esc(parte)}' and '{parent_id}' in parents and trashed=false"
+                # Adicionado orderBy para garantir que arquivos mais novos fiquem no topo se houver duplicidade
+                results = self.service.files().list(q=query, fields="files(id, mimeType)", orderBy="modifiedTime desc").execute()
+                arquivos = results.get("files", [])
+                if not arquivos:
+                    return None
+                parent_id = arquivos[0]["id"]
+            return parent_id
 
     def _garantir_pasta(self, caminho_pasta):
         """Garante que a hierarquia de pastas existe, criando se necessario."""
-        partes = caminho_pasta.strip("/").split("/")
-        parent_id = "root"
-        for pasta in partes:
-            query = f"name='{self._esc(pasta)}' and '{parent_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
-            results = self.service.files().list(q=query, fields="files(id)").execute()
-            existentes = results.get("files", [])
-            if existentes:
-                parent_id = existentes[0]["id"]
-            else:
-                nova = self.service.files().create(
-                    body={"name": pasta, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]},
-                    fields="id"
-                ).execute()
-                parent_id = nova["id"]
-        return parent_id
+        with self._lock:
+            partes = caminho_pasta.strip("/").split("/")
+            parent_id = "root"
+            for pasta in partes:
+                query = f"name='{self._esc(pasta)}' and '{parent_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
+                results = self.service.files().list(q=query, fields="files(id)").execute()
+                existentes = results.get("files", [])
+                if existentes:
+                    parent_id = existentes[0]["id"]
+                else:
+                    nova = self.service.files().create(
+                        body={"name": pasta, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]},
+                        fields="id"
+                    ).execute()
+                    parent_id = nova["id"]
+            return parent_id
 
     def baixar(self, caminho_drive, destino_local):
         """Baixa arquivo do Drive para local."""
