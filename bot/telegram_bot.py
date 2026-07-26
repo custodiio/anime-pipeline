@@ -14,6 +14,7 @@ import logging
 import uuid
 import hashlib
 import time
+import json
 from functools import wraps
 
 # Força UTF-8 no console do Windows (evita charmap error com emojis)
