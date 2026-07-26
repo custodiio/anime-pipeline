@@ -1402,8 +1402,16 @@ def main():
             title_yt = guia.get("titulo_principal") or proj.get("project_name", "Vídeo AnimeRecap")
             desc_yt = guia.get("descricao") or ""
             tiktok_guia = guia.get("tiktok_guia") or ""
-            tiktok_caption = tiktok_guia if tiktok_guia else f"{title_yt}\n\n#anime #recap #shorts"
-            desc_shorts = f"{desc_yt}\n\n#Shorts" if desc_yt else title_yt
+
+            # Regra: Se der erro no guia ou não houver descrição, postar apenas com as 5 hashtags sem texto
+            DEFAULT_HASHTAGS = "#anime #resumo #manhwa #fyp #tiktok"
+            if not desc_yt or not desc_yt.strip():
+                desc_yt = DEFAULT_HASHTAGS
+                tiktok_caption = DEFAULT_HASHTAGS
+                desc_shorts = f"{DEFAULT_HASHTAGS}\n\n#Shorts"
+            else:
+                tiktok_caption = tiktok_guia if tiktok_guia else f"{title_yt}\n\n#anime #recap #shorts"
+                desc_shorts = f"{desc_yt}\n\n#Shorts"
 
             # 2. Conectar ao posts.db do Post_recap
             post_recap_db_path = "/home/ubuntu/apps/Post_recap/posts.db"
