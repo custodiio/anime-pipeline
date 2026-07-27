@@ -143,45 +143,46 @@ class DriveManager:
         """Salva arquivo local no Drive (cria ou atualiza)."""
         if not self.service or not os.path.exists(caminho_local):
             return False
-        try:
-            partes = caminho_drive.strip("/").split("/")
-            nome_arquivo = partes[-1]
-            pasta_drive = "/".join(partes[:-1]) if len(partes) > 1 else ""
-            parent_id = self._garantir_pasta(pasta_drive) if pasta_drive else "root"
+        with self._lock:
+            try:
+                partes = caminho_drive.strip("/").split("/")
+                nome_arquivo = partes[-1]
+                pasta_drive = "/".join(partes[:-1]) if len(partes) > 1 else ""
+                parent_id = self._garantir_pasta(pasta_drive) if pasta_drive else "root"
 
-            query = f"'{parent_id}' in parents and trashed=false"
-            results = self.service.files().list(q=query, fields="files(id, name)", orderBy="modifiedTime desc").execute()
-            existentes = [f for f in results.get("files", []) if f["name"] == nome_arquivo]
-            media = MediaFileUpload(caminho_local, resumable=True, chunksize=5*1024*1024)
+                query = f"'{parent_id}' in parents and trashed=false"
+                results = self.service.files().list(q=query, fields="files(id, name)", orderBy="modifiedTime desc").execute()
+                existentes = [f for f in results.get("files", []) if f["name"] == nome_arquivo]
+                media = MediaFileUpload(caminho_local, resumable=True, chunksize=5*1024*1024)
 
-            for tentativa in range(3):
-                try:
-                    if existentes:
-                        self.service.files().update(fileId=existentes[0]["id"], media_body=media).execute()
-                        # Limpar quaisquer arquivos duplicados adicionais mais antigos com o mesmo nome
-                        for ext in existentes[1:]:
-                            try:
-                                self.service.files().delete(fileId=ext["id"]).execute()
-                                print(f"  Deletado duplicado histórico do arquivo no salvar: {caminho_drive} (ID: {ext['id']})")
-                            except Exception as ed:
-                                print(f"  Erro ao deletar duplicado antigo no salvar: {ed}")
-                    else:
-                        self.service.files().create(
-                            body={"name": nome_arquivo, "parents": [parent_id]},
-                            media_body=media, fields="id"
-                        ).execute()
-                    break
-                except Exception as ex_up:
-                    if tentativa == 2:
-                        raise ex_up
-                    import time
-                    print(f"  [RETRY {tentativa+1}/3] Falha temporária no upload de {nome_arquivo}: {ex_up}")
-                    time.sleep(2)
-            print(f"  Salvo: {caminho_drive}")
-            return True
-        except Exception as e:
-            print(f"  Erro ao salvar {caminho_drive}: {e}")
-            return False
+                for tentativa in range(3):
+                    try:
+                        if existentes:
+                            self.service.files().update(fileId=existentes[0]["id"], media_body=media).execute()
+                            # Limpar quaisquer arquivos duplicados adicionais mais antigos com o mesmo nome
+                            for ext in existentes[1:]:
+                                try:
+                                    self.service.files().delete(fileId=ext["id"]).execute()
+                                    print(f"  Deletado duplicado histórico do arquivo no salvar: {caminho_drive} (ID: {ext['id']})")
+                                except Exception as ed:
+                                    print(f"  Erro ao deletar duplicado antigo no salvar: {ed}")
+                        else:
+                            self.service.files().create(
+                                body={"name": nome_arquivo, "parents": [parent_id]},
+                                media_body=media, fields="id"
+                            ).execute()
+                        break
+                    except Exception as ex_up:
+                        if tentativa == 2:
+                            raise ex_up
+                        import time
+                        print(f"  [RETRY {tentativa+1}/3] Falha temporária no upload de {nome_arquivo}: {ex_up}")
+                        time.sleep(2)
+                print(f"  Salvo: {caminho_drive}")
+                return True
+            except Exception as e:
+                print(f"  Erro ao salvar {caminho_drive}: {e}")
+                return False
 
     def listar_arquivos(self, caminho_pasta):
         """Lista arquivos em uma pasta do Drive."""
@@ -356,6 +357,11 @@ def split_video(input_path, output_dir, parts=5):
     Retorna uma lista com os caminhos dos arquivos gerados.
     """
     os.makedirs(output_dir, exist_ok=True)
+    # Limpar cortes locais antigos para evitar reaproveitar vídeos do projeto anterior
+    for f in os.listdir(output_dir):
+        if f.startswith("video_pt") or f == "split_info.json":
+            try: os.remove(os.path.join(output_dir, f))
+            except: pass
 
     result = subprocess.run(
         [FFPROBE, "-v", "error", "-show_entries", "format=duration",
