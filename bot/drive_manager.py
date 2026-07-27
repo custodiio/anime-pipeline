@@ -33,7 +33,7 @@ class DriveManager:
         self.client_id = client_id or os.getenv("DRIVE_CLIENT_ID", "")
         self.client_secret = client_secret or os.getenv("DRIVE_CLIENT_SECRET", "")
         self.service = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._authenticate()
 
     def _authenticate(self):
