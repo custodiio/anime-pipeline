@@ -239,6 +239,27 @@ if drive_service and NOME_NARRADOR:
                     REF_TEXT = _tf.read().strip()
                 print(f"  Texto de referência carregado de arquivo: '{REF_TEXT[:60]}...'")
 
+# Fallback de Voz Padrão Unificada se não houver áudio em CLONAGEM
+if not REF_AUDIO_PATH or not os.path.exists(REF_AUDIO_PATH):
+    print("  ⚠️ Áudio de clonagem customizado não encontrado. Gerando voz sintética fixa de referência (Antonio)...")
+    _def_wav = f"{BASE_PATH}/INPUT/CLONAGEM/default_narrator.wav"
+    _def_txt_content = "Este é um exemplo de áudio de referência para a narração do anime em português."
+    if not os.path.exists(_def_wav):
+        os.makedirs(f"{BASE_PATH}/INPUT/CLONAGEM", exist_ok=True)
+        os.system("pip install -q edge-tts > /dev/null 2>&1")
+        _def_mp3 = f"{BASE_PATH}/INPUT/CLONAGEM/default_narrator.mp3"
+        os.system(f'edge-tts --text "{_def_txt_content}" --voice pt-BR-AntonioNeural --write-media "{_def_mp3}" > /dev/null 2>&1')
+        if os.path.exists(_def_mp3):
+            try:
+                AudioSegment.from_file(_def_mp3).export(_def_wav, format="wav")
+                os.remove(_def_mp3)
+            except Exception as _ex_conv:
+                print(f"  Erro ao converter default_narrator.mp3: {_ex_conv}")
+    if os.path.exists(_def_wav):
+        REF_AUDIO_PATH = _def_wav
+        REF_TEXT = _def_txt_content
+        print(f"  Voz de referência fixa padronizada: {REF_AUDIO_PATH}")
+
 # Carregar Whisper para STT / verificação de clonagem
 whisper_model = None
 try:
