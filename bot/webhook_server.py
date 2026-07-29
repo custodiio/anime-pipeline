@@ -645,7 +645,7 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
                 with open(file_path, "wb") as f:
                     bytes_read = 0
                     while bytes_read < length:
-                        chunk = self.rfile.read(min(8192*8, length - bytes_read))
+                        chunk = self.rfile.read(min(4096*1024, length - bytes_read))
                         if not chunk: break
                         f.write(chunk)
                         bytes_read += len(chunk)
