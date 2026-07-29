@@ -7,7 +7,7 @@ import os
 import json
 import logging
 import mimetypes
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import threading
 from dotenv import load_dotenv
@@ -815,7 +815,7 @@ def start_webhook_server(port=None):
     """Inicia o servidor webhook em background."""
     port = port or int(os.getenv("WEBHOOK_PORT", "8080"))
 
-    server = HTTPServer(("0.0.0.0", port), PipelineWebhookHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), PipelineWebhookHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     logger.info(f"Webhook server rodando na porta {port}")
@@ -826,5 +826,5 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     port = int(os.getenv("WEBHOOK_PORT", "8080"))
     print(f"Iniciando webhook server na porta {port}...")
-    server = HTTPServer(("0.0.0.0", port), PipelineWebhookHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), PipelineWebhookHandler)
     server.serve_forever()

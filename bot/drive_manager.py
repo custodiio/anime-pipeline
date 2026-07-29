@@ -99,41 +99,43 @@ class DriveManager:
             return True
         if not self.service:
             return False
-        try:
-            file_id = self._buscar_id(caminho_drive)
-            if not file_id:
-                print(f"  Arquivo nao encontrado: {caminho_drive}")
+        with self._lock:
+            try:
+                file_id = self._buscar_id(caminho_drive)
+                if not file_id:
+                    print(f"  Arquivo nao encontrado: {caminho_drive}")
+                    return False
+                request = self.service.files().get_media(fileId=file_id)
+                os.makedirs(os.path.dirname(destino_local) or ".", exist_ok=True)
+                with open(destino_local, "wb") as fh:
+                    downloader = MediaIoBaseDownload(fh, request)
+                    done = False
+                    while not done:
+                        _, done = downloader.next_chunk()
+                print(f"  Baixado: {caminho_drive}")
+                return True
+            except Exception as e:
+                print(f"  Erro ao baixar {caminho_drive}: {e}")
                 return False
-            request = self.service.files().get_media(fileId=file_id)
-            os.makedirs(os.path.dirname(destino_local) or ".", exist_ok=True)
-            with open(destino_local, "wb") as fh:
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    _, done = downloader.next_chunk()
-            print(f"  Baixado: {caminho_drive}")
-            return True
-        except Exception as e:
-            print(f"  Erro ao baixar {caminho_drive}: {e}")
-            return False
 
     def baixar_por_id(self, file_id, destino_local):
         """Baixa um arquivo do Drive diretamente pelo file_id."""
         if not self.service or not file_id:
             return False
-        try:
-            request = self.service.files().get_media(fileId=file_id)
-            os.makedirs(os.path.dirname(destino_local) or ".", exist_ok=True)
-            with open(destino_local, "wb") as fh:
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    _, done = downloader.next_chunk()
-            print(f"  Baixado por ID ({file_id}): {destino_local}")
-            return True
-        except Exception as e:
-            print(f"  Erro ao baixar por ID ({file_id}): {e}")
-            return False
+        with self._lock:
+            try:
+                request = self.service.files().get_media(fileId=file_id)
+                os.makedirs(os.path.dirname(destino_local) or ".", exist_ok=True)
+                with open(destino_local, "wb") as fh:
+                    downloader = MediaIoBaseDownload(fh, request)
+                    done = False
+                    while not done:
+                        _, done = downloader.next_chunk()
+                print(f"  Baixado por ID ({file_id}): {destino_local}")
+                return True
+            except Exception as e:
+                print(f"  Erro ao baixar por ID ({file_id}): {e}")
+                return False
 
     def upload(self, caminho_local, caminho_drive):
         """Alias para salvar."""
@@ -188,97 +190,101 @@ class DriveManager:
         """Lista arquivos em uma pasta do Drive."""
         if not self.service:
             return []
-        folder_id = self._buscar_id(caminho_pasta)
-        if not folder_id:
-            return []
-        results = self.service.files().list(
-            q=f"'{folder_id}' in parents and trashed=false",
-            fields="files(id, name, mimeType, size, modifiedTime)"
-        ).execute()
-        return results.get("files", [])
+        with self._lock:
+            folder_id = self._buscar_id(caminho_pasta)
+            if not folder_id:
+                return []
+            results = self.service.files().list(
+                q=f"'{folder_id}' in parents and trashed=false",
+                fields="files(id, name, mimeType, size, modifiedTime)"
+            ).execute()
+            return results.get("files", [])
 
     def copiar_arquivo(self, caminho_origem, caminho_destino):
         """Copia um arquivo no Drive de um caminho para outro, prevenindo duplicados."""
-        try:
-            arq_id = self._buscar_id(caminho_origem)
-            if not arq_id:
-                print(f"Origem não encontrada: {caminho_origem}")
-                return False
+        with self._lock:
+            try:
+                arq_id = self._buscar_id(caminho_origem)
+                if not arq_id:
+                    print(f"Origem não encontrada: {caminho_origem}")
+                    return False
+                    
+                dir_dest, nome_dest = caminho_destino.rsplit("/", 1)
+                dir_dest_id = self._garantir_pasta(dir_dest)
                 
-            dir_dest, nome_dest = caminho_destino.rsplit("/", 1)
-            dir_dest_id = self._garantir_pasta(dir_dest)
-            
-            # Prevenir duplicidades deletando o arquivo de mesmo nome existente no destino
-            existente_id = self._buscar_id(caminho_destino)
-            if existente_id:
-                try:
-                    self.service.files().delete(fileId=existente_id).execute()
-                    print(f"  Deletado arquivo duplicado existente no destino: {caminho_destino}")
-                except Exception as ed:
-                    print(f"  Erro ao deletar duplicado no destino: {ed}")
-            
-            body = {
-                'name': nome_dest,
-                'parents': [dir_dest_id]
-            }
-            self.service.files().copy(fileId=arq_id, body=body).execute()
-            print(f"  Copiado: {caminho_origem} -> {caminho_destino}")
-            return True
-        except Exception as e:
-            print(f"Erro ao copiar {caminho_origem} para {caminho_destino}: {e}")
-            return False
+                # Prevenir duplicidades deletando o arquivo de mesmo nome existente no destino
+                existente_id = self._buscar_id(caminho_destino)
+                if existente_id:
+                    try:
+                        self.service.files().delete(fileId=existente_id).execute()
+                        print(f"  Deletado arquivo duplicado existente no destino: {caminho_destino}")
+                    except Exception as ed:
+                        print(f"  Erro ao deletar duplicado no destino: {ed}")
+                
+                body = {
+                    'name': nome_dest,
+                    'parents': [dir_dest_id]
+                }
+                self.service.files().copy(fileId=arq_id, body=body).execute()
+                print(f"  Copiado: {caminho_origem} -> {caminho_destino}")
+                return True
+            except Exception as e:
+                print(f"Erro ao copiar {caminho_origem} para {caminho_destino}: {e}")
+                return False
 
     def mover_arquivo(self, file_id, nova_pasta_id):
         """Move um arquivo para outra pasta."""
         if not self.service:
             return
-        file_info = self.service.files().get(fileId=file_id, fields="parents").execute()
-        previous_parents = ",".join(file_info.get("parents", []))
-        self.service.files().update(
-            fileId=file_id,
-            addParents=nova_pasta_id,
-            removeParents=previous_parents,
-            fields="id, parents"
-        ).execute()
+        with self._lock:
+            file_info = self.service.files().get(fileId=file_id, fields="parents").execute()
+            previous_parents = ",".join(file_info.get("parents", []))
+            self.service.files().update(
+                fileId=file_id,
+                addParents=nova_pasta_id,
+                removeParents=previous_parents,
+                fields="id, parents"
+            ).execute()
 
     def get_file_link(self, caminho_drive):
         """Retorna o webViewLink de um arquivo no Drive."""
         if not self.service:
             return None
-        file_id = self._buscar_id(caminho_drive)
-        if not file_id:
-            return None
-        try:
-            file_info = self.service.files().get(fileId=file_id, fields="webViewLink").execute()
-            return file_info.get("webViewLink")
-        except Exception as e:
-            print(f"Erro ao obter link do arquivo {caminho_drive}: {e}")
-            return None
+        with self._lock:
+            file_id = self._buscar_id(caminho_drive)
+            if not file_id:
+                return None
+            try:
+                file_info = self.service.files().get(fileId=file_id, fields="webViewLink").execute()
+                return file_info.get("webViewLink")
+            except Exception as e:
+                print(f"Erro ao obter link do arquivo {caminho_drive}: {e}")
+                return None
 
     def limpar_pasta_ativo(self):
         """Deleta todo o conteúdo de ATIVO e das demais pastas do pipeline."""
         if not self.service:
             return
-
-        print("🧹 Iniciando limpeza profunda do projeto anterior...")
-        
-        pastas_para_limpar = [
-            DRIVE_ATIVO, DRIVE_WATERMARK, DRIVE_ENHANCER, 
-            DRIVE_OMNI, DRIVE_RENDER, DRIVE_FINAL
-        ]
-        
-        total_deletado = 0
-        for pasta in pastas_para_limpar:
-            arquivos = self.listar_arquivos(pasta)
-            for arq in arquivos:
-                try:
-                    self.service.files().delete(fileId=arq["id"]).execute()
-                    print(f"  🗑️ Deletado de {pasta}: {arq['name']}")
-                    total_deletado += 1
-                except Exception as e:
-                    print(f"  ❌ Erro ao deletar {arq['name']} em {pasta}: {e}")
-                    
-        print(f"✅ Limpeza concluída. {total_deletado} arquivos antigos removidos do Drive.")
+        with self._lock:
+            print("🧹 Iniciando limpeza profunda do projeto anterior...")
+            
+            pastas_para_limpar = [
+                DRIVE_ATIVO, DRIVE_WATERMARK, DRIVE_ENHANCER, 
+                DRIVE_OMNI, DRIVE_RENDER, DRIVE_FINAL
+            ]
+            
+            total_deletado = 0
+            for pasta in pastas_para_limpar:
+                arquivos = self.listar_arquivos(pasta)
+                for arq in arquivos:
+                    try:
+                        self.service.files().delete(fileId=arq["id"]).execute()
+                        print(f"  🗑️ Deletado de {pasta}: {arq['name']}")
+                        total_deletado += 1
+                    except Exception as e:
+                        print(f"  ❌ Erro ao deletar {arq['name']} em {pasta}: {e}")
+                        
+            print(f"✅ Limpeza concluída. {total_deletado} arquivos antigos removidos do Drive.")
 
     def limpar_audio_dub_cache(self):
         """Apaga os JSONs de cache e outputs do AUDIO_DUB para forçar reprocessamento no Omni.
@@ -286,52 +292,53 @@ class DriveManager:
         """
         if not self.service:
             return
-        # 1. Limpar arquivos soltos na raiz do AUDIO_DUB (transcrições, roteiros, zips, guias)
-        try:
-            arqs_raiz = self.listar_arquivos("KAGGLE/AUDIO_DUB")
-            for arq in arqs_raiz:
-                nome = arq["name"].lower()
-                # Proteger pastas (INPUT, OUTPUT, CLONAGEM, etc)
-                if arq.get("mimeType") == "application/vnd.google-apps.folder":
-                    continue
-                # Apagar qualquer arquivo solto que o omni gera (.json, .txt, .zip, .srt, .ass)
-                if nome.endswith(".json") or nome.endswith(".txt") or nome.endswith(".zip") or nome.endswith(".srt") or nome.endswith(".ass"):
+        with self._lock:
+            # 1. Limpar arquivos soltos na raiz do AUDIO_DUB (transcrições, roteiros, zips, guias)
+            try:
+                arqs_raiz = self.listar_arquivos("KAGGLE/AUDIO_DUB")
+                for arq in arqs_raiz:
+                    nome = arq["name"].lower()
+                    # Proteger pastas (INPUT, OUTPUT, CLONAGEM, etc)
+                    if arq.get("mimeType") == "application/vnd.google-apps.folder":
+                        continue
+                    # Apagar qualquer arquivo solto que o omni gera (.json, .txt, .zip, .srt, .ass)
+                    if nome.endswith(".json") or nome.endswith(".txt") or nome.endswith(".zip") or nome.endswith(".srt") or nome.endswith(".ass"):
+                        try:
+                            self.service.files().delete(fileId=arq["id"]).execute()
+                            print(f"  Resquício removido da raiz: {arq['name']}")
+                        except Exception as e:
+                            print(f"  Erro ao remover {arq['name']}: {e}")
+            except Exception as e:
+                print(f"  Erro ao listar raiz AUDIO_DUB: {e}")
+
+            # 2. Limpar pasta OUTPUT (mp3/srt de projetos anteriores)
+            try:
+                arqs = self.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
+                for arq in arqs:
                     try:
                         self.service.files().delete(fileId=arq["id"]).execute()
-                        print(f"  Resquício removido da raiz: {arq['name']}")
-                    except Exception as e:
-                        print(f"  Erro ao remover {arq['name']}: {e}")
-        except Exception as e:
-            print(f"  Erro ao listar raiz AUDIO_DUB: {e}")
-
-        # 2. Limpar pasta OUTPUT (mp3/srt de projetos anteriores)
-        try:
-            arqs = self.listar_arquivos("KAGGLE/AUDIO_DUB/OUTPUT")
-            for arq in arqs:
-                try:
-                    self.service.files().delete(fileId=arq["id"]).execute()
-                    print(f"  Output antigo removido: KAGGLE/AUDIO_DUB/OUTPUT/{arq['name']}")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # 3. Limpar pasta INPUT (áudio antigo do projeto anterior)
-        #    PRESERVA: subpasta CLONAGEM (contém áudio de referência de voz)
-        try:
-            arqs = self.listar_arquivos("KAGGLE/AUDIO_DUB/INPUT")
-            for arq in arqs:
-                # Proteger a pasta CLONAGEM
-                if arq.get("mimeType") == "application/vnd.google-apps.folder":
-                    print(f"  Pasta preservada: INPUT/{arq['name']}")
-                    continue
-                try:
-                    self.service.files().delete(fileId=arq["id"]).execute()
-                    print(f"  Input antigo removido: KAGGLE/AUDIO_DUB/INPUT/{arq['name']}")
-                except Exception:
-                    pass
-        except Exception:
+                        print(f"  Output antigo removido: KAGGLE/AUDIO_DUB/OUTPUT/{arq['name']}")
+                    except Exception:
+                        pass
+            except Exception:
                 pass
+
+            # 3. Limpar pasta INPUT (áudio antigo do projeto anterior)
+            #    PRESERVA: subpasta CLONAGEM (contém áudio de referência de voz)
+            try:
+                arqs = self.listar_arquivos("KAGGLE/AUDIO_DUB/INPUT")
+                for arq in arqs:
+                    # Proteger a pasta CLONAGEM
+                    if arq.get("mimeType") == "application/vnd.google-apps.folder":
+                        print(f"  Pasta preservada: INPUT/{arq['name']}")
+                        continue
+                    try:
+                        self.service.files().delete(fileId=arq["id"]).execute()
+                        print(f"  Input antigo removido: KAGGLE/AUDIO_DUB/INPUT/{arq['name']}")
+                    except Exception as e:
+                        print(f"  Erro ao deletar {arq['name']}: {e}")
+            except Exception as e:
+                print(f"  Erro ao listar INPUT AUDIO_DUB: {e}")
 
 
 def _find_bin(name):
