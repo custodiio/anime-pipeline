@@ -307,45 +307,61 @@ def azure_generate(prompt, response_format=None, system_instruction=None):
     return resp.choices[0].message.content
 
 def gemini_generate(model_chain, contents, config=None, task_name=None):
-    first_model = model_chain[0]
-    try:
-        kwargs = {"model": first_model, "contents": contents}
-        if config: kwargs["config"] = config
-        response = client_gemini.models.generate_content(**kwargs)
-        print(f"  [OK] {task_name or 'gemini_generate'} -> {first_model}")
-        return response
-    except Exception as e:
-        if AZURE_ENABLED and client_azure:
-            try:
-                sys_inst = None
-                resp_fmt = None
-                if config:
-                    if isinstance(config, dict):
-                        sys_inst = config.get("system_instruction")
-                        if config.get("response_mime_type") == "application/json":
-                            resp_fmt = {"type": "json_object"}
-                    else:
-                        sys_inst = getattr(config, "system_instruction", None)
-                        if getattr(config, "response_mime_type", None) == "application/json":
-                            resp_fmt = {"type": "json_object"}
-                azure_text = azure_generate(contents, resp_fmt, sys_inst)
-                print(f"  [OK] {task_name or 'gemini_generate'} -> Azure")
-                class FakeResp:
-                    def __init__(self, text): self.text = text
-                return FakeResp(azure_text)
-            except Exception as ae:
-                print(f"  [AZURE FAIL] Azure OpenAI falhou: {ae}")
-        last_exc = e
-        for model in model_chain[1:]:
-            try:
-                kwargs = {"model": model, "contents": contents}
-                if config: kwargs["config"] = config
-                response = client_gemini.models.generate_content(**kwargs)
-                print(f"  [OK] {task_name or 'gemini_generate'} -> {model}")
-                return response
-            except Exception as e2:
-                last_exc = e2
+    """
+    Tenta gerar conteúdo pelo Azure OpenAI (se habilitado) ou pelo Gemini (como fallback/padrão).
+    """
+    global AZURE_ENABLED
+
+    # 1. Se habilitado no bot, tenta Azure OpenAI primeiro
+    if AZURE_ENABLED and client_azure:
+        print(f"  [AZURE] Tentando Azure OpenAI ({AZURE_OPENAI_DEPLOYMENT}) como modelo principal...")
+        try:
+            sys_inst = None
+            resp_fmt = None
+            if config:
+                if isinstance(config, dict):
+                    sys_inst = config.get("system_instruction")
+                    if config.get("response_mime_type") == "application/json":
+                        resp_fmt = {"type": "json_object"}
+                else:
+                    sys_inst = getattr(config, "system_instruction", None)
+                    if getattr(config, "response_mime_type", None) == "application/json":
+                        resp_fmt = {"type": "json_object"}
+            
+            azure_text = azure_generate(contents, resp_fmt, sys_inst)
+            print(f"  [OK] {task_name or 'gemini_generate'} -> Azure ({AZURE_OPENAI_DEPLOYMENT})")
+            
+            class FakeResp:
+                def __init__(self, text):
+                    self.text = text
+            return FakeResp(azure_text)
+        except Exception as ae:
+            print(f"  [AZURE FAIL] Azure OpenAI falhou: {ae}. Tentando Gemini como fallback...")
+
+    # 2. Se Azure desativado ou falhar, tenta a cadeia de modelos Gemini
+    if client_gemini is None:
+        raise RuntimeError("client_gemini nao inicializado — verifique GEMINI_API_KEY no .env")
+
+    last_exc = None
+    for model in model_chain:
+        try:
+            kwargs = {"model": model, "contents": contents}
+            if config: kwargs["config"] = config
+            response = client_gemini.models.generate_content(**kwargs)
+            print(f"  [OK] {task_name or 'gemini_generate'} -> {model}")
+            return response
+        except Exception as e:
+            if _is_quota_error(e):
+                print(f"  [QUOTA] {model}: {str(e)[:80]} — tentando proximo...")
+                last_exc = e
+                time.sleep(2)
                 continue
+            else:
+                last_exc = e
+                print(f"  [FAIL] {model} falhou: {str(e)[:100]}")
+                continue
+
+    if last_exc is not None:
         raise RuntimeError(f"Todos os modelos falharam. Ultimo erro: {last_exc}")
 
 GPU_COUNT = torch.cuda.device_count()
