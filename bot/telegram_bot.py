@@ -1379,11 +1379,60 @@ def main():
     def agendar_publicacao_automatica_postrecap(project_id):
         """
         Lê o guia_postagem.json e video_final.mp4 do Drive e registra o agendamento no Post_recap (posts.db).
-        Baixa o vídeo para a pasta física de staging local /home/ubuntu/apps/Post_recap/scheduled_posts/post_<id>/video.mp4.
-        Calcula o próximo slot disponível de 12h ou 18h no horário local de Brasília.
         """
         try:
             proj = get_project(project_id)
+            if not proj:
+                logger.error(f"[POSTRECAP INTEGRATION] Projeto {project_id} não encontrado.")
+                return False
+
+            # Obter nome limpo do anime/coleção e número do episódio para renomear o arquivo
+            project_name = proj.get("project_name", "")
+            anime_filename = "video" # Fallback
+            
+            try:
+                import re as _re_parse
+                import sqlite3 as _sqlite_parse
+                match = _re_parse.match(r"Recap_Col_(.+)_EP(\d+)", project_name)
+                if match:
+                    mix_id_parsed = match.group(1)
+                    ep_num_parsed = match.group(2)
+                    
+                    _sc_path = "/app/scrapper_douyin/data/history.db"
+                    if os.path.exists(_sc_path):
+                        _sc_conn = _sqlite_parse.connect(_sc_path)
+                        _sc_cur = _sc_conn.cursor()
+                        # Busca título em português (title_pt) e chinês (title_zh)
+                        _sc_cur.execute("SELECT title_pt, title_zh FROM douyin_collections WHERE mix_id = ?", (mix_id_parsed,))
+                        row_col = _sc_cur.fetchone()
+                        _sc_conn.close()
+                        
+                        raw_title = None
+                        if row_col:
+                            raw_title = row_col[0] or row_col[1] # Usa title_pt se houver, senão title_zh
+                            
+                        # Se não achou na coleção (ex: vídeo avulso deletado), busca nos episódios
+                        if not raw_title:
+                            _sc_conn = _sqlite_parse.connect(_sc_path)
+                            _sc_cur = _sc_conn.cursor()
+                            _sc_cur.execute("SELECT title FROM collection_episodes WHERE mix_id = ? AND episode_num = ?", (mix_id_parsed, int(ep_num_parsed)))
+                            row_ep = _sc_cur.fetchone()
+                            _sc_conn.close()
+                            if row_ep and row_ep[0]:
+                                raw_title = row_ep[0]
+                                
+                        if not raw_title:
+                            raw_title = project_name
+                            
+                        # Limpeza final de caracteres inválidos de arquivos (tanto para Linux quanto Windows)
+                        clean_title = _re_parse.sub(r'[\\/*?:"<>|🍿🔥🎬]', "", raw_title)
+                        clean_title = _re_parse.sub(r'\s+', "_", clean_title).strip("_")
+                        # Limita tamanho máximo do nome para evitar caminhos gigantescos
+                        clean_title = clean_title[:60]
+                        anime_filename = f"{clean_title}_EP_{ep_num_parsed}"
+                        logger.info(f"[POSTRECAP INTEGRATION] Nome do arquivo personalizado gerado: {anime_filename}.mp4")
+            except Exception as e_name:
+                logger.warning(f"[POSTRECAP INTEGRATION] Erro ao resolver nome do anime: {e_name}")
             if not proj:
                 logger.error(f"[POSTRECAP INTEGRATION] Projeto {project_id} não encontrado.")
                 return False
@@ -1401,6 +1450,12 @@ def main():
                     logger.warning(f"[POSTRECAP INTEGRATION] Falha ao ler guia_postagem.json: {e_json}")
 
             title_yt = guia.get("titulo_principal") or proj.get("project_name", "Vídeo AnimeRecap")
+            # Extrai apenas o hook se tiver '|' e adiciona #Shorts
+            if "|" in title_yt:
+                title_yt = title_yt.split("|")[0].strip()
+            # Garante que termine com #Shorts
+            if "#shorts" not in title_yt.lower():
+                title_yt = f"{title_yt} #Shorts"
             desc_yt = guia.get("descricao") or ""
             tiktok_guia = guia.get("tiktok_guia") or ""
 
@@ -1425,16 +1480,50 @@ def main():
 
             from datetime import datetime, timedelta
             import sqlite3 as _sl3_slot
-            _POSTING_HOURS = [12, 18]
 
             def _proximo_slot_disponivel():
-                """Retorna o datetime do próximo slot livre de autoposting (12h ou 18h Brasília)."""
+                """Retorna o datetime do próximo slot livre de autoposting dinâmico do scrapper."""
                 _db = _sl3_slot.connect(post_recap_db_path)
                 _c = _db.cursor()
+                
+                # Carrega horários personalizados do scrapper
+                posting_slots = [(12, 0), (18, 0)] # Fallback
+                try:
+                    import sqlite3 as _sqlite3
+                    _scrapper_db_path = "/app/scrapper_douyin/data/history.db"
+                    if os.path.exists(_scrapper_db_path):
+                        _sc = _sqlite3.connect(_scrapper_db_path)
+                        _sc_cur = _sc.cursor()
+                        # Pega o ritmo diário
+                        _sc_cur.execute("SELECT value FROM user_settings WHERE key = 'daily_post_rate'")
+                        _rate_row = _sc_cur.fetchone()
+                        _rate = int(_rate_row[0]) if _rate_row else 2
+                        
+                        # Pega os horários definidos para esse ritmo
+                        _sc_cur.execute("SELECT value FROM user_settings WHERE key = ?", (f"autopost_times_rate_{_rate}",))
+                        _times_row = _sc_cur.fetchone()
+                        _sc.close()
+                        
+                        if _times_row and _times_row[0]:
+                            _times_list = [t.strip() for t in _times_row[0].split(",") if t.strip()]
+                            posting_slots = []
+                            for _t in _times_list:
+                                try:
+                                    _h, _m = map(int, _t.split(":"))
+                                    posting_slots.append((_h, _m))
+                                except Exception:
+                                    pass
+                            posting_slots.sort()
+                except Exception as _e_slots:
+                    logger.warning(f"[POSTRECAP] Erro ao carregar slots dinâmicos do scrapper: {_e_slots}")
+                
+                if not posting_slots:
+                    posting_slots = [(12, 0), (18, 0)]
+
                 now = datetime.now()
                 for dias in range(7):
-                    for hora in _POSTING_HOURS:
-                        candidato = now.replace(hour=hora, minute=0, second=0, microsecond=0) + timedelta(days=dias)
+                    for hora, minuto in posting_slots:
+                        candidato = now.replace(hour=hora, minute=minuto, second=0, microsecond=0) + timedelta(days=dias)
                         if candidato <= now:
                             continue
                         slot_str = candidato.strftime("%Y-%m-%d %H:%M:%S")
@@ -1493,7 +1582,7 @@ def main():
             # 3. Baixar vídeo final diretamente para o staging isolado local da VPS
             post_dir = f"/home/ubuntu/apps/Post_recap/scheduled_posts/post_{post_id}"
             os.makedirs(post_dir, exist_ok=True)
-            local_video_path = os.path.join(post_dir, "video.mp4")
+            local_video_path = os.path.join(post_dir, f"{anime_filename}.mp4")
 
             logger.info(f"[POSTRECAP INTEGRATION] Baixando vídeo final do Drive para {local_video_path}...")
             caminho_video = "KAGGLE/PIPELINE/FINAL/video_final.mp4"
@@ -1571,13 +1660,16 @@ def main():
                         api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
                         requests.post(api_url, json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
 
-                        # Dispara postagem automática se for modo automático
+                        # Dispara postagem automática se for modo automático e o projeto foi disparado pelo scrapper
                         is_manual = proj_depois.get("manual_mode", False)
-                        if not is_manual:
-                            logger.info(f"[POSTRECAP INTEGRATION] Projeto {pid} finalizado em modo AUTOMÁTICO. Reservando e agendando...")
+                        project_name = proj_depois.get("project_name", "")
+                        is_scrapper_project = project_name.startswith("Recap_Col_") if project_name else False
+                        
+                        if not is_manual and is_scrapper_project:
+                            logger.info(f"[POSTRECAP INTEGRATION] Projeto {pid} ({project_name}) finalizado. Reservando e agendando no Post_recap...")
                             threading.Thread(target=agendar_publicacao_automatica_postrecap, args=(pid,), daemon=True).start()
                         else:
-                            logger.info(f"[POSTRECAP INTEGRATION] Projeto {pid} finalizado em modo MANUAL. Postagem automática ignorada.")
+                            logger.info(f"[POSTRECAP INTEGRATION] Projeto {pid} ({project_name}) finalizado. Postagem automática ignorada (manual={is_manual}, is_scrapper={is_scrapper_project}).")
             except Exception as e:
                 logger.error(f"Erro no polling do pipeline: {e}")
             time.sleep(30)
