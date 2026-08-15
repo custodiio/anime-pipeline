@@ -307,9 +307,17 @@ def create_dashboard():
 
 
 # ==============================================================================
-# MAIN LAUNCHER
+# INICIALIZAÇÃO DO ECOSSISTEMA E APLICAÇÃO ASGI GLOBAL
 # ==============================================================================
-def main():
+_initialized = False
+
+def init_system():
+    """Inicializa conexões e threads de serviço em background."""
+    global _initialized
+    if _initialized:
+        return
+    _initialized = True
+
     print("=" * 70)
     print("  🚀 AnimeRecap Central Ecosystem — Master Multi-Project Orchestrator")
     print("=" * 70)
@@ -338,45 +346,45 @@ def main():
         t.start()
         logger.info(f"Thread do serviço '{name}' disparada.")
 
-    # 3. Integra rotas do FastAPI no Gradio Dashboard e inicia na porta 7860
-    from scrapper.web_panel import app as scrapper_app
-    from tiktok_approval.main import app as tiktok_app
-    from fastapi.middleware.cors import CORSMiddleware
-    from fastapi import FastAPI
-    import uvicorn
-    import gradio as gr
 
-    main_app = FastAPI(title="AnimeRecap Central Ecosystem")
+# Dispara inicialização dos serviços
+init_system()
 
-    main_app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# 3. Cria a aplicação ASGI unificada
+from scrapper.web_panel import app as scrapper_app
+from tiktok_approval.main import app as tiktok_app
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+import gradio as gr
 
-    # Vincula rotas da API com prioridade máxima
-    main_app.include_router(scrapper_app.router)
-    main_app.include_router(tiktok_app.router)
-    main_app.mount("/scrapper", scrapper_app)
-    main_app.mount("/tiktok", tiktok_app)
+main_app = FastAPI(title="AnimeRecap Central Ecosystem")
 
-    # Cria o Dashboard do Gradio e monta no subpath /dashboard (para não sequestrar as rotas da API)
-    demo = create_dashboard()
-    app = gr.mount_gradio_app(main_app, demo, path="/dashboard")
+main_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    from fastapi.responses import RedirectResponse
-    @main_app.get("/", include_in_schema=False)
-    async def redirect_to_dashboard():
-        return RedirectResponse(url="/dashboard")
+# Rotas de API FastAPI com prioridade
+main_app.include_router(scrapper_app.router)
+main_app.include_router(tiktok_app.router)
+main_app.mount("/scrapper", scrapper_app)
+main_app.mount("/tiktok", tiktok_app)
 
-    print("Iniciando FastAPI com rotas de API e Gradio (/dashboard) na porta 7860...")
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+# Dashboard do Gradio montado em /dashboard
+demo = create_dashboard()
+app = gr.mount_gradio_app(main_app, demo, path="/dashboard")
 
-
+@main_app.get("/", include_in_schema=False)
+async def redirect_to_dashboard():
+    return RedirectResponse(url="/dashboard")
 
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    print("Iniciando servidor ASGI unificado na porta 7860...")
+    uvicorn.run(app, host="0.0.0.0", port=7860)
 
