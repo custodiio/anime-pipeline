@@ -34,8 +34,20 @@
 # ==============================================================================
 
 
+import os
+import sys
+
+# Garante isolamento estrito da pasta douyin_api
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+_parent_dir = os.path.dirname(_current_dir)
+while _parent_dir in sys.path:
+    sys.path.remove(_parent_dir)
+
 from app.main import Host_IP, Host_Port
 import uvicorn
 
 if __name__ == '__main__':
-    uvicorn.run('app.main:app', host=Host_IP, port=Host_Port, reload=True, log_level="info")
+    uvicorn.run('app.main:app', host=Host_IP, port=Host_Port, reload=False, log_level="warning")
+

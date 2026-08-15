@@ -319,11 +319,40 @@ def main():
         t.start()
         logger.info(f"Thread do serviço '{name}' disparada.")
 
-    # 3. Inicia Gradio na Thread Principal
+    # 3. Gateway FastAPI Centralizado com CORS e rotas externas na porta 7860
+    import uvicorn
+    import gradio as gr
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    from scrapper.web_panel import app as scrapper_app
+    from tiktok_approval.main import app as tiktok_app
+
+    gateway = FastAPI(title="AnimeRecap Central Gateway", docs_url=None, redoc_url=None)
+    gateway.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Vincula rotas do Scrapper e TikTok Approval ao Gateway
+    gateway.mount("/scrapper", scrapper_app)
+    gateway.mount("/tiktok", tiktok_app)
+
+    for r in scrapper_app.routes:
+        gateway.routes.append(r)
+    for r in tiktok_app.routes:
+        gateway.routes.append(r)
+
+    # Monta Dashboard do Gradio na raiz
     demo = create_dashboard()
-    print("Iniciando Gradio Dashboard na porta 7860...")
-    demo.launch(server_name="0.0.0.0", server_port=7860, prevent_thread_lock=False)
+    gateway = gr.mount_gradio_app(gateway, demo, path="/")
+
+    print("Iniciando Gateway Central Gradio + APIs na porta 7860...")
+    uvicorn.run(gateway, host="0.0.0.0", port=7860, log_level="warning")
 
 
 if __name__ == "__main__":
     main()
+

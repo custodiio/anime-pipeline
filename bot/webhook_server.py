@@ -811,16 +811,28 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
         logger.info(f"[Webhook] {args[0]}")
 
 
+_SERVER_RUNNING = None
+
 def start_webhook_server(port=None):
-    """Inicia o servidor webhook em background."""
+    """Inicia o servidor webhook em background uma única vez."""
+    global _SERVER_RUNNING
+    if _SERVER_RUNNING is not None:
+        return _SERVER_RUNNING
+
     port = port or int(os.getenv("WEBHOOK_PORT", "8080"))
 
-    ThreadingHTTPServer.allow_reuse_address = True
-    server = ThreadingHTTPServer(("0.0.0.0", port), PipelineWebhookHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    logger.info(f"Webhook server rodando na porta {port}")
-    return server
+    try:
+        ThreadingHTTPServer.allow_reuse_address = True
+        server = ThreadingHTTPServer(("0.0.0.0", port), PipelineWebhookHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        _SERVER_RUNNING = server
+        logger.info(f"Webhook server rodando na porta {port}")
+        return server
+    except Exception as e:
+        logger.warning(f"Webhook server já em execução na porta {port} ou erro: {e}")
+        return None
+
 
 
 

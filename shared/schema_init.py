@@ -255,8 +255,17 @@ def init_all_schemas():
         with conn.cursor() as cur:
             cur.execute(SCHEMA_SQL)
             
+            # Migrations incrementais seguras
+            cur.execute("""
+                ALTER TABLE IF EXISTS scrapper_processed_videos ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'shorts';
+                ALTER TABLE IF EXISTS scrapper_processed_videos ADD COLUMN IF NOT EXISTS content_type TEXT NOT NULL DEFAULT 'anime';
+                ALTER TABLE IF EXISTS scrapper_channels ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'shorts';
+                ALTER TABLE IF EXISTS scrapper_channels ADD COLUMN IF NOT EXISTS content_type TEXT NOT NULL DEFAULT 'anime';
+            """)
+            
             # Insere termos de busca padrão do scrapper se não existirem
             cur.execute("SELECT COUNT(*) FROM scrapper_search_terms;")
+
             row = cur.fetchone()
             if row and row[0] == 0:
                 cur.execute("""
