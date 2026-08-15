@@ -1727,7 +1727,7 @@ def main():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    token = os.getenv("POSTRECAP_TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+    token = os.getenv("POSTRECAP_TELEGRAM_BOT_TOKEN")
     if not token:
         print("[ERRO] POSTRECAP_TELEGRAM_BOT_TOKEN ausente no .env. Configure para rodar o bot.")
         return

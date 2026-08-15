@@ -1326,7 +1326,7 @@ async def colecoes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ----------------- INICIALIZAÇÃO DO BOT -----------------
 
 def run_bot():
-    token = os.getenv("SCRAPPER_TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+    token = os.getenv("SCRAPPER_TELEGRAM_TOKEN")
     if not token:
         print("ERRO: SCRAPPER_TELEGRAM_TOKEN não configurado no arquivo .env!")
         return
