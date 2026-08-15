@@ -350,16 +350,16 @@ def init_system():
 # Dispara inicialização dos serviços
 init_system()
 
-# 3. Cria a aplicação FastAPI unificada e integra o Gradio Dashboard
+# 3. Cria a interface Gradio e integra todas as rotas da API no demo.app
 from scrapper.web_panel import app as scrapper_app
 from tiktok_approval.main import app as tiktok_app
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI
 import gradio as gr
 
-main_app = FastAPI(title="AnimeRecap Central Ecosystem")
+demo = create_dashboard()
 
-main_app.add_middleware(
+# Configura CORS no FastAPI do Gradio
+demo.app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
@@ -367,30 +367,22 @@ main_app.add_middleware(
     allow_headers=["*"],
 )
 
-# Vincula todas as rotas da API no FastAPI principal com prioridade total
-main_app.include_router(scrapper_app.router)
-main_app.include_router(tiktok_app.router)
-main_app.mount("/scrapper", scrapper_app)
-main_app.mount("/tiktok", tiktok_app)
+# Injeta as rotas de API com prioridade máxima no topo da tabela de rotas do Gradio
+for route in reversed(scrapper_app.routes):
+    if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/scrapper"):
+        demo.app.routes.insert(0, route)
 
-from fastapi.responses import RedirectResponse
+for route in reversed(tiktok_app.routes):
+    if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/tiktok"):
+        demo.app.routes.insert(0, route)
 
-# Monta o Gradio Dashboard sobre o FastAPI principal em /dashboard
-demo = create_dashboard()
-app = gr.mount_gradio_app(main_app, demo, path="/dashboard")
+demo.app.mount("/scrapper", scrapper_app)
+demo.app.mount("/tiktok", tiktok_app)
 
-@main_app.get("/", include_in_schema=False)
-async def redirect_to_dashboard():
-    return RedirectResponse(url="/dashboard")
+app = demo.app
 
 if __name__ == "__main__":
-    import uvicorn
-    for attempt in range(5):
-        try:
-            print(f"Iniciando servidor ASGI unificado na porta 7860 (tentativa {attempt + 1})...")
-            uvicorn.run(app, host="0.0.0.0", port=7860)
-            break
-        except Exception as e:
-            print(f"Tentativa {attempt + 1} falhou ao iniciar na porta 7860: {e}. Aguardando 3s...")
-            time.sleep(3)
+    demo.launch(server_name="0.0.0.0", server_port=7860, prevent_thread_lock=False)
+    while True:
+        time.sleep(3600)
 
