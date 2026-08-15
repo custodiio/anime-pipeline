@@ -1813,8 +1813,9 @@ def main():
     while True:
         try:
             print("Bot do Telegram em execução...", flush=True)
-            app.run_polling()
+            app.run_polling(drop_pending_updates=True, stop_signals=None, close_loop=False)
             break
+
         except NetworkError as e:
             print(f"[REDE] Erro de conexão com o Telegram: {e}. Tentando novamente em 5 segundos...", flush=True)
             time.sleep(5)

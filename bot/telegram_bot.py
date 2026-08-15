@@ -1725,8 +1725,8 @@ def main():
         loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling(drop_pending_updates=True, stop_signals=None, close_loop=False)
+
 
 
 if __name__ == "__main__":

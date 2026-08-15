@@ -18,8 +18,9 @@ const getApiUrl = (endpoint) => {
   return `${base}${endpoint}`;
 };
 
-
 export default function App() {
+  const [sessionToken, setSessionToken] = useState(null);
+  const [authStatus, setAuthStatus] = useState('checking'); // 'checking' | 'authorized' | 'unauthorized'
   const [activeTab, setActiveTab] = useState('collections');
   const [collections, setCollections] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -40,10 +41,58 @@ export default function App() {
   const [isAddProfileOpen, setIsAddProfileOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
+  // Helper para chamadas autenticadas
+  const apiFetch = useCallback(async (endpoint, options = {}) => {
+    const headers = options.headers ? { ...options.headers } : {};
+    const token = sessionToken || localStorage.getItem('scrapper_session');
+    if (token) {
+      headers['X-Session-Token'] = token;
+    }
+    const separator = endpoint.includes('?') ? '&' : '?';
+    const finalUrl = token ? `${getApiUrl(endpoint)}${separator}session=${token}` : getApiUrl(endpoint);
+    return fetch(finalUrl, { ...options, headers });
+  }, [sessionToken]);
+
+  // Validação inicial de sessão
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const queryToken = params.get('session');
+    const storedToken = localStorage.getItem('scrapper_session');
+    const tokenToTest = queryToken || storedToken;
+
+    if (!tokenToTest) {
+      setAuthStatus('unauthorized');
+      return;
+    }
+
+    const checkSession = async () => {
+      try {
+        const res = await fetch(getApiUrl(`/api/douyin/session/verify?session=${tokenToTest}`));
+        if (res.ok) {
+          const data = await res.json();
+          if (data.valid) {
+            setSessionToken(tokenToTest);
+            localStorage.setItem('scrapper_session', tokenToTest);
+            setAuthStatus('authorized');
+            return;
+          }
+        }
+        localStorage.removeItem('scrapper_session');
+        setAuthStatus('unauthorized');
+      } catch (err) {
+        console.error('Erro ao verificar sessão:', err);
+        setAuthStatus('unauthorized');
+      }
+    };
+
+    checkSession();
+  }, []);
+
   // Carrega todas as coleções do backend
   const loadCollections = useCallback(async () => {
+    if (authStatus !== 'authorized') return;
     try {
-      const res = await fetch(getApiUrl('/api/douyin/collections'));
+      const res = await apiFetch('/api/douyin/collections');
       if (res.ok) {
         const data = await res.json();
         if (data.ok) {
@@ -58,12 +107,13 @@ export default function App() {
     } catch (err) {
       console.error('Erro ao carregar coleções:', err);
     }
-  }, []);
+  }, [authStatus, apiFetch]);
 
   // Carrega todos os perfis do backend
   const loadProfiles = useCallback(async () => {
+    if (authStatus !== 'authorized') return;
     try {
-      const res = await fetch(getApiUrl('/api/douyin/profiles'));
+      const res = await apiFetch('/api/douyin/profiles');
       if (res.ok) {
         const data = await res.json();
         if (data.ok) {
@@ -73,19 +123,20 @@ export default function App() {
     } catch (err) {
       console.error('Erro ao carregar perfis:', err);
     }
-  }, []);
+  }, [authStatus, apiFetch]);
 
   // Carrega o cookie e padrões
   const loadSettings = useCallback(async () => {
+    if (authStatus !== 'authorized') return;
     try {
-      const resCookie = await fetch(getApiUrl('/api/douyin/settings/cookie'));
+      const resCookie = await apiFetch('/api/douyin/settings/cookie');
       if (resCookie.ok) {
         const dataCookie = await resCookie.json();
         if (dataCookie.ok) {
           setSettings(prev => ({ ...prev, cookie: dataCookie.cookie || '' }));
         }
       }
-      const resSocial = await fetch(getApiUrl('/api/douyin/settings/social-defaults'));
+      const resSocial = await apiFetch('/api/douyin/settings/social-defaults');
       if (resSocial.ok) {
         const dataSocial = await resSocial.json();
         if (dataSocial.ok) {
@@ -105,18 +156,20 @@ export default function App() {
     } catch (err) {
       console.error('Erro ao carregar configurações:', err);
     }
-  }, []);
+  }, [authStatus, apiFetch]);
 
   useEffect(() => {
-    loadCollections();
-    loadProfiles();
-    loadSettings();
-  }, [loadCollections, loadProfiles, loadSettings]);
+    if (authStatus === 'authorized') {
+      loadCollections();
+      loadProfiles();
+      loadSettings();
+    }
+  }, [authStatus, loadCollections, loadProfiles, loadSettings]);
 
   // Handler para selecionar coleção e abrir modal
   const handleSelectCollection = async (mixId) => {
     try {
-      const res = await fetch(getApiUrl(`/api/douyin/collections/${mixId}`));
+      const res = await apiFetch(`/api/douyin/collections/${mixId}`);
       if (res.ok) {
         const data = await res.json();
         if (data.ok) {
@@ -133,7 +186,7 @@ export default function App() {
     const formData = new FormData();
     formData.append('cookie', cookieValue);
     try {
-      const res = await fetch(getApiUrl('/api/douyin/settings/cookie'), { method: 'POST', body: formData });
+      const res = await apiFetch('/api/douyin/settings/cookie', { method: 'POST', body: formData });
       const data = await res.json();
       if (data.ok) {
         setSettings(prev => ({ ...prev, cookie: cookieValue }));
@@ -150,175 +203,181 @@ export default function App() {
     const formData = new FormData();
     formData.append('rate', rateNum);
     try {
-      const res = await fetch(getApiUrl('/api/douyin/settings/daily-post-rate'), { method: 'POST', body: formData });
+      const res = await apiFetch('/api/douyin/settings/daily-post-rate', { method: 'POST', body: formData });
       const data = await res.json();
       if (data.ok) {
-        setSettings(prev => ({ ...prev, daily_post_rate: rateNum, times: data.times || prev.times }));
+        setSettings(prev => ({ ...prev, daily_post_rate: rateNum }));
+      } else {
+        alert('Erro ao salvar ritmo diário');
       }
     } catch (err) {
-      console.error('Erro ao salvar ritmo:', err);
+      alert('Falha ao salvar taxa: ' + err);
     }
   };
 
-  // Salvar Horários Customizáveis
-  const handleSaveAutopostTimes = async (timesArray) => {
+  // Salvar Horários
+  const handleSaveAutopostTimes = async (timesList) => {
     const formData = new FormData();
-    formData.append('times', timesArray.join(','));
+    formData.append('times', timesList.join(','));
     try {
-      const res = await fetch(getApiUrl('/api/douyin/settings/autopost-times'), { method: 'POST', body: formData });
+      const res = await apiFetch('/api/douyin/settings/autopost-times', { method: 'POST', body: formData });
       const data = await res.json();
       if (data.ok) {
-        setSettings(prev => ({ ...prev, times: data.times || timesArray }));
+        setSettings(prev => ({ ...prev, times: timesList }));
+      } else {
+        alert('Erro ao salvar horários');
       }
     } catch (err) {
-      alert('Erro ao salvar horários: ' + err);
+      alert('Falha ao salvar horários: ' + err);
     }
   };
 
-  // Salvar Padrões de Redes e Privacidade Individual por Rede
+  // Salvar Padrões de Redes Sociais
   const handleSaveSocialDefaults = async (socialData) => {
     const formData = new FormData();
-    formData.append('post_youtube', socialData.postYoutube ? '1' : '0');
-    formData.append('youtube_privacy', socialData.youtubePrivacy);
-
-    formData.append('post_shorts', socialData.postShorts ? '1' : '0');
-    formData.append('shorts_privacy', socialData.shortsPrivacy);
-
-    formData.append('post_tiktok', socialData.postTiktok ? '1' : '0');
-    formData.append('tiktok_privacy', socialData.tiktokPrivacy);
-
-    formData.append('post_instagram', socialData.postInstagram ? '1' : '0');
-    formData.append('instagram_privacy', socialData.instagramPrivacy || 'public');
+    formData.append('post_youtube', socialData.default_post_youtube ? '1' : '0');
+    formData.append('youtube_privacy', socialData.default_youtube_privacy);
+    formData.append('post_shorts', socialData.default_post_shorts ? '1' : '0');
+    formData.append('shorts_privacy', socialData.default_shorts_privacy);
+    formData.append('post_tiktok', socialData.default_post_tiktok ? '1' : '0');
+    formData.append('tiktok_privacy', socialData.default_tiktok_privacy);
+    formData.append('post_instagram', socialData.default_post_instagram ? '1' : '0');
+    formData.append('instagram_privacy', socialData.default_instagram_privacy);
 
     try {
-      const res = await fetch(getApiUrl('/api/douyin/settings/social-defaults'), { method: 'POST', body: formData });
+      const res = await apiFetch('/api/douyin/settings/social-defaults', { method: 'POST', body: formData });
       const data = await res.json();
       if (data.ok) {
-        setSettings(prev => ({
-          ...prev,
-          default_post_youtube: socialData.postYoutube,
-          default_youtube_privacy: socialData.youtubePrivacy,
-          default_post_shorts: socialData.postShorts,
-          default_shorts_privacy: socialData.shortsPrivacy,
-          default_post_tiktok: socialData.postTiktok,
-          default_tiktok_privacy: socialData.tiktokPrivacy,
-          default_post_instagram: socialData.postInstagram,
-          default_instagram_privacy: socialData.instagramPrivacy
-        }));
-      }
-    } catch (err) {
-      console.error('Erro ao salvar redes:', err);
-    }
-  };
-
-  // Cadastrar Coleção
-  const handleAddCollection = async (url, titlePt) => {
-    const formData = new FormData();
-    formData.append('url', url);
-    if (titlePt) formData.append('title_pt', titlePt);
-    try {
-      const res = await fetch(getApiUrl('/api/douyin/collections/add'), { method: 'POST', body: formData });
-      const data = await res.json();
-      if (data.ok) {
-        alert('✅ ' + data.message);
-        loadCollections();
+        setSettings(prev => ({ ...prev, ...socialData }));
+        alert('✅ Padrões de publicação salvos com sucesso!');
       } else {
-        alert('❌ Erro: ' + data.message);
+        alert('Erro ao salvar padrões');
       }
     } catch (err) {
-      alert('Erro ao cadastrar coleção: ' + err);
+      alert('Falha na requisição de padrões: ' + err);
     }
   };
 
-  // Cadastrar Perfil
-  const handleAddProfile = async (url) => {
+  // Adicionar Coleção
+  const handleAddCollection = async (formDataPayload) => {
     const formData = new FormData();
-    formData.append('url', url);
+    formData.append('url', formDataPayload.url);
+    if (formDataPayload.title_pt) formData.append('title_pt', formDataPayload.title_pt);
+    formData.append('autoposting', formDataPayload.autoposting ? '1' : '0');
+
     try {
-      const res = await fetch(getApiUrl('/api/douyin/profiles/add'), { method: 'POST', body: formData });
+      const res = await apiFetch('/api/douyin/collections/add', { method: 'POST', body: formData });
       const data = await res.json();
       if (data.ok) {
-        alert('✅ ' + data.message);
+        setIsAddColOpen(false);
+        loadCollections();
+        alert('✅ Coleção cadastrada com sucesso!');
+      } else {
+        alert('Erro ao adicionar: ' + (data.error || data.detail || 'Falha no cadastro'));
+      }
+    } catch (err) {
+      alert('Falha na requisição: ' + err);
+    }
+  };
+
+  // Adicionar Perfil
+  const handleAddProfile = async (formDataPayload) => {
+    const formData = new FormData();
+    formData.append('url', formDataPayload.url);
+    if (formDataPayload.custom_name) formData.append('custom_name', formDataPayload.custom_name);
+    formData.append('autoposting', formDataPayload.autoposting ? '1' : '0');
+
+    try {
+      const res = await apiFetch('/api/douyin/profiles/add', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.ok) {
+        setIsAddProfileOpen(false);
         loadProfiles();
-        loadCollections();
+        alert('✅ Perfil cadastrado com sucesso!');
       } else {
-        alert('❌ Erro: ' + data.message);
+        alert('Erro ao adicionar perfil: ' + (data.error || data.detail || 'Falha no cadastro'));
       }
     } catch (err) {
-      alert('Erro ao cadastrar perfil: ' + err);
+      alert('Falha na requisição de perfil: ' + err);
     }
   };
 
-  // Excluir Perfil
+  // Deletar Perfil
   const handleDeleteProfile = async (secUid) => {
-    if (!window.confirm('Deseja remover este perfil monitorado?')) return;
+    if (!window.confirm('Tem certeza que deseja remover este perfil monitorado?')) return;
     try {
-      const res = await fetch(getApiUrl(`/api/douyin/profiles/${secUid}/delete`), { method: 'POST' });
+      const res = await apiFetch(`/api/douyin/profiles/${secUid}/delete`, { method: 'POST' });
       const data = await res.json();
       if (data.ok) {
         loadProfiles();
-        loadCollections();
+      } else {
+        alert('Erro ao deletar perfil');
       }
     } catch (err) {
-      alert('Erro ao deletar perfil: ' + err);
+      alert('Falha na requisição: ' + err);
     }
   };
 
-  // Excluir Coleção
+  // Deletar Coleção
   const handleDeleteCollection = async (mixId) => {
-    if (!window.confirm('Deseja excluir esta coleção?')) return;
     try {
-      const res = await fetch(getApiUrl(`/api/douyin/collections/${mixId}/delete`), { method: 'POST' });
+      const res = await apiFetch(`/api/douyin/collections/${mixId}/delete`, { method: 'POST' });
       const data = await res.json();
       if (data.ok) {
         setSelectedCollectionDetail(null);
         loadCollections();
+      } else {
+        alert('Erro ao excluir coleção');
       }
     } catch (err) {
-      alert('Erro ao deletar coleção: ' + err);
+      alert('Falha ao excluir coleção: ' + err);
     }
   };
 
-  // Toggle Autoposting
+  // Ligar/Desligar Autoposting da Coleção
   const handleToggleAutoposting = async (mixId) => {
     try {
-      const res = await fetch(getApiUrl(`/api/douyin/collections/${mixId}/toggle-autoposting`), { method: 'POST' });
+      const res = await apiFetch(`/api/douyin/collections/${mixId}/toggle-autoposting`, { method: 'POST' });
       const data = await res.json();
       if (data.ok) {
-        handleSelectCollection(mixId);
+        setSelectedCollectionDetail(prev => prev ? {
+          ...prev,
+          collection: { ...prev.collection, autoposting: data.autoposting }
+        } : null);
         loadCollections();
       }
     } catch (err) {
-      alert('Erro ao alterar autoposting: ' + err);
+      alert('Falha ao alternar autoposting: ' + err);
     }
   };
 
-  // Ações em Episódios
+  // Ações nos Episódios
   const handleApplyEpAction = async (epId, action) => {
     const formData = new FormData();
     formData.append('action', action);
     try {
-      const res = await fetch(getApiUrl(`/api/douyin/episodes/${epId}/action`), { method: 'POST', body: formData });
+      const res = await apiFetch(`/api/douyin/episodes/${epId}/action`, { method: 'POST', body: formData });
       const data = await res.json();
       if (data.ok) {
-        alert('✅ ' + data.message);
         if (selectedCollectionDetail) {
           handleSelectCollection(selectedCollectionDetail.collection.mix_id);
         }
-        loadCollections();
+        loadProfiles();
+      } else {
+        alert('Erro na ação do episódio: ' + data.error);
       }
     } catch (err) {
-      alert('Erro ao aplicar ação: ' + err);
+      alert('Falha na requisição de episódio: ' + err);
     }
   };
 
-  // Trigger Sincronização Autônoma
+  // Sincronização Geral
   const handleSyncNow = async () => {
     setSyncing(true);
     try {
-      const res = await fetch(getApiUrl('/api/douyin/sync'), { method: 'POST' });
+      const res = await apiFetch('/api/douyin/sync', { method: 'POST' });
       const data = await res.json();
-      alert('✅ ' + data.message);
+      alert('✅ ' + (data.message || 'Sincronização iniciada!'));
     } catch (err) {
       alert('Erro na sincronização: ' + err);
     } finally {
@@ -326,6 +385,44 @@ export default function App() {
     }
   };
 
+  // Tela de Verificação de Sessão (Loading)
+  if (authStatus === 'checking') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f1117', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '32px', marginBottom: '16px' }}>⏳</div>
+          <p style={{ color: '#94a3b8' }}>Verificando autorização de acesso...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Tela de Bloqueio (Regra de Segurança: Nunca exibir conteúdo antes de verificar aprovação)
+  if (authStatus === 'unauthorized') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0d14', color: '#fff', fontFamily: 'system-ui, sans-serif', padding: '20px' }}>
+        <div style={{ maxWidth: '460px', width: '100%', background: '#121824', border: '1px solid #1e293b', borderRadius: '16px', padding: '36px 28px', textAlign: 'center', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔒</div>
+          <h2 style={{ fontSize: '22px', fontWeight: '700', marginBottom: '10px', color: '#f87171' }}>Acesso Restrito ao Scrapper</h2>
+          <p style={{ fontSize: '14px', color: '#94a3b8', lineHeight: '1.6', marginBottom: '24px' }}>
+            Este painel é protegido e não pode ser acessado diretamente sem um link de sessão ativo gerado pelo seu Bot.
+          </p>
+          <div style={{ background: '#0b0f19', border: '1px solid #1e293b', borderRadius: '10px', padding: '16px', textAlign: 'left', fontSize: '13px', color: '#cbd5e1', marginBottom: '24px' }}>
+            <div style={{ fontWeight: '600', color: '#38bdf8', marginBottom: '6px' }}>👉 Como Acessar:</div>
+            <ol style={{ paddingLeft: '18px', margin: 0, lineHeight: '1.7' }}>
+              <li>Abra o seu Bot no Telegram.</li>
+              <li>Envie <code>/start</code> ou abra o menu principal.</li>
+              <li>Clique no botão <strong>🌐 Triagem Web</strong>.</li>
+              <li>Use o link seguro fornecido pelo bot.</li>
+            </ol>
+          </div>
+          <p style={{ fontSize: '12px', color: '#64748b' }}>Sessões expiram automaticamente após 30 minutos de inatividade.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Dashboard Autorizado
   return (
     <div className="app-container">
       <Navbar 

@@ -55,16 +55,27 @@ class TestAnimeRecapEcosystem(unittest.TestCase):
         print("✅ [TEST] Scrapper Douyin Database (Neon): OK")
 
     def test_03_scrapper_fastapi_app(self):
-        """Valida que a API FastAPI do Scrapper Douyin carrega e responde."""
+        """Valida que a API FastAPI do Scrapper Douyin bloqueia anônimos e libera com sessão válida."""
         from scrapper.web_panel import app
+        from scrapper import database
         from fastapi.testclient import TestClient
         
         client = TestClient(app)
-        response = client.get("/api/douyin/collections")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
+        
+        # 1. Sem token deve ser bloqueado com 401
+        res_unauth = client.get("/api/douyin/collections")
+        self.assertEqual(res_unauth.status_code, 401)
+        
+        # 2. Com token de sessão válido deve retornar 200
+        test_token = "test_integration_token_123"
+        database.create_web_session(test_token, duration_minutes=10)
+        
+        res_auth = client.get(f"/api/douyin/collections?session={test_token}")
+        self.assertEqual(res_auth.status_code, 200)
+        data = res_auth.json()
         self.assertTrue(data.get("ok"))
-        print("✅ [TEST] Scrapper Douyin FastAPI: OK")
+        print("✅ [TEST] Scrapper Douyin FastAPI & Proteção de Sessão: OK")
+
 
     def test_04_postrecap_db_methods(self):
         """Valida o módulo de banco de dados do Post Recap."""

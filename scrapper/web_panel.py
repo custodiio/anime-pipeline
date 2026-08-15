@@ -46,15 +46,38 @@ if (FRONTEND_DIST / "assets").exists():
     app.mount("/scrapper/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="scrapper_assets")
 
 
+def verify_session(request: Request, session: str = None) -> bool:
+    """Verifica se o token de sessão é válido no banco de dados Neon."""
+    token = (
+        session
+        or request.headers.get("X-Session-Token")
+        or request.query_params.get("session")
+        or request.cookies.get("scrapper_session")
+    )
+    if not token:
+        return False
+    return database.validate_web_session(token)
+
+
 # --- ROTAS DE API PARA COLEÇÕES, PERFIS E CONFIGURAÇÕES ---
+
+@app.get("/api/douyin/session/verify")
+@app.get("/scrapper/api/douyin/session/verify")
+async def verify_session_api(request: Request, session: str = Query(None)):
+    is_valid = verify_session(request, session)
+    return {"ok": True, "valid": is_valid}
+
 
 @app.get("/api/douyin/collections")
 @app.get("/scrapper/api/douyin/collections")
-async def get_douyin_collections_api():
+async def get_douyin_collections_api(request: Request, session: str = Query(None)):
+    if not verify_session(request, session):
+        raise HTTPException(status_code=401, detail="Sessão inválida ou expirada. Acesse pelo Telegram.")
     cols = database.get_douyin_collections()
     daily_rate = episode_scheduler.get_daily_post_rate()
     times = episode_scheduler.get_autopost_times()
     return {"ok": True, "collections": cols, "daily_post_rate": daily_rate, "times": times}
+
 
 @app.get("/api/douyin/collections/{mix_id}")
 @app.get("/scrapper/api/douyin/collections/{mix_id}")

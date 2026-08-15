@@ -815,11 +815,13 @@ def start_webhook_server(port=None):
     """Inicia o servidor webhook em background."""
     port = port or int(os.getenv("WEBHOOK_PORT", "8080"))
 
+    ThreadingHTTPServer.allow_reuse_address = True
     server = ThreadingHTTPServer(("0.0.0.0", port), PipelineWebhookHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     logger.info(f"Webhook server rodando na porta {port}")
     return server
+
 
 
 if __name__ == "__main__":

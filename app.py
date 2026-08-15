@@ -59,18 +59,19 @@ def start_kuma_service():
         from bot.webhook_server import start_webhook_server
         from bot.telegram_bot import main as run_kuma_bot
 
-        # 1. Webhook Server na porta 8080
-        start_webhook_server(8080)
-        logger.info("[KUMA] Webhook Server iniciado na porta 8080.")
+        # 1. Webhook Server na porta 8080 (iniciado de forma segura uma única vez)
+        try:
+            start_webhook_server(8080)
+            logger.info("[KUMA] Webhook Server iniciado na porta 8080.")
+        except Exception as e:
+            logger.warning(f"[KUMA] Webhook Server aviso: {e}")
 
         SERVICE_STATUS["Kuma Recap Bot & Webhook (8080)"] = "✅ Online (Porta 8080)"
 
-        # 2. Loop de reconexão do bot Telegram
+        # 2. Loop de execução do bot Telegram
         while True:
             try:
                 logger.info("[KUMA] Iniciando Bot Telegram do Kuma Recap...")
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
                 run_kuma_bot()
             except Exception as e:
                 logger.error(f"[KUMA] Falha no Bot Telegram: {e}. Reiniciando em 10s...")
@@ -91,15 +92,17 @@ def start_evil0ctal_api():
         SERVICE_STATUS["Evil0ctal Douyin API (5555)"] = "⚠️ Pasta douyin_api não encontrada"
         return
 
+    # Garante path para a API do Evil0ctal
+    sys.path.insert(0, str(douyin_api_dir))
+
     while True:
         try:
             logger.info("[EVIL0CTAL] Iniciando Evil0ctal Douyin API na porta 5555...")
             import uvicorn
-            # Adiciona douyin_api ao path temporariamente
-            sys.path.insert(0, str(douyin_api_dir))
-            
+            from douyin_api.app.main import app as evil_app
+
             SERVICE_STATUS["Evil0ctal Douyin API (5555)"] = "✅ Online (Porta 5555)"
-            uvicorn.run("app.main:app", host="0.0.0.0", port=5555, log_level="warning")
+            uvicorn.run(evil_app, host="0.0.0.0", port=5555, log_level="warning")
         except Exception as e:
             logger.error(f"[EVIL0CTAL] Erro na API Evil0ctal: {e}. Reiniciando em 10s...")
             SERVICE_STATUS["Evil0ctal Douyin API (5555)"] = f"⚠️ Reiniciando ({e})"
@@ -119,14 +122,12 @@ def start_scrapper_service():
             import uvicorn
             uvicorn.run(web_panel.app, host="0.0.0.0", port=5556, log_level="warning")
 
-        web_t = threading.Thread(target=_run_fastapi, daemon=True)
+        web_t = threading.Thread(target=_run_fastapi, daemon=True, name="Thread-Scrapper-FastAPI")
         web_t.start()
         logger.info("[SCRAPPER] Painel Web FastAPI iniciado na porta 5556.")
 
-        # Inicia Scheduler de buscas
+        # Inicia Scheduler de buscas em background
         def _run_scheduler():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
             time.sleep(20)
             while True:
                 try:
@@ -136,7 +137,7 @@ def start_scrapper_service():
                     logger.error(f"[SCRAPPER SCHEDULER] Erro: {e}")
                     time.sleep(60)
 
-        sched_t = threading.Thread(target=_run_scheduler, daemon=True)
+        sched_t = threading.Thread(target=_run_scheduler, daemon=True, name="Thread-Scrapper-Scheduler")
         sched_t.start()
 
         SERVICE_STATUS["Douyin Scrapper Web & Bot (5556)"] = "✅ Online (Porta 5556)"
@@ -207,6 +208,15 @@ def start_seo_service():
         SERVICE_STATUS["SEO Anime Recap Node.js (3333)"] = "⚠️ seo/server.js não encontrado"
         return
 
+    # Garante instalação das dependências Node.js caso ausentes no container
+    if not (seo_dir / "node_modules" / "dotenv").exists():
+        try:
+            logger.info("[SEO] Instalando dependências Node.js (npm install)...")
+            subprocess.run(["npm", "install", "--prefix", str(seo_dir)], check=True)
+            logger.info("[SEO] Dependências instaladas com sucesso.")
+        except Exception as e:
+            logger.warning(f"[SEO] Aviso ao instalar dependências Node.js: {e}")
+
     while True:
         try:
             logger.info("[SEO] Iniciando servidor Express Node.js na porta 3333...")
@@ -238,6 +248,7 @@ def start_seo_service():
             logger.error(f"[SEO] Falha no processo Node.js: {e}. Tentando novamente em 10s...")
             SERVICE_STATUS["SEO Anime Recap Node.js (3333)"] = f"⚠️ Reiniciando ({e})"
             time.sleep(10)
+
 
 
 # ==============================================================================

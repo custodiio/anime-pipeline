@@ -4,11 +4,18 @@ import time
 import logging
 import sys
 from instagrapi import Client
-from dotenv import load_dotenv
-from drive_manager import drive_manager
-import db
+try:
+    from post_recap.drive_manager import drive_manager
+except ImportError:
+    from drive_manager import drive_manager
+
+try:
+    from post_recap import db
+except ImportError:
+    import db
 
 load_dotenv()
+
 
 try:
     if hasattr(sys.stdout, 'reconfigure'):
