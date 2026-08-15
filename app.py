@@ -392,7 +392,7 @@ app = demo.app
 
 if __name__ == "__main__":
     logger.info("Iniciando Gradio Dashboard com ZeroGPU na porta 7860...")
-    demo.launch(server_name="0.0.0.0", server_port=7860, prevent_thread_lock=True)
+    demo.launch(server_name="0.0.0.0", server_port=7860, ssr_mode=False, prevent_thread_lock=True)
     # Injeção crítica pós-launch (onde o Gradio finaliza o demo.app ativo)
     inject_api_routes(demo.app)
     logger.info(f"Rotas da API integradas com sucesso! Total de rotas ativas: {len(demo.app.routes)}")
