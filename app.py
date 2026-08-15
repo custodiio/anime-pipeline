@@ -373,16 +373,24 @@ main_app.include_router(tiktok_app.router)
 main_app.mount("/scrapper", scrapper_app)
 main_app.mount("/tiktok", tiktok_app)
 
-# Monta o Gradio Dashboard sobre o FastAPI principal
+from fastapi.responses import RedirectResponse
+
+# Monta o Gradio Dashboard sobre o FastAPI principal em /dashboard
 demo = create_dashboard()
-app = gr.mount_gradio_app(main_app, demo, path="/")
-demo.app = app
+app = gr.mount_gradio_app(main_app, demo, path="/dashboard")
+
+@main_app.get("/", include_in_schema=False)
+async def redirect_to_dashboard():
+    return RedirectResponse(url="/dashboard")
 
 if __name__ == "__main__":
-    print("Iniciando Gradio Dashboard com APIs integradas na porta 7860...")
-    demo.launch(server_name="0.0.0.0", server_port=7860, prevent_thread_lock=False)
-    
-    # Mantém a thread principal ativa
-    while True:
-        time.sleep(3600)
+    import uvicorn
+    for attempt in range(5):
+        try:
+            print(f"Iniciando servidor ASGI unificado na porta 7860 (tentativa {attempt + 1})...")
+            uvicorn.run(app, host="0.0.0.0", port=7860)
+            break
+        except Exception as e:
+            print(f"Tentativa {attempt + 1} falhou ao iniciar na porta 7860: {e}. Aguardando 3s...")
+            time.sleep(3)
 
