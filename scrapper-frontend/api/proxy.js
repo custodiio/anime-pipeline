@@ -25,7 +25,7 @@ export default async function handler(req, res) {
       fetchOptions.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
     }
 
-    const response = await fetch(url.toString(), fetchOptions);
+    const response = await fetch(targetUrl.toString(), fetchOptions);
     const contentType = response.headers.get('content-type') || 'application/json';
 
     res.status(response.status);
