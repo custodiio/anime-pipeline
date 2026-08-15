@@ -358,19 +358,23 @@ import gradio as gr
 
 demo = create_dashboard()
 
-def setup_api_routes(target_app):
+# Configura CORS no FastAPI do Gradio antes do launch
+demo.app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+def inject_api_routes(target_app):
     """Injeta as rotas da API no FastAPI do Gradio no topo da tabela de roteamento."""
-    target_app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    # Inclui os routers
-    target_app.include_router(scrapper_app.router)
-    target_app.include_router(tiktok_app.router)
-    
+    try:
+        target_app.include_router(scrapper_app.router)
+        target_app.include_router(tiktok_app.router)
+    except Exception:
+        pass
+
     # Injeta rotas no topo (ordem reversa para manter prioridade máxima)
     for route in reversed(scrapper_app.routes):
         if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/scrapper"):
@@ -382,21 +386,15 @@ def setup_api_routes(target_app):
             if route not in target_app.routes:
                 target_app.routes.insert(0, route)
 
-    try:
-        target_app.mount("/scrapper", scrapper_app)
-        target_app.mount("/tiktok", tiktok_app)
-    except Exception:
-        pass
-
 # Injeção prévia
-setup_api_routes(demo.app)
+inject_api_routes(demo.app)
 app = demo.app
 
 if __name__ == "__main__":
     logger.info("Iniciando Gradio Dashboard com ZeroGPU na porta 7860...")
     demo.launch(server_name="0.0.0.0", server_port=7860, prevent_thread_lock=True)
     # Injeção crítica pós-launch (onde o Gradio finaliza o demo.app ativo)
-    setup_api_routes(demo.app)
+    inject_api_routes(demo.app)
     logger.info(f"Rotas da API integradas com sucesso! Total de rotas ativas: {len(demo.app.routes)}")
     while True:
         time.sleep(3600)
