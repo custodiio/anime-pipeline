@@ -1,10 +1,15 @@
 export default async function handler(req, res) {
-  // Extrai o caminho relativo e query params recebidos na Vercel (ex: "/api/douyin/session/verify?session=xyz")
-  const rawUrl = req.url || '';
+  const match = req.query.match || '';
   
-  // Remove o prefixo "/api/" para montar o caminho de destino no HF Space
-  const cleanRelative = rawUrl.startsWith('/api/') ? rawUrl.slice(5) : rawUrl.replace(/^\/api\/?/, '');
-  const targetUrl = new URL(`https://alehcrim-anime-pipeline.hf.space/api/${cleanRelative}`);
+  // Constrói a URL de destino direta no HF Space
+  const targetUrl = new URL(`https://alehcrim-anime-pipeline.hf.space/api/${match}`);
+
+  // Repassa todas as query params (exceto match)
+  Object.keys(req.query).forEach(key => {
+    if (key !== 'match') {
+      targetUrl.searchParams.set(key, req.query[key]);
+    }
+  });
 
   const headers = { ...req.headers };
   delete headers.host;
