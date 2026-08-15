@@ -13,13 +13,11 @@ const getApiUrl = (endpoint) => {
   if (customBase) {
     return `${customBase.replace(/\/$/, '')}${endpoint}`;
   }
-  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
-    return `https://alehcrim-anime-pipeline.hf.space${endpoint}`;
-  }
   const isScrapperPath = typeof window !== 'undefined' && window.location.pathname.startsWith('/scrapper');
   const base = isScrapperPath ? '/scrapper' : '';
   return `${base}${endpoint}`;
 };
+
 
 
 export default function App() {

@@ -27,6 +27,11 @@ qrcode
 tenacity
 aiofiles
 lz4
+importlib_resources
+pyfiglet
+pypng
+ua-parser
+
 
 # ─── Post Recap & Social Uploaders ───
 instagrapi>=2.1.1

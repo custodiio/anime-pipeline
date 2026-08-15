@@ -1,12 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/api/:match*",
-      "destination": "https://alehcrim-anime-pipeline.hf.space/api/:match*"
-    },
-    {
-      "source": "/scrapper/:match*",
-      "destination": "https://alehcrim-anime-pipeline.hf.space/scrapper/:match*"
+      "source": "/api/:path*",
+      "destination": "/api/proxy"
     },
     {
       "source": "/(.*)",
@@ -14,4 +10,5 @@
     }
   ]
 }
+
 

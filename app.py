@@ -335,17 +335,15 @@ def main():
         allow_headers=["*"],
     )
 
-    # Vincula rotas do Scrapper e TikTok
+    # Vincula rotas do Scrapper e TikTok diretamente no FastAPI do Gradio
+    demo.app.include_router(scrapper_app.router)
+    demo.app.include_router(tiktok_app.router)
     demo.app.mount("/scrapper", scrapper_app)
     demo.app.mount("/tiktok", tiktok_app)
 
-    for r in scrapper_app.routes:
-        demo.app.routes.append(r)
-    for r in tiktok_app.routes:
-        demo.app.routes.append(r)
-
     print("Iniciando Gradio Dashboard com APIs integradas na porta 7860...")
     demo.launch(server_name="0.0.0.0", server_port=7860, prevent_thread_lock=False)
+
 
 
 
