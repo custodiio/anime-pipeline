@@ -362,11 +362,16 @@ def main():
     main_app.mount("/scrapper", scrapper_app)
     main_app.mount("/tiktok", tiktok_app)
 
-    # Cria e monta o Dashboard do Gradio sobre o FastAPI
+    # Cria o Dashboard do Gradio e monta no subpath /dashboard (para não sequestrar as rotas da API)
     demo = create_dashboard()
-    app = gr.mount_gradio_app(main_app, demo, path="/")
+    app = gr.mount_gradio_app(main_app, demo, path="/dashboard")
 
-    print("Iniciando FastAPI com rotas de API e Gradio na porta 7860...")
+    from fastapi.responses import RedirectResponse
+    @main_app.get("/", include_in_schema=False)
+    async def redirect_to_dashboard():
+        return RedirectResponse(url="/dashboard")
+
+    print("Iniciando FastAPI com rotas de API e Gradio (/dashboard) na porta 7860...")
     uvicorn.run(app, host="0.0.0.0", port=7860)
 
 
