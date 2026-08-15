@@ -350,15 +350,16 @@ def init_system():
 # Dispara inicialização dos serviços
 init_system()
 
-# 3. Integra rotas da API no FastAPI do Gradio
+# 3. Cria a aplicação FastAPI unificada e integra o Gradio Dashboard
 from scrapper.web_panel import app as scrapper_app
 from tiktok_approval.main import app as tiktok_app
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI
 import gradio as gr
 
-demo = create_dashboard()
+main_app = FastAPI(title="AnimeRecap Central Ecosystem")
 
-demo.app.add_middleware(
+main_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
@@ -366,19 +367,16 @@ demo.app.add_middleware(
     allow_headers=["*"],
 )
 
-# Vincula rotas da API com prioridade máxima no topo da tabela de rotas do Gradio
-for route in reversed(scrapper_app.routes):
-    if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/scrapper"):
-        demo.app.routes.insert(0, route)
+# Vincula todas as rotas da API no FastAPI principal com prioridade total
+main_app.include_router(scrapper_app.router)
+main_app.include_router(tiktok_app.router)
+main_app.mount("/scrapper", scrapper_app)
+main_app.mount("/tiktok", tiktok_app)
 
-for route in reversed(tiktok_app.routes):
-    if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/tiktok"):
-        demo.app.routes.insert(0, route)
-
-demo.app.mount("/scrapper", scrapper_app)
-demo.app.mount("/tiktok", tiktok_app)
-
-app = demo.app
+# Monta o Gradio Dashboard sobre o FastAPI principal
+demo = create_dashboard()
+app = gr.mount_gradio_app(main_app, demo, path="/")
+demo.app = app
 
 if __name__ == "__main__":
     print("Iniciando Gradio Dashboard com APIs integradas na porta 7860...")
