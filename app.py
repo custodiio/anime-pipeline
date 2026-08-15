@@ -94,8 +94,9 @@ def start_evil0ctal_api():
             SERVICE_STATUS["Evil0ctal Douyin API (5555)"] = "✅ Online (Porta 5555)"
 
             proc = subprocess.Popen(
-                [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5555", "--log-level", "warning"],
+                [sys.executable, "start.py"],
                 cwd=str(douyin_api_dir),
+
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

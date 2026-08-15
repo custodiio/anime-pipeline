@@ -34,7 +34,12 @@ def is_authorized(update: Update) -> bool:
     user = update.effective_user
     if not user:
         return False
-    return str(user.id) in AUTHORIZED_USERS
+    authorized_raw = os.getenv("AUTHORIZED_TELEGRAM_USERS", "")
+    auth_list = [u.strip() for u in authorized_raw.split(",") if u.strip()]
+    if not auth_list:
+        return True
+    return str(user.id) in auth_list
+
 
 # Helper para obter o contexto ativo do usuário
 def get_user_context(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, str]:
@@ -1321,12 +1326,13 @@ async def colecoes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ----------------- INICIALIZAÇÃO DO BOT -----------------
 
 def run_bot():
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    token = os.getenv("SCRAPPER_TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
-        print("ERRO: TELEGRAM_BOT_TOKEN não configurado no arquivo .env!")
+        print("ERRO: SCRAPPER_TELEGRAM_TOKEN não configurado no arquivo .env!")
         return
         
     database.init_db()
+
     
     app = ApplicationBuilder().token(token).build()
     
