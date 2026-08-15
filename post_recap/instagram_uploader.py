@@ -3,6 +3,7 @@ import json
 import time
 import logging
 import sys
+from dotenv import load_dotenv
 from instagrapi import Client
 try:
     from post_recap.drive_manager import drive_manager
@@ -15,6 +16,7 @@ except ImportError:
     import db
 
 load_dotenv()
+
 
 
 try:

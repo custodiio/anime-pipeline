@@ -55,58 +55,66 @@ SERVICE_STATUS = {
 # ==============================================================================
 def start_kuma_service():
     """Inicia o Webhook na porta 8080 e o Bot do Telegram do Kuma Recap."""
+    from bot.webhook_server import start_webhook_server
+    from bot.telegram_bot import main as run_kuma_bot
+
+    # Inicia o webhook server uma única vez
     try:
-        from bot.webhook_server import start_webhook_server
-        from bot.telegram_bot import main as run_kuma_bot
-
-        # 1. Webhook Server na porta 8080 (iniciado de forma segura uma única vez)
-        try:
-            start_webhook_server(8080)
-            logger.info("[KUMA] Webhook Server iniciado na porta 8080.")
-        except Exception as e:
-            logger.warning(f"[KUMA] Webhook Server aviso: {e}")
-
-        SERVICE_STATUS["Kuma Recap Bot & Webhook (8080)"] = "✅ Online (Porta 8080)"
-
-        # 2. Loop de execução do bot Telegram
-        while True:
-            try:
-                logger.info("[KUMA] Iniciando Bot Telegram do Kuma Recap...")
-                run_kuma_bot()
-            except Exception as e:
-                logger.error(f"[KUMA] Falha no Bot Telegram: {e}. Reiniciando em 10s...")
-                SERVICE_STATUS["Kuma Recap Bot & Webhook (8080)"] = f"⚠️ Reconectando ({e})"
-                time.sleep(10)
+        start_webhook_server(8080)
+        logger.info("[KUMA] Webhook Server iniciado na porta 8080.")
     except Exception as e:
-        logger.error(f"[KUMA] Erro crítico no serviço Kuma: {e}")
-        SERVICE_STATUS["Kuma Recap Bot & Webhook (8080)"] = f"❌ Erro ({e})"
+        logger.warning(f"[KUMA] Webhook Server já ativo ou aviso: {e}")
+
+    SERVICE_STATUS["Kuma Recap Bot & Webhook (8080)"] = "✅ Online (Porta 8080)"
+
+    # Loop de execução do bot Telegram
+    while True:
+        try:
+            logger.info("[KUMA] Iniciando Bot Telegram do Kuma Recap...")
+            run_kuma_bot()
+        except Exception as e:
+            logger.error(f"[KUMA] Falha no Bot Telegram: {e}. Reiniciando em 15s...")
+            SERVICE_STATUS["Kuma Recap Bot & Webhook (8080)"] = f"⚠️ Reconectando ({e})"
+            time.sleep(15)
 
 
 # ==============================================================================
 # 2. SERVIÇO: EVIL0CTAL DOUYIN DOWNLOAD API (PORTA 5555)
 # ==============================================================================
 def start_evil0ctal_api():
-    """Inicia o servidor de download da API Douyin (Evil0ctal) na porta 5555."""
+    """Inicia o servidor de download da API Douyin (Evil0ctal) na porta 5555 em subprocesso isolado."""
     douyin_api_dir = Path(__file__).resolve().parent / "douyin_api"
     if not (douyin_api_dir / "app" / "main.py").exists():
         SERVICE_STATUS["Evil0ctal Douyin API (5555)"] = "⚠️ Pasta douyin_api não encontrada"
         return
 
-    # Garante path para a API do Evil0ctal
-    sys.path.insert(0, str(douyin_api_dir))
-
     while True:
         try:
             logger.info("[EVIL0CTAL] Iniciando Evil0ctal Douyin API na porta 5555...")
-            import uvicorn
-            from douyin_api.app.main import app as evil_app
-
             SERVICE_STATUS["Evil0ctal Douyin API (5555)"] = "✅ Online (Porta 5555)"
-            uvicorn.run(evil_app, host="0.0.0.0", port=5555, log_level="warning")
+
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5555", "--log-level", "warning"],
+                cwd=str(douyin_api_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace"
+            )
+
+            for line in iter(proc.stdout.readline, ""):
+                if line.strip():
+                    logger.info(f"[EVIL0CTAL] {line.strip()}")
+
+            proc.wait()
+            logger.warning(f"[EVIL0CTAL] Processo encerrou com código {proc.returncode}. Reiniciando em 10s...")
+            time.sleep(10)
         except Exception as e:
             logger.error(f"[EVIL0CTAL] Erro na API Evil0ctal: {e}. Reiniciando em 10s...")
             SERVICE_STATUS["Evil0ctal Douyin API (5555)"] = f"⚠️ Reiniciando ({e})"
             time.sleep(10)
+
 
 
 # ==============================================================================
