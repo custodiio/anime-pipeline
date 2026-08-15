@@ -366,9 +366,15 @@ demo.app.add_middleware(
     allow_headers=["*"],
 )
 
-# Vincula rotas da API diretamente no FastAPI do Gradio
-demo.app.include_router(scrapper_app.router)
-demo.app.include_router(tiktok_app.router)
+# Vincula rotas da API com prioridade máxima no topo da tabela de rotas do Gradio
+for route in reversed(scrapper_app.routes):
+    if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/scrapper"):
+        demo.app.routes.insert(0, route)
+
+for route in reversed(tiktok_app.routes):
+    if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/tiktok"):
+        demo.app.routes.insert(0, route)
+
 demo.app.mount("/scrapper", scrapper_app)
 demo.app.mount("/tiktok", tiktok_app)
 
