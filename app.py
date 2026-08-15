@@ -342,11 +342,13 @@ def main():
     from scrapper.web_panel import app as scrapper_app
     from tiktok_approval.main import app as tiktok_app
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi import FastAPI
+    import uvicorn
+    import gradio as gr
 
-    demo = create_dashboard()
+    main_app = FastAPI(title="AnimeRecap Central Ecosystem")
 
-    # demo.app é o FastAPI nativo do Gradio
-    demo.app.add_middleware(
+    main_app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=True,
@@ -354,14 +356,18 @@ def main():
         allow_headers=["*"],
     )
 
-    # Vincula rotas do Scrapper e TikTok diretamente no FastAPI do Gradio
-    demo.app.include_router(scrapper_app.router)
-    demo.app.include_router(tiktok_app.router)
-    demo.app.mount("/scrapper", scrapper_app)
-    demo.app.mount("/tiktok", tiktok_app)
+    # Vincula rotas da API com prioridade máxima
+    main_app.include_router(scrapper_app.router)
+    main_app.include_router(tiktok_app.router)
+    main_app.mount("/scrapper", scrapper_app)
+    main_app.mount("/tiktok", tiktok_app)
 
-    print("Iniciando Gradio Dashboard com APIs integradas na porta 7860...")
-    demo.launch(server_name="0.0.0.0", server_port=7860, prevent_thread_lock=False)
+    # Cria e monta o Dashboard do Gradio sobre o FastAPI
+    demo = create_dashboard()
+    app = gr.mount_gradio_app(main_app, demo, path="/")
+
+    print("Iniciando FastAPI com rotas de API e Gradio na porta 7860...")
+    uvicorn.run(app, host="0.0.0.0", port=7860)
 
 
 
