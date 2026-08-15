@@ -1,0 +1,14 @@
+TokenManager:
+  bilibili:
+    headers:
+      accept-language: zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6
+      cookie: DedeUserID=3706979014937468; DedeUserID__ckMd5=3e4f86cc01fe117a; SESSDATA=c700d163%2C1797300879%2C88cf9%2A62CjC3UtlwuMhiXy8evQu2ECAEGoBaVyJmStIwGGPrKQImF_AHG9d56PW_-p9yvFRVeDsSVkFEZUc4SktacjlMZVVSY0dTaFMxUFR3bFl1TUNYZTNwbUN6Y05HRWhXUDAtMWR3VXZnMTJ3NUdRZ3A0cUNjalozMFVPdGVGU1VTeURjbkFPZzlaV29RIIEC;
+        sid=8gxrsd1o; rpdid=|(J|umRlYJm~0J'u~~~l|~)u|
+      origin: https://www.bilibili.com
+      origin_2: https://space.bilibili.com
+      referer: https://space.bilibili.com/
+      user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+        like Gecko) Chrome/90.0.4430.212 Safari/537.36
+    proxies:
+      http: null
+      https: null

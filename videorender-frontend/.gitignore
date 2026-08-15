@@ -25,3 +25,4 @@ dist-ssr
 
 temp_omnivoice/
 create_upscale_nb.py
+.vercel
