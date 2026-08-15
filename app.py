@@ -350,16 +350,17 @@ def init_system():
 # Dispara inicialização dos serviços
 init_system()
 
-# 3. Cria a interface Gradio e integra todas as rotas da API no demo.app
+# 3. Cria a aplicação ASGI unificada com rotas de API prioritárias e Gradio Dashboard
 from scrapper.web_panel import app as scrapper_app
 from tiktok_approval.main import app as tiktok_app
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI
 import gradio as gr
 
-demo = create_dashboard()
+main_app = FastAPI(title="AnimeRecap Central Ecosystem")
 
-# Configura CORS no FastAPI do Gradio
-demo.app.add_middleware(
+# Configura CORS no FastAPI principal
+main_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
@@ -367,22 +368,18 @@ demo.app.add_middleware(
     allow_headers=["*"],
 )
 
-# Injeta as rotas de API com prioridade máxima no topo da tabela de rotas do Gradio
-for route in reversed(scrapper_app.routes):
-    if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/scrapper"):
-        demo.app.routes.insert(0, route)
+# Vincula todas as rotas da API com prioridade no FastAPI principal
+main_app.include_router(scrapper_app.router)
+main_app.include_router(tiktok_app.router)
+main_app.mount("/scrapper", scrapper_app)
+main_app.mount("/tiktok", tiktok_app)
 
-for route in reversed(tiktok_app.routes):
-    if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/tiktok"):
-        demo.app.routes.insert(0, route)
-
-demo.app.mount("/scrapper", scrapper_app)
-demo.app.mount("/tiktok", tiktok_app)
-
-app = demo.app
+# Monta o Gradio Dashboard como aplicação base
+demo = create_dashboard()
+app = gr.mount_gradio_app(main_app, demo, path="/")
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, prevent_thread_lock=False)
-    while True:
-        time.sleep(3600)
+    import uvicorn
+    print("Iniciando servidor ASGI unificado na porta 7860...")
+    uvicorn.run(app, host="0.0.0.0", port=7860, log_level="info")
 
