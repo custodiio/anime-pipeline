@@ -350,36 +350,54 @@ def init_system():
 # Dispara inicialização dos serviços
 init_system()
 
-# 3. Cria a aplicação ASGI unificada com rotas de API prioritárias e Gradio Dashboard
+# 3. Cria a interface Gradio e registra rotas de API com injeção pós-launch
 from scrapper.web_panel import app as scrapper_app
 from tiktok_approval.main import app as tiktok_app
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI
 import gradio as gr
 
-main_app = FastAPI(title="AnimeRecap Central Ecosystem")
-
-# Configura CORS no FastAPI principal
-main_app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Vincula todas as rotas da API com prioridade no FastAPI principal
-main_app.include_router(scrapper_app.router)
-main_app.include_router(tiktok_app.router)
-main_app.mount("/scrapper", scrapper_app)
-main_app.mount("/tiktok", tiktok_app)
-
-# Monta o Gradio Dashboard como aplicação base
 demo = create_dashboard()
-app = gr.mount_gradio_app(main_app, demo, path="/")
+
+def setup_api_routes(target_app):
+    """Injeta as rotas da API no FastAPI do Gradio no topo da tabela de roteamento."""
+    target_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    # Inclui os routers
+    target_app.include_router(scrapper_app.router)
+    target_app.include_router(tiktok_app.router)
+    
+    # Injeta rotas no topo (ordem reversa para manter prioridade máxima)
+    for route in reversed(scrapper_app.routes):
+        if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/scrapper"):
+            if route not in target_app.routes:
+                target_app.routes.insert(0, route)
+
+    for route in reversed(tiktok_app.routes):
+        if getattr(route, "path", "").startswith("/api") or getattr(route, "path", "").startswith("/tiktok"):
+            if route not in target_app.routes:
+                target_app.routes.insert(0, route)
+
+    try:
+        target_app.mount("/scrapper", scrapper_app)
+        target_app.mount("/tiktok", tiktok_app)
+    except Exception:
+        pass
+
+# Injeção prévia
+setup_api_routes(demo.app)
+app = demo.app
 
 if __name__ == "__main__":
-    import uvicorn
-    print("Iniciando servidor ASGI unificado na porta 7860...")
-    uvicorn.run(app, host="0.0.0.0", port=7860, log_level="info")
+    logger.info("Iniciando Gradio Dashboard com ZeroGPU na porta 7860...")
+    demo.launch(server_name="0.0.0.0", server_port=7860, prevent_thread_lock=True)
+    # Injeção crítica pós-launch (onde o Gradio finaliza o demo.app ativo)
+    setup_api_routes(demo.app)
+    logger.info(f"Rotas da API integradas com sucesso! Total de rotas ativas: {len(demo.app.routes)}")
+    while True:
+        time.sleep(3600)
 
