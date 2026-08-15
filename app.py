@@ -67,11 +67,18 @@ def start_kuma_service():
 
     SERVICE_STATUS["Kuma Recap Bot & Webhook (8080)"] = "✅ Online (Porta 8080)"
 
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        logger.warning("[KUMA] TELEGRAM_BOT_TOKEN não configurado no .env. Bot desativado.")
+        SERVICE_STATUS["Kuma Recap Bot & Webhook (8080)"] = "⚠️ Webhook Ativo / Bot Sem Token"
+        return
+
     # Loop de execução do bot Telegram
     while True:
         try:
             logger.info("[KUMA] Iniciando Bot Telegram do Kuma Recap...")
             run_kuma_bot()
+            time.sleep(5)
         except Exception as e:
             logger.error(f"[KUMA] Falha no Bot Telegram: {e}. Reiniciando em 15s...")
             SERVICE_STATUS["Kuma Recap Bot & Webhook (8080)"] = f"⚠️ Reconectando ({e})"
@@ -96,7 +103,6 @@ def start_evil0ctal_api():
             proc = subprocess.Popen(
                 [sys.executable, "start.py"],
                 cwd=str(douyin_api_dir),
-
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -151,11 +157,17 @@ def start_scrapper_service():
 
         SERVICE_STATUS["Douyin Scrapper Web & Bot (5556)"] = "✅ Online (Porta 5556)"
 
+        token = os.getenv("SCRAPPER_TELEGRAM_TOKEN")
+        if not token:
+            logger.info("[SCRAPPER] SCRAPPER_TELEGRAM_TOKEN não configurado. Painel Web ativo, Bot desativado.")
+            return
+
         # Bot Telegram do Scrapper
         while True:
             try:
                 logger.info("[SCRAPPER] Iniciando Bot Telegram do Scrapper...")
                 telegram_bot.run_bot()
+                time.sleep(10)
             except Exception as e:
                 logger.error(f"[SCRAPPER] Falha no Bot Telegram: {e}. Reiniciando em 10s...")
                 SERVICE_STATUS["Douyin Scrapper Web & Bot (5556)"] = f"⚠️ Bot Reconectando ({e})"
@@ -171,6 +183,12 @@ def start_scrapper_service():
 def start_postrecap_service():
     """Inicia o Bot do Telegram e o worker de publicação do Post Recap."""
     try:
+        token = os.getenv("POSTRECAP_TELEGRAM_BOT_TOKEN")
+        if not token:
+            logger.info("[POSTRECAP] POSTRECAP_TELEGRAM_BOT_TOKEN não configurado no .env. Serviço inativo.")
+            SERVICE_STATUS["Post Recap Bot & Scheduler"] = "⏸️ Desativado (Sem Token)"
+            return
+
         from post_recap import bot as postrecap_bot
 
         SERVICE_STATUS["Post Recap Bot & Scheduler"] = "✅ Online"
@@ -179,6 +197,7 @@ def start_postrecap_service():
             try:
                 logger.info("[POSTRECAP] Iniciando Bot e Scheduler do Post Recap...")
                 postrecap_bot.main()
+                time.sleep(10)
             except Exception as e:
                 logger.error(f"[POSTRECAP] Falha no Post Recap: {e}. Reiniciando em 10s...")
                 SERVICE_STATUS["Post Recap Bot & Scheduler"] = f"⚠️ Reconectando ({e})"
