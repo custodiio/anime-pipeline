@@ -1331,9 +1331,13 @@ def run_bot():
         print("ERRO: SCRAPPER_TELEGRAM_TOKEN não configurado no arquivo .env!")
         return
         
-    database.init_db()
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    
+    database.init_db()
     app = ApplicationBuilder().token(token).build()
     
     app.add_handler(CommandHandler("start", start))

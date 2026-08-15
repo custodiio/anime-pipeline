@@ -1691,7 +1691,12 @@ def main():
             BotCommand("usar_local", "Iniciar projeto com arquivos do PC"),
             BotCommand("usar_drive", "Iniciar projeto com arquivos do Google Drive"),
         ])
-        print("Comandos do Telegram registrados no menu azul!")
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
@@ -1720,11 +1725,6 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     print("Bot Telegram iniciado! Ctrl+C para parar.")
-    import asyncio
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
     app.run_polling(drop_pending_updates=True, stop_signals=None, close_loop=False)
 
 
