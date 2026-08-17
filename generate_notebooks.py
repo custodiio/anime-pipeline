@@ -517,7 +517,6 @@ if __name__ == "__main__":
             new_build = []
             for line in build_source:
                 line = line.replace('pt1_enhanced.mp4', f'pt{i}_enhanced.mp4')
-                line = line.replace('"-preset", "p6"', '"-preset", "p4"')
                 new_build.append(line)
             part_nb["cells"][2]["source"] = new_build
             
