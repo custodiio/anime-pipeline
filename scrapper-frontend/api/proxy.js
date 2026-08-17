@@ -11,9 +11,11 @@ export default async function handler(req, res) {
     }
   });
 
-  const headers = { ...req.headers };
-  delete headers.host;
-
+  const headers = {};
+  if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'];
+  if (req.headers['x-session-token']) headers['x-session-token'] = req.headers['x-session-token'];
+  if (req.headers['accept']) headers['accept'] = req.headers['accept'];
+  
   const hfToken = process.env.HF_TOKEN;
   if (hfToken) {
     headers['Authorization'] = `Bearer ${hfToken}`;

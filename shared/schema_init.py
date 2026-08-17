@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS scrapper_douyin_collections (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS scrapper_collection_episodes (
+CREATE TABLE IF NOT EXISTS scrapper_douyin_episodes (
     id SERIAL PRIMARY KEY,
     mix_id TEXT NOT NULL REFERENCES scrapper_douyin_collections(mix_id) ON DELETE CASCADE,
     episode_num INTEGER,

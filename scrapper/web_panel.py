@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, BackgroundTasks, Form, HTTPException, Request, Response, Cookie, Query
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from scrapper import (
@@ -61,6 +61,18 @@ def verify_session(request: Request, session: str = None) -> bool:
 
 # --- ROTAS DE API PARA COLEÇÕES, PERFIS E CONFIGURAÇÕES ---
 
+@app.get("/api/download")
+@app.get("/scrapper/api/download")
+async def download_proxy_api(url: str = Query(...), with_watermark: str = Query("false")):
+    import httpx
+    async def _stream_video():
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            async with client.stream("GET", f"{DOUYIN_API_BASE}/api/download", params={"url": url, "with_watermark": with_watermark}) as r:
+                async for chunk in r.aiter_bytes():
+                    yield chunk
+
+    return StreamingResponse(_stream_video(), media_type="video/mp4")
+
 @app.get("/api/douyin/session/verify")
 @app.get("/scrapper/api/douyin/session/verify")
 async def verify_session_api(request: Request, session: str = Query(None)):
@@ -91,13 +103,37 @@ async def get_douyin_collection_detail_api(mix_id: str):
 @app.post("/api/douyin/collections/add")
 @app.post("/scrapper/api/douyin/collections/add")
 async def add_douyin_collection_api(
-    url: str = Form(...),
+    request: Request,
+    url: str = Form(None),
     title_pt: str = Form(None),
     autoposting: int = Form(1)
 ):
-    autoposting_bool = bool(autoposting)
-    res = douyin_collection_scraper.fetch_and_store_collection(url, title_pt, autoposting_bool)
-    return res
+    target_url = url
+    target_title_pt = title_pt
+    target_autoposting = bool(autoposting)
+
+    if not target_url:
+        try:
+            body = await request.json()
+            target_url = body.get("url")
+            target_title_pt = body.get("title_pt")
+            target_autoposting = bool(body.get("autoposting", 1))
+        except Exception:
+            pass
+
+    if not target_url:
+        return JSONResponse({"ok": False, "message": "URL não fornecida."}, status_code=400)
+
+    try:
+        import asyncio
+        res = await asyncio.to_thread(
+            douyin_collection_scraper.fetch_and_store_collection,
+            target_url, target_title_pt, target_autoposting
+        )
+        return res
+    except Exception as e:
+        logger.error(f"Erro ao cadastrar coleção: {e}")
+        return JSONResponse({"ok": False, "message": f"Erro interno: {e}"}, status_code=500)
 
 @app.post("/api/douyin/collections/{mix_id}/toggle-autoposting")
 @app.post("/scrapper/api/douyin/collections/{mix_id}/toggle-autoposting")
@@ -227,9 +263,23 @@ async def get_douyin_profiles_api():
 
 @app.post("/api/douyin/profiles/add")
 @app.post("/scrapper/api/douyin/profiles/add")
-async def add_douyin_profile_api(url: str = Form(...)):
-    res = douyin_profile_scraper.fetch_and_store_profile(url)
-    return res
+async def add_douyin_profile_api(request: Request, url: str = Form(None)):
+    target_url = url
+    if not target_url:
+        try:
+            body = await request.json()
+            target_url = body.get("url")
+        except Exception:
+            pass
+    if not target_url:
+        return JSONResponse({"ok": False, "message": "URL não fornecida."}, status_code=400)
+    try:
+        import asyncio
+        res = await asyncio.to_thread(douyin_profile_scraper.fetch_and_store_profile, target_url)
+        return res
+    except Exception as e:
+        logger.error(f"Erro ao cadastrar perfil: {e}")
+        return JSONResponse({"ok": False, "message": f"Erro interno: {e}"}, status_code=500)
 
 @app.post("/api/douyin/profiles/{sec_uid}/delete")
 @app.post("/scrapper/api/douyin/profiles/{sec_uid}/delete")

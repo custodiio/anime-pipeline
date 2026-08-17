@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useProjectStore, getOutputDimensions } from '../store/projectStore';
+import { getApiUrl } from '../utils/apiConfig';
 
 function genId() {
   return Math.random().toString(36).slice(2);
@@ -323,7 +324,7 @@ export function OverlayPanel() {
     const name = prompt("Deseja salvar essa Logo na Galeria Permanente? Digite o nome (ou cancele para usar apenas neste projeto):");
     if (name) {
       try {
-        await fetch('/api/overlays', {
+        await fetch(getApiUrl('/api/overlays'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, image_data: url })
@@ -350,7 +351,7 @@ export function OverlayPanel() {
 
   const loadGallery = async () => {
     try {
-      const res = await fetch('/api/overlays');
+      const res = await fetch(getApiUrl('/api/overlays'));
       if (res.ok) {
         const data = await res.json();
         setGalleryItems(data);
@@ -385,7 +386,7 @@ export function OverlayPanel() {
   const deleteFromGallery = async (id: string) => {
     if(!confirm("Certeza que deseja deletar da galeria?")) return;
     try {
-      await fetch(`/api/overlays?id=${id}`, { method: 'DELETE' });
+      await fetch(getApiUrl(`/api/overlays?id=${id}`), { method: 'DELETE' });
       loadGallery();
     } catch (err) {
       console.error(err);

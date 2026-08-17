@@ -162,9 +162,10 @@ def gerar_session_token(project_id: str) -> str:
     return token
 
 def get_session_link(token: str) -> str:
-    # Frontend é servido pelo webhook_server na mesma porta (8080)
-    base_url = os.getenv("PIPELINE_WEBHOOK_URL", "http://localhost:8080")
-    return f"{base_url}/?session={token}"
+    # Frontend no Vercel e API no Hugging Face Space
+    frontend_url = os.getenv("VIDEORENDER_URL", "https://kuma-videorender.vercel.app").rstrip("/")
+    api_url = os.getenv("PIPELINE_WEBHOOK_URL", "https://alehcrim-anime-pipeline.hf.space").rstrip("/")
+    return f"{frontend_url}/?session={token}&api={api_url}"
 
 
 # ═══════════════════════════════════════════════════════════════════

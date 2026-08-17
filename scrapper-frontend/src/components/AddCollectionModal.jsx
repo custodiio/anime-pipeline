@@ -10,12 +10,12 @@ export default function AddCollectionModal({ isOpen, onClose, onAddCollection })
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!url.trim()) return;
     setSubmitting(true);
-    await onAddCollection(url, titlePt);
+    await onAddCollection({ url: url.trim(), title_pt: titlePt.trim(), autoposting: 1 });
     setSubmitting(false);
     setUrl('');
     setTitlePt('');
-    onClose();
   };
 
   return (

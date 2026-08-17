@@ -45,9 +45,9 @@ _parent_dir = os.path.dirname(_current_dir)
 while _parent_dir in sys.path:
     sys.path.remove(_parent_dir)
 
-from app.main import Host_IP, Host_Port
+from app.main import app as fastapi_app, Host_IP, Host_Port
 import uvicorn
 
 if __name__ == '__main__':
-    uvicorn.run('app.main:app', host=Host_IP, port=Host_Port, reload=False, log_level="warning")
+    uvicorn.run(fastapi_app, host=Host_IP, port=Host_Port, reload=False, log_level="warning")
 

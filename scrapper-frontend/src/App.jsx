@@ -43,46 +43,54 @@ export default function App() {
   const [isAddProfileOpen, setIsAddProfileOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
-  // Helper para chamadas autenticadas
+  // Helper para chamadas autenticadas com interceptor de 401
   const apiFetch = useCallback(async (endpoint, options = {}) => {
     const headers = options.headers ? { ...options.headers } : {};
-    const token = sessionToken || localStorage.getItem('scrapper_session');
+    const token = sessionToken;
     if (token) {
       headers['X-Session-Token'] = token;
     }
     const separator = endpoint.includes('?') ? '&' : '?';
     const finalUrl = token ? `${getApiUrl(endpoint)}${separator}session=${token}` : getApiUrl(endpoint);
-    return fetch(finalUrl, { ...options, headers });
+    
+    const response = await fetch(finalUrl, { ...options, headers });
+    if (response.status === 401) {
+      setAuthStatus('unauthorized');
+      setSessionToken(null);
+      localStorage.removeItem('scrapper_session');
+    }
+    return response;
   }, [sessionToken]);
 
-  // Validação inicial de sessão
+  // Validação estrita de sessão (Nunca exibe o conteúdo sem verificação no banco)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const queryToken = params.get('session');
-    const storedToken = localStorage.getItem('scrapper_session');
-    const tokenToTest = queryToken || storedToken;
 
-    if (!tokenToTest) {
+    // Se não houver parâmetro ?session na URL, bloqueia imediatamente
+    if (!queryToken) {
+      localStorage.removeItem('scrapper_session');
+      setSessionToken(null);
       setAuthStatus('unauthorized');
       return;
     }
 
     const checkSession = async () => {
       try {
-        const res = await fetch(getApiUrl(`/api/douyin/session/verify?session=${tokenToTest}`));
+        const res = await fetch(getApiUrl(`/api/douyin/session/verify?session=${encodeURIComponent(queryToken)}`));
         if (res.ok) {
           const data = await res.json();
           if (data.valid) {
-            setSessionToken(tokenToTest);
-            localStorage.setItem('scrapper_session', tokenToTest);
+            setSessionToken(queryToken);
             setAuthStatus('authorized');
             return;
           }
         }
         localStorage.removeItem('scrapper_session');
+        setSessionToken(null);
         setAuthStatus('unauthorized');
       } catch (err) {
-        console.error('Erro ao verificar sessão:', err);
+        console.error('Erro ao verificar sessão no banco:', err);
         setAuthStatus('unauthorized');
       }
     };
@@ -261,21 +269,33 @@ export default function App() {
   };
 
   // Adicionar Coleção
-  const handleAddCollection = async (formDataPayload) => {
-    const formData = new FormData();
-    formData.append('url', formDataPayload.url);
-    if (formDataPayload.title_pt) formData.append('title_pt', formDataPayload.title_pt);
-    formData.append('autoposting', formDataPayload.autoposting ? '1' : '0');
+  const handleAddCollection = async (arg1, arg2) => {
+    const payload = typeof arg1 === 'object' && arg1 !== null
+      ? arg1
+      : { url: arg1, title_pt: arg2 || '', autoposting: 1 };
+
+    if (!payload.url) {
+      alert('Por favor, informe a URL da coleção ou vídeo.');
+      return;
+    }
 
     try {
-      const res = await apiFetch('/api/douyin/collections/add', { method: 'POST', body: formData });
+      const res = await apiFetch('/api/douyin/collections/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: payload.url,
+          title_pt: payload.title_pt || '',
+          autoposting: payload.autoposting ? 1 : 0
+        })
+      });
       const data = await res.json();
       if (data.ok) {
         setIsAddColOpen(false);
         loadCollections();
-        alert('✅ Coleção cadastrada com sucesso!');
+        alert('✅ ' + (data.message || 'Coleção cadastrada com sucesso!'));
       } else {
-        alert('Erro ao adicionar: ' + (data.error || data.detail || 'Falha no cadastro'));
+        alert('Erro ao adicionar: ' + (data.message || data.error || data.detail || 'Falha no cadastro'));
       }
     } catch (err) {
       alert('Falha na requisição: ' + err);
@@ -284,20 +304,23 @@ export default function App() {
 
   // Adicionar Perfil
   const handleAddProfile = async (formDataPayload) => {
-    const formData = new FormData();
-    formData.append('url', formDataPayload.url);
-    if (formDataPayload.custom_name) formData.append('custom_name', formDataPayload.custom_name);
-    formData.append('autoposting', formDataPayload.autoposting ? '1' : '0');
-
     try {
-      const res = await apiFetch('/api/douyin/profiles/add', { method: 'POST', body: formData });
+      const res = await apiFetch('/api/douyin/profiles/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: formDataPayload.url,
+          custom_name: formDataPayload.custom_name || '',
+          autoposting: formDataPayload.autoposting ? 1 : 0
+        })
+      });
       const data = await res.json();
       if (data.ok) {
         setIsAddProfileOpen(false);
         loadProfiles();
-        alert('✅ Perfil cadastrado com sucesso!');
+        alert('✅ ' + (data.message || 'Perfil cadastrado com sucesso!'));
       } else {
-        alert('Erro ao adicionar perfil: ' + (data.error || data.detail || 'Falha no cadastro'));
+        alert('Erro ao adicionar perfil: ' + (data.message || data.error || data.detail || 'Falha no cadastro'));
       }
     } catch (err) {
       alert('Falha na requisição de perfil: ' + err);

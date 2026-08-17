@@ -107,7 +107,11 @@ class TokenManager:
         }
 
         transport = httpx.HTTPTransport(retries=5)
-        with httpx.Client(transport=transport, proxies=cls.proxies) as client:
+        try:
+            client = httpx.Client(transport=transport)
+        except Exception:
+            client = httpx.Client()
+        with client:
             try:
                 response = client.post(
                     cls.token_conf["url"], content=payload, headers=headers
@@ -341,7 +345,7 @@ class SecUserIdFetcher:
         try:
             transport = httpx.AsyncHTTPTransport(retries=5)
             async with httpx.AsyncClient(
-                    transport=transport, proxies=TokenManager.proxies, timeout=10
+                    transport=transport, timeout=10
             ) as client:
                 response = await client.get(url, follow_redirects=True)
                 # 444一般为Nginx拦截，不返回状态 (444 is generally intercepted by Nginx and does not return status)
@@ -529,7 +533,7 @@ class WebCastIdFetcher:
             # 重定向到完整链接
             transport = httpx.AsyncHTTPTransport(retries=5)
             async with httpx.AsyncClient(
-                    transport=transport, proxies=TokenManager.proxies, timeout=10
+                    transport=transport, timeout=10
             ) as client:
                 response = await client.get(url, follow_redirects=True)
                 response.raise_for_status()

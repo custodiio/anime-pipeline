@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useProjectStore } from '../store/projectStore';
+import { getApiUrl } from '../utils/apiConfig';
 
 interface DbPreset {
   id: string;
@@ -37,7 +38,7 @@ export function PresetsModal({ onClose }: { onClose: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/presets');
+      const res = await fetch(getApiUrl('/api/presets'));
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       const data: DbPreset[] = await res.json();
       setPresets(data);
@@ -71,7 +72,7 @@ export function PresetsModal({ onClose }: { onClose: () => void }) {
     if (includeConfig.overlay) presetData.overlays = store.overlays;
 
     try {
-      const res = await fetch('/api/presets', {
+      const res = await fetch(getApiUrl('/api/presets'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newPresetName.trim(), preset_data: presetData }),
@@ -95,7 +96,7 @@ export function PresetsModal({ onClose }: { onClose: () => void }) {
     if (!window.confirm(`Apagar a pré-definição "${preset.name}"?`)) return;
     setError(null);
     try {
-      const res = await fetch(`/api/presets?id=${preset.id}`, { method: 'DELETE' });
+      const res = await fetch(getApiUrl(`/api/presets?id=${preset.id}`), { method: 'DELETE' });
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       await loadPresets();
     } catch (e: any) {

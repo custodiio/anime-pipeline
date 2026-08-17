@@ -213,13 +213,13 @@ def fetch_and_store_single_video(aweme_id: str, title_pt: str = None, autopostin
         database.upsert_collection_episode(ep_data)
         
         # 3. Atualiza o total_episodes da coleção
-        conn = database.get_connection()
-        cursor = conn.conn.cursor() if hasattr(conn, "conn") else conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM collection_episodes WHERE mix_id = ?", (virtual_mix_id,))
-        total_eps = cursor.fetchone()[0]
-        cursor.execute("UPDATE douyin_collections SET total_episodes = ? WHERE mix_id = ?", (total_eps, virtual_mix_id))
-        conn.commit()
-        conn.close()
+        from shared.db_connection import DBConnectionContext
+        with DBConnectionContext(autocommit=True) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) FROM scrapper_douyin_episodes WHERE mix_id = %s", (virtual_mix_id,))
+                row = cursor.fetchone()
+                total_eps = row[0] if row else 1
+                cursor.execute("UPDATE scrapper_douyin_collections SET total_episodes = %s WHERE mix_id = %s", (total_eps, virtual_mix_id))
         
         return {
             "ok": True,

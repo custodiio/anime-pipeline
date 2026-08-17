@@ -3,6 +3,14 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/:match*",
+      "destination": "https://alehcrim-anime-pipeline.hf.space/api/:match*"
+    },
+    {
+      "source": "/webhook/:match*",
+      "destination": "https://alehcrim-anime-pipeline.hf.space/webhook/:match*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

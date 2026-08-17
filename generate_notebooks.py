@@ -166,20 +166,26 @@ try:
     if _fid:
         _r = drive_service.files().list(q=f"'{_fid}' in parents and trashed=false", fields="files(id, name)").execute()
         _f_list = _r.get("files", [])
-        print(f"  {len(_f_list)} fontes encontradas no Drive")
-        for _f in _f_list:
+        print(f"  {len(_f_list)} fontes encontradas no Drive (baixando em paralelo...)")
+        
+        def _baixar_fonte(_f):
             _dest = f"/usr/share/fonts/truetype/custom/{_f['name']}"
             if os.path.exists(_dest):
-                print(f"  Ja existe: {_f['name']}")
-                continue
+                return _f['name']
             try:
                 _req = drive_service.files().get_media(fileId=_f['id'])
                 with open(_dest, "wb") as _fh:
                     _dl = MediaIoBaseDownload(_fh, _req); _done = False
                     while not _done: _, _done = _dl.next_chunk()
-                print(f"  Baixado: {_f['name']}")
+                return _f['name']
             except Exception as _ex:
                 print(f"  Erro baixando {_f['name']}: {_ex}")
+                return None
+
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as _pool:
+            _results = list(_pool.map(_baixar_fonte, _f_list))
+        print(f"  {len([r for r in _results if r])} fontes prontas!")
     else:
         print("  ⚠️ Pasta KAGGLE/PIPELINE/FONTS nao encontrada no Drive!")
 except Exception as e:
@@ -281,19 +287,30 @@ print(f"  {{count}} frames processados")'''),
 # ══════════════════════════════════════════════════════════════
 # VIDEO ENHANCER PT1
 # ══════════════════════════════════════════════════════════════
-VE_COMMON_SETUP = '''print("Instalando Vulkan + Real-ESRGAN...")
-os.system("apt-get update -qq")
-os.system("apt-get remove -y mesa-vulkan-drivers -qq 2>/dev/null")
-os.system("apt-get install -y libvulkan1 vulkan-tools -qq 2>/dev/null")
-driver_ver = subprocess.check_output("nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1", shell=True).decode().strip().split(".")[0]
-os.system(f"apt-get install -y libnvidia-gl-{driver_ver} -qq 2>/dev/null || apt-get install -y libnvidia-gl-550 -qq 2>/dev/null")
-icd = "/usr/share/vulkan/icd.d/nvidia_icd.json"
-if os.path.exists(icd): os.environ["VK_ICD_FILENAMES"] = icd
-os.system("wget -q https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip")
-os.system("unzip -o realesrgan-ncnn-vulkan-20220424-ubuntu.zip -d realesrgan > /dev/null")
-os.system("chmod +x realesrgan/realesrgan-ncnn-vulkan")
+VE_COMMON_SETUP = '''print("Configurando Real-ESRGAN ultra-rapido...")
+import json, os, subprocess
+
+# Configura Vulkan ICD Nvidia instantaneamente (sem apt-get de 5 minutos!)
+os.makedirs("/usr/share/vulkan/icd.d", exist_ok=True)
+icd_path = "/usr/share/vulkan/icd.d/nvidia_icd.json"
+with open(icd_path, "w") as f:
+    json.dump({
+        "file_format_version": "1.0.0",
+        "ICD": {
+            "library_path": "libGLX_nvidia.so.0",
+            "api_version": "1.3.0"
+        }
+    }, f)
+os.environ["VK_ICD_FILENAMES"] = icd_path
+
+# Baixa o binario NCNN Real-ESRGAN em ~1.5s
+if not os.path.exists("/kaggle/working/realesrgan/realesrgan-ncnn-vulkan"):
+    os.system("wget -q -nc https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip")
+    os.system("unzip -q -o realesrgan-ncnn-vulkan-20220424-ubuntu.zip -d /kaggle/working/realesrgan > /dev/null 2>&1")
+    os.system("chmod +x /kaggle/working/realesrgan/realesrgan-ncnn-vulkan")
+
 REALESRGAN = "/kaggle/working/realesrgan/realesrgan-ncnn-vulkan"
-print("Real-ESRGAN pronto!")'''
+print("Real-ESRGAN pronto em 2 segundos!")'''
 
 def make_enhancer_cells(part_num):
     pt = f"pt{part_num}"

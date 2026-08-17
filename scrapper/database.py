@@ -524,7 +524,7 @@ def get_douyin_collections(status_filter: str = None) -> list[dict]:
                         SUM(CASE WHEN e.status IN ('posted', 'published', 'completed') THEN 1 ELSE 0 END) as posted_count,
                         SUM(CASE WHEN e.status = 'opaque_over_5min' THEN 1 ELSE 0 END) as opaque_count
                     FROM scrapper_douyin_collections c
-                    LEFT JOIN scrapper_collection_episodes e ON c.mix_id = e.mix_id
+                    LEFT JOIN scrapper_douyin_episodes e ON c.mix_id = e.mix_id
                 """
                 params = []
                 if status_filter:
@@ -550,7 +550,7 @@ def get_douyin_collection_by_id(mix_id: str) -> dict | None:
                         SUM(CASE WHEN e.status IN ('posted', 'published', 'completed') THEN 1 ELSE 0 END) as posted_count,
                         SUM(CASE WHEN e.status = 'opaque_over_5min' THEN 1 ELSE 0 END) as opaque_count
                     FROM scrapper_douyin_collections c
-                    LEFT JOIN scrapper_collection_episodes e ON c.mix_id = e.mix_id
+                    LEFT JOIN scrapper_douyin_episodes e ON c.mix_id = e.mix_id
                     WHERE c.mix_id = %s
                     GROUP BY c.mix_id
                 """, (str(mix_id),))
@@ -606,16 +606,16 @@ def upsert_collection_episode(ep: dict) -> bool:
         with conn.cursor() as cursor:
             try:
                 cursor.execute("""
-                    INSERT INTO scrapper_collection_episodes (
+                    INSERT INTO scrapper_douyin_episodes (
                         mix_id, episode_num, aweme_id, title, duration_seconds, likes, comments, cover_url, video_url, status, is_compilation
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (aweme_id) DO UPDATE SET
-                        episode_num = COALESCE(EXCLUDED.episode_num, scrapper_collection_episodes.episode_num),
+                        episode_num = COALESCE(EXCLUDED.episode_num, scrapper_douyin_episodes.episode_num),
                         title = EXCLUDED.title,
                         duration_seconds = EXCLUDED.duration_seconds,
                         likes = EXCLUDED.likes,
                         comments = EXCLUDED.comments,
-                        cover_url = COALESCE(EXCLUDED.cover_url, scrapper_collection_episodes.cover_url),
+                        cover_url = COALESCE(EXCLUDED.cover_url, scrapper_douyin_episodes.cover_url),
                         video_url = EXCLUDED.video_url,
                         is_compilation = EXCLUDED.is_compilation;
                 """, (
@@ -642,7 +642,7 @@ def get_collection_episodes(mix_id: str) -> list[dict]:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
             try:
                 cursor.execute("""
-                    SELECT * FROM scrapper_collection_episodes
+                    SELECT * FROM scrapper_douyin_episodes
                     WHERE mix_id = %s
                     ORDER BY CASE WHEN episode_num IS NULL THEN 999999 ELSE episode_num END ASC, id ASC
                 """, (str(mix_id),))
@@ -656,7 +656,7 @@ def get_episode_by_id(ep_id: int) -> dict | None:
     with DBConnectionContext(autocommit=True) as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
             try:
-                cursor.execute("SELECT * FROM scrapper_collection_episodes WHERE id = %s", (ep_id,))
+                cursor.execute("SELECT * FROM scrapper_douyin_episodes WHERE id = %s", (ep_id,))
                 row = cursor.fetchone()
                 return dict(row) if row else None
             except Exception as e:
@@ -668,7 +668,7 @@ def get_episodes_by_status(status: str) -> list:
     with DBConnectionContext(autocommit=True) as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
             try:
-                cursor.execute("SELECT * FROM scrapper_collection_episodes WHERE status = %s", (status,))
+                cursor.execute("SELECT * FROM scrapper_douyin_episodes WHERE status = %s", (status,))
                 rows = cursor.fetchall()
                 return [dict(r) for r in rows]
             except Exception as e:
@@ -691,7 +691,7 @@ def update_episode_status(ep_id: int, status: str, scheduled_at: str = None, pos
                     params.append(posted_at)
 
                 params.append(ep_id)
-                query = f"UPDATE scrapper_collection_episodes SET {', '.join(fields)} WHERE id = %s"
+                query = f"UPDATE scrapper_douyin_episodes SET {', '.join(fields)} WHERE id = %s"
                 cursor.execute(query, params)
                 return True
             except Exception as e:
@@ -708,7 +708,7 @@ def update_episode_posting_guide(ep_id: int, guide_data) -> bool:
     with DBConnectionContext(autocommit=True) as conn:
         with conn.cursor() as cursor:
             try:
-                cursor.execute("UPDATE scrapper_collection_episodes SET posting_guide = %s WHERE id = %s", (guide_json_str, ep_id))
+                cursor.execute("UPDATE scrapper_douyin_episodes SET posting_guide = %s WHERE id = %s", (guide_json_str, ep_id))
                 return True
             except Exception as e:
                 logger.error(f"Erro ao atualizar guia de postagem do episódio #{ep_id}: {e}")
