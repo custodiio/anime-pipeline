@@ -226,24 +226,20 @@ def save_nb(nb, filename):
         json.dump(nb, f, indent=1, ensure_ascii=False)
     print(f"  Salvo: {filename}")
 
-# ══════════════════════════════════════════════════════════════
-# WATERMARK REMOVER PT1
-# ══════════════════════════════════════════════════════════════
 def make_watermark_cells(part_num):
     pt = f"pt{part_num}"
     return [
         ("Download dos Arquivos", f'''import cv2, numpy as np
-baixar_do_drive(f"{{DRIVE_ATIVO}}/video_{pt}.mp4", f"{{BASE_PATH}}/video_{pt}.mp4")
+baixar_do_drive(f"{{DRIVE_ATIVO}}/video_{{pt}}.mp4", f"{{BASE_PATH}}/video_{{pt}}.mp4")
 baixar_do_drive(f"{{DRIVE_ATIVO}}/mask.png", f"{{BASE_PATH}}/mask.png")
 print("Arquivos prontos!")'''),
 
-        ("Processamento Watermark", f'''INPUT = f"{{BASE_PATH}}/video_{pt}.mp4"
+        ("Processamento Watermark", f'''INPUT = f"{{BASE_PATH}}/video_{{pt}}.mp4"
 MASK = f"{{BASE_PATH}}/mask.png"
-OUTPUT = f"{{BASE_PATH}}/{pt}_limpo.mp4"
+OUTPUT = f"{{BASE_PATH}}/{{pt}}_limpo.mp4"
 
 import cv2, numpy as np
 
-# Se mask não existe, copiar direto sem processamento
 if not os.path.exists(MASK):
     print("  Mask nao encontrada, copiando video sem watermark removal...")
     shutil.copy2(INPUT, OUTPUT)
@@ -258,6 +254,21 @@ else:
     mask_np = cv2.resize(mask_np, (W, H))
     _, mask_bin = cv2.threshold(mask_np, 10, 255, cv2.THRESH_BINARY)
 
+    contours, _ = cv2.findContours(mask_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    use_crop = False
+    if contours:
+        xs = []; ys = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            xs.extend([x, x+w]); ys.extend([y, y+h])
+        margin = 6
+        bx1 = max(0, min(xs) - margin)
+        by1 = max(0, min(ys) - margin)
+        bx2 = min(W, max(xs) + margin)
+        by2 = min(H, max(ys) + margin)
+        crop_mask = mask_bin[by1:by2, bx1:bx2]
+        use_crop = True
+
     pipe = subprocess.Popen([
         "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
         "-s", f"{{W}}x{{H}}", "-pix_fmt", "bgr24", "-r", str(FPS), "-i", "pipe:0",
@@ -268,8 +279,13 @@ else:
     while True:
         ret, frame = cap.read()
         if not ret: break
-        out = cv2.inpaint(frame, mask_bin, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-        pipe.stdin.write(out.tobytes())
+        if use_crop:
+            roi = frame[by1:by2, bx1:bx2]
+            frame[by1:by2, bx1:bx2] = cv2.inpaint(roi, crop_mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+            pipe.stdin.write(frame.tobytes())
+        else:
+            out = cv2.inpaint(frame, mask_bin, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+            pipe.stdin.write(out.tobytes())
         count += 1
         if count % 500 == 0:
             print(f"  Frame {{count}}/{{TOTAL}} ({{count/TOTAL*100:.1f}}%)")
@@ -279,18 +295,14 @@ else:
     pipe.wait()
 print(f"  {{count}} frames processados")'''),
 
-        ("Upload Resultado", f'''salvar_no_drive(f"{{BASE_PATH}}/{pt}_limpo.mp4", f"{{DRIVE_WATERMARK}}/{pt}_limpo.mp4")'''),
+        ("Upload Resultado", f'''salvar_no_drive(f"{{BASE_PATH}}/{{pt}}_limpo.mp4", f"{{DRIVE_WATERMARK}}/{{pt}}_limpo.mp4")'''),
 
-        ("Finalizacao", f'''report_step("done", f"Watermark {pt.upper()} concluido - {{count}} frames")'''),
+        ("Finalizacao", f'''report_step("done", f"Watermark {{pt.upper()}} concluido - {{count}} frames")'''),
     ]
 
-# ══════════════════════════════════════════════════════════════
-# VIDEO ENHANCER PT1
-# ══════════════════════════════════════════════════════════════
 VE_COMMON_SETUP = '''print("Configurando Real-ESRGAN ultra-rapido...")
 import json, os, subprocess
 
-# Configura Vulkan ICD Nvidia instantaneamente (sem apt-get de 5 minutos!)
 os.makedirs("/usr/share/vulkan/icd.d", exist_ok=True)
 icd_path = "/usr/share/vulkan/icd.d/nvidia_icd.json"
 with open(icd_path, "w") as f:
@@ -303,7 +315,6 @@ with open(icd_path, "w") as f:
     }, f)
 os.environ["VK_ICD_FILENAMES"] = icd_path
 
-# Baixa o binario NCNN Real-ESRGAN em ~1.5s
 if not os.path.exists("/kaggle/working/realesrgan/realesrgan-ncnn-vulkan"):
     os.system("wget -q -nc https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip")
     os.system("unzip -q -o realesrgan-ncnn-vulkan-20220424-ubuntu.zip -d /kaggle/working/realesrgan > /dev/null 2>&1")
@@ -316,15 +327,15 @@ def make_enhancer_cells(part_num):
     pt = f"pt{part_num}"
     return [
         ("Setup Real-ESRGAN", VE_COMMON_SETUP),
-        ("Download Video Limpo", f'''baixar_do_drive(f"{{DRIVE_WATERMARK}}/{pt}_limpo.mp4", f"{{BASE_PATH}}/{pt}_limpo.mp4")
+        ("Download Video Limpo", f'''baixar_do_drive(f"{{DRIVE_WATERMARK}}/{{pt}}_limpo.mp4", f"{{BASE_PATH}}/{{pt}}_limpo.mp4")
 print("Video baixado!")'''),
-        ("Extrair Frames", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{pt}"
+        ("Extrair Frames", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{{pt}}"
 os.makedirs(FRAMES_DIR, exist_ok=True)
-subprocess.run(f"ffmpeg -threads 0 -i {{BASE_PATH}}/{pt}_limpo.mp4 -q:v 2 {{FRAMES_DIR}}/frame_%08d.jpg -hide_banner -loglevel error", shell=True)
+subprocess.run(f"ffmpeg -threads 0 -i {{BASE_PATH}}/{{pt}}_limpo.mp4 -q:v 2 {{FRAMES_DIR}}/frame_%08d.jpg -hide_banner -loglevel error", shell=True)
 total_frames = len(os.listdir(FRAMES_DIR))
 print(f"  {{total_frames}} frames extraidos")'''),
-        ("Upscaling Dual GPU", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{pt}"
-UP_DIR = f"{{BASE_PATH}}/upscaled_{pt}"
+        ("Upscaling Dual GPU", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{{pt}}"
+UP_DIR = f"{{BASE_PATH}}/upscaled_{{pt}}"
 os.makedirs(UP_DIR, exist_ok=True)
 os.makedirs(f"{{BASE_PATH}}/fg0", exist_ok=True)
 os.makedirs(f"{{BASE_PATH}}/fg1", exist_ok=True)
@@ -333,12 +344,12 @@ os.makedirs(f"{{BASE_PATH}}/ug1", exist_ok=True)
 import threading
 all_f = sorted(glob.glob(f"{{FRAMES_DIR}}/*.jpg"))
 mid = len(all_f) // 2
-for f in all_f[:mid]: shutil.copy(f, f"{{BASE_PATH}}/fg0/")
-for f in all_f[mid:]: shutil.copy(f, f"{{BASE_PATH}}/fg1/")
+for f in all_f[:mid]: shutil.move(f, f"{{BASE_PATH}}/fg0/")
+for f in all_f[mid:]: shutil.move(f, f"{{BASE_PATH}}/fg1/")
 print(f"  GPU0: {{mid}} | GPU1: {{len(all_f)-mid}}")
 def run_gpu(cmd): subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-t0 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg0/ -o {{BASE_PATH}}/ug0/ -n realesr-animevideov3 -s 2 -f jpg -g 0",))
-t1 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg1/ -o {{BASE_PATH}}/ug1/ -n realesr-animevideov3 -s 2 -f jpg -g 1",))
+t0 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg0/ -o {{BASE_PATH}}/ug0/ -n realesr-animevideov3 -s 2 -f jpg -j 2:2:2 -g 0",))
+t1 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg1/ -o {{BASE_PATH}}/ug1/ -n realesr-animevideov3 -s 2 -f jpg -j 2:2:2 -g 1",))
 t0.start(); t1.start()
 while t0.is_alive() or t1.is_alive():
     d0 = len(glob.glob(f"{{BASE_PATH}}/ug0/*.jpg"))
@@ -354,15 +365,15 @@ shutil.rmtree(f"{{BASE_PATH}}/fg0", ignore_errors=True)
 shutil.rmtree(f"{{BASE_PATH}}/fg1", ignore_errors=True)
 shutil.rmtree(f"{{BASE_PATH}}/ug0", ignore_errors=True)
 shutil.rmtree(f"{{BASE_PATH}}/ug1", ignore_errors=True)'''),
-        ("Montar Video Final", f'''UP_DIR = f"{{BASE_PATH}}/upscaled_{pt}"
-INPUT_VIDEO = f"{{BASE_PATH}}/{pt}_limpo.mp4"
-OUTPUT = f"{{BASE_PATH}}/{pt}_enhanced.mp4"
+        ("Montar Video Final", f'''UP_DIR = f"{{BASE_PATH}}/upscaled_{{pt}}"
+INPUT_VIDEO = f"{{BASE_PATH}}/{{pt}}_limpo.mp4"
+OUTPUT = f"{{BASE_PATH}}/{{pt}}_enhanced.mp4"
 frames = sorted(glob.glob(f"{{UP_DIR}}/*.jpg"))
 fps_raw = subprocess.check_output(f"ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 {{INPUT_VIDEO}}", shell=True).decode().strip()
 num, den = (fps_raw.split("/") + ["1"])[:2]
 fps = float(num) / float(den)
 dur_f = 1.0 / fps
-concat = f"{{BASE_PATH}}/concat_{pt}.txt"
+concat = f"{{BASE_PATH}}/concat_{{pt}}.txt"
 with open(concat, "w") as fl:
     for fr in frames:
         fl.write(f"file '{{os.path.abspath(fr)}}'\\n")
@@ -371,21 +382,14 @@ ret = subprocess.run(["ffmpeg","-y","-f","concat","-safe","0","-i",concat,"-i",I
 if ret != 0:
     subprocess.run(["ffmpeg","-y","-f","concat","-safe","0","-i",concat,"-i",INPUT_VIDEO,"-map","0:v:0","-map","1:a:0?","-c:a","copy","-pix_fmt","yuv420p","-c:v","libx264","-preset","veryfast","-crf","18",OUTPUT], capture_output=True)
 print(f"  Video montado: {{OUTPUT}}")'''),
-        ("Upload e Limpeza", f'''salvar_no_drive(f"{{BASE_PATH}}/{pt}_enhanced.mp4", f"{{DRIVE_ENHANCER}}/{pt}_enhanced.mp4")
-shutil.rmtree(f"{{BASE_PATH}}/frames_{pt}", ignore_errors=True)
-shutil.rmtree(f"{{BASE_PATH}}/upscaled_{pt}", ignore_errors=True)
-report_step("done", "Enhancer {pt.upper()} concluido")'''),
+        ("Upload e Limpeza", f'''salvar_no_drive(f"{{BASE_PATH}}/{{pt}}_enhanced.mp4", f"{{DRIVE_ENHANCER}}/{{pt}}_enhanced.mp4")
+shutil.rmtree(f"{{BASE_PATH}}/frames_{{pt}}", ignore_errors=True)
+shutil.rmtree(f"{{BASE_PATH}}/upscaled_{{pt}}", ignore_errors=True)
+report_step("done", "Enhancer {{pt.upper()}} concluido")'''),
     ]
 
-# ══════════════════════════════════════════════════════════════
-# MERGE FINAL
-# ══════════════════════════════════════════════════════════════
 MERGE_CELLS = [
     ("Download das Partes", '''parts_list = []
-if baixar_do_drive(f"{DRIVE_RENDER}/pt0_renderizado.mp4", f"{BASE_PATH}/pt0_renderizado.mp4"):
-    parts_list.append(0)
-    print("  [INTRO] pt0_renderizado.mp4 baixado com sucesso!")
-
 total_parts = 30
 if baixar_do_drive(f"{DRIVE_ATIVO}/split_info.json", f"{BASE_PATH}/split_info.json"):
     try:
@@ -395,10 +399,19 @@ if baixar_do_drive(f"{DRIVE_ATIVO}/split_info.json", f"{BASE_PATH}/split_info.js
     except Exception as ex:
         print(f"  [AVISO] Erro lendo split_info.json: {ex}")
 
-for i in range(1, total_parts + 1):
-    if baixar_do_drive(f"{DRIVE_RENDER}/pt{i}_renderizado.mp4", f"{BASE_PATH}/pt{i}_renderizado.mp4"):
-        parts_list.append(i)
-        print(f"  Parte {i} (pt{i}_renderizado.mp4) baixada!")
+all_parts = [0] + list(range(1, total_parts + 1))
+import concurrent.futures
+
+def _baixar_parte(i):
+    local = f"{BASE_PATH}/pt{i}_renderizado.mp4"
+    if baixar_do_drive(f"{DRIVE_RENDER}/pt{i}_renderizado.mp4", local):
+        return i
+    return None
+
+print(f"Baixando {len(all_parts)} partes em paralelo...")
+with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+    results = pool.map(_baixar_parte, all_parts)
+    parts_list = sorted([r for r in results if r is not None])
 
 print(f"Total de {len(parts_list)} partes baixadas para o merge: {parts_list}")'''),
     ("Merge Final", '''OUTPUT = f"{BASE_PATH}/video_final.mp4"
@@ -413,42 +426,25 @@ report_step("done", "Merge final concluido")
 print("VIDEO FINAL PRONTO!")'''),
 ]
 
-# ══════════════════════════════════════════════════════════════
-# GERAR TUDO
-# ══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     os.makedirs(NOTEBOOKS_DIR, exist_ok=True)
-    
     print("Gerando notebooks padronizados...")
-    
-    # 1. Gerar todas as 30 partes de Watermark Remover (pt1 a pt30)
     for i in range(1, 31):
         nb = make_nb(make_watermark_cells(i), f"anime-watermark-remover-pt-{i}", f"step_watermark_pt{i}")
         save_nb(nb, f"anime-watermark-remover-pt-{i}.ipynb")
-        
-    # 2. Gerar todas as 31 partes de Video Enhancer (pt0 a pt30)
     for i in range(0, 31):
         nb = make_nb(make_enhancer_cells(i), f"anime-video-enhancer-pt-{i}", f"step_enhancer_pt{i}")
         save_nb(nb, f"anime-video-enhancer-pt-{i}.ipynb")
-        
-    # 3. Gerar todas as 11 partes do Renderizador (pt0 a pt10) clonando o pt-1 base
     base_render_path = os.path.join(NOTEBOOKS_DIR, "anime-renderizador-kaggle-pt-1.ipynb")
     if os.path.exists(base_render_path):
         with open(base_render_path, "r", encoding="utf-8") as f_base:
             base_render_nb = json.load(f_base)
-            
         for i in range(0, 31):
             # Clona o base_render_nb
             part_nb = json.loads(json.dumps(base_render_nb))
             
-            # Ajusta o setup (célula 0)
-            setup_source = part_nb["cells"][0]["source"]
-            new_setup = []
-            for line in setup_source:
-                line = line.replace('NOTEBOOK_NAME = "renderizador-kaggle-pt-1"', f'NOTEBOOK_NAME = "renderizador-kaggle-pt-{i}"')
-                line = line.replace('STEP_NAME = "step_render_pt1"', f'STEP_NAME = "step_render_pt{i}"')
-                new_setup.append(line)
-            part_nb["cells"][0]["source"] = new_setup
+            # Atualiza SEMPRE a Célula 0 com o SETUP_CELL ultra-rápido otimizado
+            part_nb["cells"][0] = make_cell(SETUP_CELL.replace("__NOTEBOOK_NAME__", f"anime-renderizador-kaggle-pt-{i}").replace("__STEP_NAME__", f"step_render_pt{i}"))
             
             # Ajusta o download (célula 1)
             if i == 0:
@@ -521,6 +517,7 @@ if __name__ == "__main__":
             new_build = []
             for line in build_source:
                 line = line.replace('pt1_enhanced.mp4', f'pt{i}_enhanced.mp4')
+                line = line.replace('"-preset", "p6"', '"-preset", "p4"')
                 new_build.append(line)
             part_nb["cells"][2]["source"] = new_build
             

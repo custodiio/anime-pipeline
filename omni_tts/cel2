@@ -144,7 +144,7 @@ def baixar_do_drive(caminho_no_drive, destino_local):
         if not file_id: return False
         request = drive_service.files().get_media(fileId=file_id)
         with open(destino_local, "wb") as fh:
-            downloader = MediaIoBaseDownload(fh, request)
+            downloader = MediaIoBaseDownload(fh, request, chunksize=32*1024*1024)
             done = False
             while not done: _, done = downloader.next_chunk()
         return True
@@ -160,7 +160,7 @@ def salvar_no_drive(caminho_local, caminho_destino_drive):
         query = f"name='{nome_arquivo}' and '{parent_id}' in parents and trashed=false"
         results = drive_service.files().list(q=query, fields="files(id)").execute()
         existentes = results.get("files", [])
-        media = MediaFileUpload(caminho_local, resumable=True)
+        media = MediaFileUpload(caminho_local, resumable=True, chunksize=32*1024*1024)
         if existentes:
             drive_service.files().update(fileId=existentes[0]["id"], media_body=media).execute()
         else:
