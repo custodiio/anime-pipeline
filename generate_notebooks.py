@@ -96,7 +96,7 @@ def baixar_do_drive(caminho_drive, destino_local):
         req = drive_service.files().get_media(fileId=fid)
         os.makedirs(os.path.dirname(destino_local) or ".", exist_ok=True)
         with open(destino_local, "wb") as fh:
-            dl = MediaIoBaseDownload(fh, req); done = False
+            dl = MediaIoBaseDownload(fh, req, chunksize=32*1024*1024); done = False
             while not done: _, done = dl.next_chunk()
         print(f"  Baixado: {caminho_drive}"); return True
     except Exception as ex: print(f"  Erro: {caminho_drive}: {ex}"); return False
@@ -109,7 +109,7 @@ def salvar_no_drive(caminho_local, caminho_drive):
         pid = _garantir_pasta(pasta) if pasta else "root"
         q = f"name='{nome}' and '{pid}' in parents and trashed=false"
         r = drive_service.files().list(q=q, fields="files(id)").execute()
-        e = r.get("files", []); media = MediaFileUpload(caminho_local, resumable=True)
+        e = r.get("files", []); media = MediaFileUpload(caminho_local, resumable=True, chunksize=32*1024*1024)
         if e: drive_service.files().update(fileId=e[0]["id"], media_body=media).execute()
         else: drive_service.files().create(body={"name": nome, "parents": [pid]}, media_body=media, fields="id").execute()
         print(f"  Salvo: {caminho_drive}")
@@ -320,7 +320,7 @@ def make_enhancer_cells(part_num):
 print("Video baixado!")'''),
         ("Extrair Frames", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{pt}"
 os.makedirs(FRAMES_DIR, exist_ok=True)
-subprocess.run(f"ffmpeg -i {{BASE_PATH}}/{pt}_limpo.mp4 -q:v 2 {{FRAMES_DIR}}/frame_%08d.jpg -hide_banner -loglevel error", shell=True)
+subprocess.run(f"ffmpeg -threads 0 -i {{BASE_PATH}}/{pt}_limpo.mp4 -q:v 2 {{FRAMES_DIR}}/frame_%08d.jpg -hide_banner -loglevel error", shell=True)
 total_frames = len(os.listdir(FRAMES_DIR))
 print(f"  {{total_frames}} frames extraidos")'''),
         ("Upscaling Dual GPU", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{pt}"

@@ -108,7 +108,7 @@ class DriveManager:
                 request = self.service.files().get_media(fileId=file_id)
                 os.makedirs(os.path.dirname(destino_local) or ".", exist_ok=True)
                 with open(destino_local, "wb") as fh:
-                    downloader = MediaIoBaseDownload(fh, request)
+                    downloader = MediaIoBaseDownload(fh, request, chunksize=32*1024*1024)
                     done = False
                     while not done:
                         _, done = downloader.next_chunk()
@@ -127,7 +127,7 @@ class DriveManager:
                 request = self.service.files().get_media(fileId=file_id)
                 os.makedirs(os.path.dirname(destino_local) or ".", exist_ok=True)
                 with open(destino_local, "wb") as fh:
-                    downloader = MediaIoBaseDownload(fh, request)
+                    downloader = MediaIoBaseDownload(fh, request, chunksize=32*1024*1024)
                     done = False
                     while not done:
                         _, done = downloader.next_chunk()

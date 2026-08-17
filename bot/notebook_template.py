@@ -103,7 +103,7 @@ def baixar_do_drive(caminho_drive, destino_local):
         req = drive_service.files().get_media(fileId=fid)
         os.makedirs(os.path.dirname(destino_local) or ".", exist_ok=True)
         with open(destino_local, "wb") as fh:
-            dl = MediaIoBaseDownload(fh, req)
+            dl = MediaIoBaseDownload(fh, req, chunksize=32*1024*1024)
             done = False
             while not done: _, done = dl.next_chunk()
         print(f"  ⬇️ {{caminho_drive}}")
@@ -122,7 +122,7 @@ def salvar_no_drive(caminho_local, caminho_drive):
         q = f"name='{{nome}}' and '{{pid}}' in parents and trashed=false"
         r = drive_service.files().list(q=q, fields="files(id)").execute()
         e = r.get("files", [])
-        media = MediaFileUpload(caminho_local, resumable=True)
+        media = MediaFileUpload(caminho_local, resumable=True, chunksize=32*1024*1024)
         if e:
             drive_service.files().update(fileId=e[0]["id"], media_body=media).execute()
         else:
