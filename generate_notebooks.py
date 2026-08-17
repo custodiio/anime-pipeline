@@ -300,28 +300,31 @@ print(f"  {{count}} frames processados")'''),
         ("Finalizacao", f'''report_step("done", f"Watermark {pt.upper()} concluido - {{count}} frames")'''),
     ]
 
-VE_COMMON_SETUP = '''print("Configurando Real-ESRGAN ultra-rapido...")
-import json, os, subprocess
+VE_COMMON_SETUP = '''print("Configurando Vulkan + Real-ESRGAN...")
+import os, subprocess, json
 
-os.makedirs("/usr/share/vulkan/icd.d", exist_ok=True)
-icd_path = "/usr/share/vulkan/icd.d/nvidia_icd.json"
-with open(icd_path, "w") as f:
-    json.dump({
-        "file_format_version": "1.0.0",
-        "ICD": {
-            "library_path": "libGLX_nvidia.so.0",
-            "api_version": "1.3.0"
-        }
-    }, f)
-os.environ["VK_ICD_FILENAMES"] = icd_path
+os.system("apt-get update -qq > /dev/null 2>&1")
+os.system("apt-get remove -y mesa-vulkan-drivers -qq > /dev/null 2>&1")
+os.system("apt-get install -y libvulkan1 vulkan-tools -qq > /dev/null 2>&1")
+try:
+    d_ver = subprocess.check_output("nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1", shell=True).decode().strip().split(".")[0]
+    os.system(f"apt-get install -y libnvidia-gl-{d_ver} -qq > /dev/null 2>&1 || apt-get install -y libnvidia-gl-550 libnvidia-gl-535 -qq > /dev/null 2>&1")
+except:
+    os.system("apt-get install -y libnvidia-gl-550 libnvidia-gl-535 -qq > /dev/null 2>&1")
 
+for icd_cand in ["/usr/share/vulkan/icd.d/nvidia_icd.json", "/etc/vulkan/icd.d/nvidia_icd.json"]:
+    if os.path.exists(icd_cand):
+        os.environ["VK_ICD_FILENAMES"] = icd_cand
+        break
+
+os.makedirs("/kaggle/working/realesrgan", exist_ok=True)
 if not os.path.exists("/kaggle/working/realesrgan/realesrgan-ncnn-vulkan"):
     os.system("wget -q -nc https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip")
     os.system("unzip -q -o realesrgan-ncnn-vulkan-20220424-ubuntu.zip -d /kaggle/working/realesrgan > /dev/null 2>&1")
     os.system("chmod +x /kaggle/working/realesrgan/realesrgan-ncnn-vulkan")
 
 REALESRGAN = "/kaggle/working/realesrgan/realesrgan-ncnn-vulkan"
-print("Real-ESRGAN pronto em 2 segundos!")'''
+print("Real-ESRGAN pronto!")'''
 
 def make_enhancer_cells(part_num):
     pt = f"pt{part_num}"
@@ -341,26 +344,62 @@ os.makedirs(f"{{BASE_PATH}}/fg0", exist_ok=True)
 os.makedirs(f"{{BASE_PATH}}/fg1", exist_ok=True)
 os.makedirs(f"{{BASE_PATH}}/ug0", exist_ok=True)
 os.makedirs(f"{{BASE_PATH}}/ug1", exist_ok=True)
+
 import threading
 all_f = sorted(glob.glob(f"{{FRAMES_DIR}}/*.jpg"))
-mid = len(all_f) // 2
-for f in all_f[:mid]: shutil.move(f, f"{{BASE_PATH}}/fg0/")
-for f in all_f[mid:]: shutil.move(f, f"{{BASE_PATH}}/fg1/")
-print(f"  GPU0: {{mid}} | GPU1: {{len(all_f)-mid}}")
-def run_gpu(cmd): subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-t0 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg0/ -o {{BASE_PATH}}/ug0/ -n realesr-animevideov3 -s 2 -f jpg -j 2:2:2 -g 0",))
-t1 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg1/ -o {{BASE_PATH}}/ug1/ -n realesr-animevideov3 -s 2 -f jpg -j 2:2:2 -g 1",))
-t0.start(); t1.start()
-while t0.is_alive() or t1.is_alive():
-    d0 = len(glob.glob(f"{{BASE_PATH}}/ug0/*.jpg"))
-    d1 = len(glob.glob(f"{{BASE_PATH}}/ug1/*.jpg"))
-    print(f"  GPU0: {{d0}}/{{mid}} | GPU1: {{d1}}/{{len(all_f)-mid}}", end="\\r")
-    time.sleep(5)
-t0.join(); t1.join()
+total_f = len(all_f)
+
+try:
+    gpu_lines = [l for l in subprocess.check_output(["nvidia-smi", "-L"]).decode().strip().split("\\n") if l.strip()]
+    num_gpus = len(gpu_lines)
+except:
+    num_gpus = 1
+print(f"  GPUs detectadas: {{num_gpus}} (Total frames: {{total_f}})")
+
+def run_gpu(cmd):
+    p = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if p.returncode != 0:
+        print(f"  [AVISO REALESRGAN]: {{p.stderr[-300:]}}")
+
+if num_gpus >= 2:
+    mid = total_f // 2
+    for f in all_f[:mid]: shutil.move(f, f"{{BASE_PATH}}/fg0/")
+    for f in all_f[mid:]: shutil.move(f, f"{{BASE_PATH}}/fg1/")
+    print(f"  GPU0: {{mid}} frames | GPU1: {{total_f-mid}} frames")
+    t0 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg0/ -o {{BASE_PATH}}/ug0/ -n realesr-animevideov3 -s 2 -f jpg -g 0",))
+    t1 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg1/ -o {{BASE_PATH}}/ug1/ -n realesr-animevideov3 -s 2 -f jpg -g 1",))
+    t0.start(); t1.start()
+    while t0.is_alive() or t1.is_alive():
+        d0 = len(glob.glob(f"{{BASE_PATH}}/ug0/*.jpg"))
+        d1 = len(glob.glob(f"{{BASE_PATH}}/ug1/*.jpg"))
+        print(f"  Progresso: GPU0 {{d0}}/{{mid}} | GPU1 {{d1}}/{{total_f-mid}}", end="\\r")
+        time.sleep(4)
+    t0.join(); t1.join()
+else:
+    for f in all_f: shutil.move(f, f"{{BASE_PATH}}/fg0/")
+    print(f"  GPU0: {{total_f}} frames")
+    t0 = threading.Thread(target=run_gpu, args=(f"{{REALESRGAN}} -i {{BASE_PATH}}/fg0/ -o {{BASE_PATH}}/ug0/ -n realesr-animevideov3 -s 2 -f jpg -g 0",))
+    t0.start()
+    while t0.is_alive():
+        d0 = len(glob.glob(f"{{BASE_PATH}}/ug0/*.jpg"))
+        print(f"  Progresso: GPU0 {{d0}}/{{total_f}}", end="\\r")
+        time.sleep(4)
+    t0.join()
+
 for f in sorted(glob.glob(f"{{BASE_PATH}}/ug0/*.jpg")) + sorted(glob.glob(f"{{BASE_PATH}}/ug1/*.jpg")):
     shutil.move(f, UP_DIR)
+
 total_up = len(glob.glob(f"{{UP_DIR}}/*.jpg"))
-print(f"\\n  {{total_up}} frames upscaled")
+print(f"\\n  {{total_up}}/{{total_f}} frames upscaled com sucesso!")
+
+if total_up < total_f:
+    print(f"  [FALLBACK] {{total_f - total_up}} frames usando resolucao original...")
+    for orig in sorted(glob.glob(f"{{BASE_PATH}}/fg0/*.jpg")) + sorted(glob.glob(f"{{BASE_PATH}}/fg1/*.jpg")):
+        base_name = os.path.basename(orig)
+        dest = os.path.join(UP_DIR, base_name)
+        if not os.path.exists(dest):
+            shutil.move(orig, dest)
+
 shutil.rmtree(f"{{BASE_PATH}}/fg0", ignore_errors=True)
 shutil.rmtree(f"{{BASE_PATH}}/fg1", ignore_errors=True)
 shutil.rmtree(f"{{BASE_PATH}}/ug0", ignore_errors=True)
