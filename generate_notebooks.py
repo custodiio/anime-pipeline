@@ -166,26 +166,18 @@ try:
     if _fid:
         _r = drive_service.files().list(q=f"'{_fid}' in parents and trashed=false", fields="files(id, name)").execute()
         _f_list = _r.get("files", [])
-        print(f"  {len(_f_list)} fontes encontradas no Drive (baixando em paralelo...)")
-        
-        def _baixar_fonte(_f):
+        print(f"  {len(_f_list)} fontes encontradas no Drive...")
+        for _f in _f_list:
             _dest = f"/usr/share/fonts/truetype/custom/{_f['name']}"
-            if os.path.exists(_dest):
-                return _f['name']
+            if os.path.exists(_dest): continue
             try:
                 _req = drive_service.files().get_media(fileId=_f['id'])
                 with open(_dest, "wb") as _fh:
-                    _dl = MediaIoBaseDownload(_fh, _req); _done = False
+                    _dl = MediaIoBaseDownload(_fh, _req, chunksize=32*1024*1024); _done = False
                     while not _done: _, _done = _dl.next_chunk()
-                return _f['name']
             except Exception as _ex:
                 print(f"  Erro baixando {_f['name']}: {_ex}")
-                return None
-
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as _pool:
-            _results = list(_pool.map(_baixar_fonte, _f_list))
-        print(f"  {len([r for r in _results if r])} fontes prontas!")
+        print(f"  Fontes baixadas com sucesso!")
     else:
         print("  ⚠️ Pasta KAGGLE/PIPELINE/FONTS nao encontrada no Drive!")
 except Exception as e:
@@ -400,18 +392,11 @@ if baixar_do_drive(f"{DRIVE_ATIVO}/split_info.json", f"{BASE_PATH}/split_info.js
         print(f"  [AVISO] Erro lendo split_info.json: {ex}")
 
 all_parts = [0] + list(range(1, total_parts + 1))
-import concurrent.futures
-
-def _baixar_parte(i):
+for i in all_parts:
     local = f"{BASE_PATH}/pt{i}_renderizado.mp4"
     if baixar_do_drive(f"{DRIVE_RENDER}/pt{i}_renderizado.mp4", local):
-        return i
-    return None
-
-print(f"Baixando {len(all_parts)} partes em paralelo...")
-with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-    results = pool.map(_baixar_parte, all_parts)
-    parts_list = sorted([r for r in results if r is not None])
+        parts_list.append(i)
+        print(f"  Parte {i} (pt{i}_renderizado.mp4) baixada!")
 
 print(f"Total de {len(parts_list)} partes baixadas para o merge: {parts_list}")'''),
     ("Merge Final", '''OUTPUT = f"{BASE_PATH}/video_final.mp4"
