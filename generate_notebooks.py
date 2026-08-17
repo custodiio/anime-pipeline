@@ -230,13 +230,13 @@ def make_watermark_cells(part_num):
     pt = f"pt{part_num}"
     return [
         ("Download dos Arquivos", f'''import cv2, numpy as np
-baixar_do_drive(f"{{DRIVE_ATIVO}}/video_{{pt}}.mp4", f"{{BASE_PATH}}/video_{{pt}}.mp4")
+baixar_do_drive(f"{{DRIVE_ATIVO}}/video_{pt}.mp4", f"{{BASE_PATH}}/video_{pt}.mp4")
 baixar_do_drive(f"{{DRIVE_ATIVO}}/mask.png", f"{{BASE_PATH}}/mask.png")
 print("Arquivos prontos!")'''),
 
-        ("Processamento Watermark", f'''INPUT = f"{{BASE_PATH}}/video_{{pt}}.mp4"
+        ("Processamento Watermark", f'''INPUT = f"{{BASE_PATH}}/video_{pt}.mp4"
 MASK = f"{{BASE_PATH}}/mask.png"
-OUTPUT = f"{{BASE_PATH}}/{{pt}}_limpo.mp4"
+OUTPUT = f"{{BASE_PATH}}/{pt}_limpo.mp4"
 
 import cv2, numpy as np
 
@@ -295,9 +295,9 @@ else:
     pipe.wait()
 print(f"  {{count}} frames processados")'''),
 
-        ("Upload Resultado", f'''salvar_no_drive(f"{{BASE_PATH}}/{{pt}}_limpo.mp4", f"{{DRIVE_WATERMARK}}/{{pt}}_limpo.mp4")'''),
+        ("Upload Resultado", f'''salvar_no_drive(f"{{BASE_PATH}}/{pt}_limpo.mp4", f"{{DRIVE_WATERMARK}}/{pt}_limpo.mp4")'''),
 
-        ("Finalizacao", f'''report_step("done", f"Watermark {{pt.upper()}} concluido - {{count}} frames")'''),
+        ("Finalizacao", f'''report_step("done", f"Watermark {pt.upper()} concluido - {{count}} frames")'''),
     ]
 
 VE_COMMON_SETUP = '''print("Configurando Real-ESRGAN ultra-rapido...")
@@ -327,15 +327,15 @@ def make_enhancer_cells(part_num):
     pt = f"pt{part_num}"
     return [
         ("Setup Real-ESRGAN", VE_COMMON_SETUP),
-        ("Download Video Limpo", f'''baixar_do_drive(f"{{DRIVE_WATERMARK}}/{{pt}}_limpo.mp4", f"{{BASE_PATH}}/{{pt}}_limpo.mp4")
+        ("Download Video Limpo", f'''baixar_do_drive(f"{{DRIVE_WATERMARK}}/{pt}_limpo.mp4", f"{{BASE_PATH}}/{pt}_limpo.mp4")
 print("Video baixado!")'''),
-        ("Extrair Frames", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{{pt}}"
+        ("Extrair Frames", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{pt}"
 os.makedirs(FRAMES_DIR, exist_ok=True)
-subprocess.run(f"ffmpeg -threads 0 -i {{BASE_PATH}}/{{pt}}_limpo.mp4 -q:v 2 {{FRAMES_DIR}}/frame_%08d.jpg -hide_banner -loglevel error", shell=True)
+subprocess.run(f"ffmpeg -threads 0 -i {{BASE_PATH}}/{pt}_limpo.mp4 -q:v 2 {{FRAMES_DIR}}/frame_%08d.jpg -hide_banner -loglevel error", shell=True)
 total_frames = len(os.listdir(FRAMES_DIR))
 print(f"  {{total_frames}} frames extraidos")'''),
-        ("Upscaling Dual GPU", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{{pt}}"
-UP_DIR = f"{{BASE_PATH}}/upscaled_{{pt}}"
+        ("Upscaling Dual GPU", f'''FRAMES_DIR = f"{{BASE_PATH}}/frames_{pt}"
+UP_DIR = f"{{BASE_PATH}}/upscaled_{pt}"
 os.makedirs(UP_DIR, exist_ok=True)
 os.makedirs(f"{{BASE_PATH}}/fg0", exist_ok=True)
 os.makedirs(f"{{BASE_PATH}}/fg1", exist_ok=True)
@@ -365,15 +365,15 @@ shutil.rmtree(f"{{BASE_PATH}}/fg0", ignore_errors=True)
 shutil.rmtree(f"{{BASE_PATH}}/fg1", ignore_errors=True)
 shutil.rmtree(f"{{BASE_PATH}}/ug0", ignore_errors=True)
 shutil.rmtree(f"{{BASE_PATH}}/ug1", ignore_errors=True)'''),
-        ("Montar Video Final", f'''UP_DIR = f"{{BASE_PATH}}/upscaled_{{pt}}"
-INPUT_VIDEO = f"{{BASE_PATH}}/{{pt}}_limpo.mp4"
-OUTPUT = f"{{BASE_PATH}}/{{pt}}_enhanced.mp4"
+        ("Montar Video Final", f'''UP_DIR = f"{{BASE_PATH}}/upscaled_{pt}"
+INPUT_VIDEO = f"{{BASE_PATH}}/{pt}_limpo.mp4"
+OUTPUT = f"{{BASE_PATH}}/{pt}_enhanced.mp4"
 frames = sorted(glob.glob(f"{{UP_DIR}}/*.jpg"))
 fps_raw = subprocess.check_output(f"ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 {{INPUT_VIDEO}}", shell=True).decode().strip()
 num, den = (fps_raw.split("/") + ["1"])[:2]
 fps = float(num) / float(den)
 dur_f = 1.0 / fps
-concat = f"{{BASE_PATH}}/concat_{{pt}}.txt"
+concat = f"{{BASE_PATH}}/concat_{pt}.txt"
 with open(concat, "w") as fl:
     for fr in frames:
         fl.write(f"file '{{os.path.abspath(fr)}}'\\n")
@@ -382,10 +382,10 @@ ret = subprocess.run(["ffmpeg","-y","-f","concat","-safe","0","-i",concat,"-i",I
 if ret != 0:
     subprocess.run(["ffmpeg","-y","-f","concat","-safe","0","-i",concat,"-i",INPUT_VIDEO,"-map","0:v:0","-map","1:a:0?","-c:a","copy","-pix_fmt","yuv420p","-c:v","libx264","-preset","veryfast","-crf","18",OUTPUT], capture_output=True)
 print(f"  Video montado: {{OUTPUT}}")'''),
-        ("Upload e Limpeza", f'''salvar_no_drive(f"{{BASE_PATH}}/{{pt}}_enhanced.mp4", f"{{DRIVE_ENHANCER}}/{{pt}}_enhanced.mp4")
-shutil.rmtree(f"{{BASE_PATH}}/frames_{{pt}}", ignore_errors=True)
-shutil.rmtree(f"{{BASE_PATH}}/upscaled_{{pt}}", ignore_errors=True)
-report_step("done", "Enhancer {{pt.upper()}} concluido")'''),
+        ("Upload e Limpeza", f'''salvar_no_drive(f"{{BASE_PATH}}/{pt}_enhanced.mp4", f"{{DRIVE_ENHANCER}}/{pt}_enhanced.mp4")
+shutil.rmtree(f"{{BASE_PATH}}/frames_{pt}", ignore_errors=True)
+shutil.rmtree(f"{{BASE_PATH}}/upscaled_{pt}", ignore_errors=True)
+report_step("done", "Enhancer {pt.upper()} concluido")'''),
     ]
 
 MERGE_CELLS = [
