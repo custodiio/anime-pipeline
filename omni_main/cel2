@@ -51,7 +51,10 @@ BATCH_SIZE = 50  # @param {type:"integer"}
 
 # Identificação de anime — requer modelo com boa compreensão multilíngue
 MODELS_IDENTIFICACAO = [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
     "gemini-3.1-pro-preview",
     "gemini-3.1-flash-lite",
     "gemini-3-flash-preview",
@@ -60,23 +63,28 @@ MODELS_IDENTIFICACAO = [
 
 # Tradução em batch — velocidade é importante, flash é suficiente
 MODELS_TRADUCAO = [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
     "gemini-3.1-pro-preview",
     "gemini-3.1-flash-lite",
-    "gemini-2.5-pro",
-    "gemini-3-flash-preview"
+    "gemini-3-flash-preview",
+    "gemini-2.5-pro"
 ]
-
 
 # Reescrita de texto da fábrica de áudio — contagem de caracteres
 MODELS_REESCRITA = [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
     "gemini-3-flash-preview"
 ]
 
 # Fallback para OpenAI caso TODOS os Gemini falhem
-OPENAI_FALLBACK_MODEL = "gpt-5.4"
+OPENAI_FALLBACK_MODEL = "gpt-4o-mini"
 USE_OPENAI_FALLBACK   = True  # @param {type:"boolean"}
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -414,7 +422,11 @@ def gemini_generate(model_chain: list, contents, config: dict = None, task_name:
                     self.text = text
             return FakeGeminiResponse(azure_text)
         except Exception as ae:
-            print(f"  [AZURE FAIL] Azure OpenAI falhou: {ae}. Tentando Gemini como fallback...")
+            if "401" in str(ae) or "Access denied" in str(ae) or "invalid subscription" in str(ae).lower():
+                print(f"  [AZURE] Chave Azure inválida/expirada. Desativando Azure para acelerar...")
+                AZURE_ENABLED = False
+            else:
+                print(f"  [AZURE FAIL] Azure OpenAI falhou: {ae}. Tentando Gemini como fallback...")
 
     # 2. Se Azure desativado ou falhar, tenta a cadeia de modelos Gemini
     if client_gemini is None:

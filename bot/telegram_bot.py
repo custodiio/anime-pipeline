@@ -1012,12 +1012,11 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         from bot.github_actions import dispatch_parallel
         part = data.split("_")[-1]
         if part == "all":
-            pending_wm = [i for i in range(1, video_parts + 1) if project.get(f"step_watermark_pt{i}") == "pending"]
-            if pending_wm:
-                controller.disparar_watermark(pid, pending_wm)
-                await query.edit_message_text(f"🚀 Watermark disparado para as partes {pending_wm}!")
-            else:
-                await query.edit_message_text("Nenhuma parte pendente no Watermark.")
+            wm_parts = [i for i in range(1, video_parts + 1) if project.get(f"step_watermark_pt{i}") != "skipped"]
+            if not wm_parts:
+                wm_parts = list(range(1, video_parts + 1))
+            controller.disparar_watermark(pid, wm_parts)
+            await query.edit_message_text(f"🚀 Watermark disparado para as partes {wm_parts}!")
         else:
             from bot.database import update_step
             update_step(pid, f"step_watermark_pt{part}", "running")
@@ -1037,12 +1036,11 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         from bot.github_actions import dispatch_parallel
         if part == "all":
-            pending_enh = [i for i in range(0, video_parts + 1) if project.get(f"step_enhancer_pt{i}") == "pending"]
-            if pending_enh:
-                controller.disparar_enhancer(pid, pending_enh)
-                await query.edit_message_text(f"🚀 Enhancer disparado para as partes {pending_enh}!")
-            else:
-                await query.edit_message_text("Nenhuma parte pendente no Enhancer.")
+            enh_parts = [i for i in range(0, video_parts + 1) if project.get(f"step_enhancer_pt{i}") != "skipped"]
+            if not enh_parts:
+                enh_parts = list(range(0, video_parts + 1))
+            controller.disparar_enhancer(pid, enh_parts)
+            await query.edit_message_text(f"🚀 Enhancer disparado para as partes {enh_parts}!")
         else:
             from bot.database import update_step
             update_step(pid, f"step_enhancer_pt{part}", "running")

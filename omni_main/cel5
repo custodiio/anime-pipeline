@@ -139,6 +139,22 @@ if should_run('translate'):
         # ──────────────────────────────────────────────────────────────────────────
         # FUNÇÃO DE TRADUÇÃO COM FALLBACK
         # ──────────────────────────────────────────────────────────────────────────
+        def _clean_json_loads(raw_text):
+            if not raw_text: raise ValueError("Texto vazio")
+            t = raw_text.strip()
+            if t.startswith("```json"): t = t[7:]
+            elif t.startswith("```"): t = t[3:]
+            if t.endswith("```"): t = t[:-3]
+            t = t.strip()
+            try:
+                return json.loads(t)
+            except Exception:
+                import re
+                m = re.search(r"(\[.*\]|\{.*\})", t, re.DOTALL)
+                if m:
+                    return json.loads(m.group(1))
+                raise
+
         def _traduzir_chunk(chunk, system_instruction, task_label):
             """Traduz um chunk de blocos com fallback OpenAI para erros do Gemini 3.1 Pro."""
             source_texts = [b["texto_original"] for b in chunk]
@@ -155,7 +171,7 @@ if should_run('translate'):
                     config={'response_mime_type': 'application/json', 'temperature': 0.2},
                     task_name=task_label
                 )
-                data = json.loads(response.text)
+                data = _clean_json_loads(response.text)
                 if isinstance(data, list): translated_list = data
                 elif "translations" in data: translated_list = data["translations"]
                 else: translated_list = list(data.values())[0]
