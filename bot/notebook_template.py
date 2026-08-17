@@ -141,7 +141,7 @@ def _db_execute(query, params):
     if not DATABASE_URL: return False
     try:
         import psycopg2
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=2)
         cur = conn.cursor()
         cur.execute(query, params)
         conn.commit()
@@ -156,7 +156,7 @@ def _try_webhook(endpoint, data):
     """Tenta enviar pro webhook, fallback pro banco direto."""
     if PIPELINE_WEBHOOK_URL:
         try:
-            r = http_requests.post(f"{{PIPELINE_WEBHOOK_URL}}{{endpoint}}", json=data, timeout=15)
+            r = http_requests.post(f"{{PIPELINE_WEBHOOK_URL}}{{endpoint}}", json=data, timeout=3)
             if r.status_code == 200: return True
         except: pass
     return False
