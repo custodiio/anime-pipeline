@@ -341,21 +341,22 @@ else:
             if r["lang"] == "ja":
                 lang_final, conf = "ja", r["confidence"]
             elif r["lang"] == "zh":
-                # SenseVoice: classifica se o segmento zh é realmente ja ou zh/yue.
-                # Não gera transcrição nova — apenas retorna a tag de idioma detectado.
-                audio_full[max(0,int(sub_start*1000)):min(len(audio_full),int(sub_end*1000))].export(TEMP_CHUNK, format="wav")
-                try:
-                    sv_res = sense_model.generate(input=TEMP_CHUNK, language="auto", use_itn=False)
-                    m = re.search(r'<\|(zh|ja|yue|ko|en|nospeech)\|>', sv_res[0]["text"])
-                    sv_tag = m.group(1) if m else "unknown"
-                except Exception:
-                    sv_tag = "unknown"
-                if sv_tag == "ja" and (r["confidence"] < 0.8 or len(sub_text) < 6):
-                    lang_final, conf = "ja", 0.65
-                elif sv_tag in ("zh", "yue"):
-                    lang_final, conf = "zh", min(1.0, r["confidence"] + 0.12)
+                if r["confidence"] >= 0.75 and len(sub_text) >= 4:
+                    lang_final, conf = "zh", r["confidence"]
                 else:
-                    lang_final, conf = "zh", r["confidence"] * 0.9
+                    try:
+                        audio_full[max(0,int(sub_start*1000)):min(len(audio_full),int(sub_end*1000))].export(TEMP_CHUNK, format="wav")
+                        sv_res = sense_model.generate(input=TEMP_CHUNK, language="auto", use_itn=False)
+                        m = re.search(r'<\|(zh|ja|yue|ko|en|nospeech)\|>', sv_res[0]["text"])
+                        sv_tag = m.group(1) if m else "unknown"
+                    except Exception:
+                        sv_tag = "unknown"
+                    if sv_tag == "ja" and (r["confidence"] < 0.8 or len(sub_text) < 6):
+                        lang_final, conf = "ja", 0.65
+                    elif sv_tag in ("zh", "yue"):
+                        lang_final, conf = "zh", min(1.0, r["confidence"] + 0.12)
+                    else:
+                        lang_final, conf = "zh", r["confidence"] * 0.9
             else:
                 lang_final, conf = "other", r["confidence"]
             tipo = "NARRACAO" if lang_final == "zh" else "CENA"

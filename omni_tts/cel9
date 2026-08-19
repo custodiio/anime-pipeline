@@ -127,22 +127,8 @@ def trim_audio_silence(wav_in, mp3_out, padding_ms=30):
         return 0.0
 
 def verificar_repeticao_stt(mp3_file):
-    """Verifica via Whisper se o áudio sintetizado gerou palavras repetidas/duplicadas consecutivas."""
-    if not os.path.exists(mp3_file) or os.path.getsize(mp3_file) < 1000:
-        return False
-    if 'whisper_model' not in globals() or whisper_model is None:
-        return False
-    try:
-        res = whisper_model.transcribe(mp3_file, language='pt')
-        stt_text = res.get('text', '').strip()
-        words = re.findall(r'\b\w+\b', stt_text.lower())
-        for i in range(len(words) - 1):
-            if words[i] == words[i+1] and len(words[i]) >= 4:
-                print(f"  [REPETIÇÃO STT DETECTADA] Palavra '{words[i]}' duplicada no áudio!")
-                return True
-        return False
-    except:
-        return False
+    """Verificação desativada no loop crítico para não travar threads CUDA."""
+    return False
 
 def generate_tts(text, filename, gpu_idx=0):
     texto = limpar_texto(text)
