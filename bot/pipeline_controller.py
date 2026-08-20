@@ -650,42 +650,47 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         })
 
             project_db = get_project(project_id)
-            is_word_by_word = project_db and project_db.get("srt_type") == "word_by_word"
-            words_per_block = style.get("wordsPerBlock", 1)
+            is_word_by_word = (project_db and project_db.get("srt_type") == "word_by_word") or style.get("wordsPerBlock") == 1
+            words_per_block = style.get("wordsPerBlock", 1 if is_word_by_word else 0)
 
-            if is_word_by_word and words_per_block > 1:
-                grouped_blocks = []
-                current_group = []
+            if is_word_by_word or words_per_block > 0:
+                target_wpb = 1 if is_word_by_word and words_per_block <= 1 else words_per_block
                 
+                # 1. Achatar todos os blocos em palavras individuais com timestamps proporcionais
+                all_word_items = []
                 for b in parsed_blocks:
-                    current_group.append(b)
+                    b_words = b["text"].replace('\\N', ' ').replace('\n', ' ').split()
+                    if not b_words: continue
+                    dur = b["end_ms"] - b["start_ms"]
+                    w_dur = dur / len(b_words)
+                    for idx_w, w in enumerate(b_words):
+                        all_word_items.append({
+                            "word": w,
+                            "start_ms": int(b["start_ms"] + idx_w * w_dur),
+                            "end_ms": int(b["start_ms"] + (idx_w + 1) * w_dur)
+                        })
+                
+                # 2. Agrupar palavras de acordo com target_wpb (1 = palavra por palavra)
+                new_blocks = []
+                current_group = []
+                for w_item in all_word_items:
+                    current_group.append(w_item)
+                    has_strong = any(p in w_item["word"] for p in ['.', '?', '!'])
                     
-                    has_strong = any(p in b["text"] for p in ['.', '?', '!'])
-                    has_comma = ',' in b["text"]
-                    
-                    cut = False
-                    if has_strong:
-                        cut = True
-                    elif len(current_group) >= words_per_block:
-                        cut = True
-                    elif has_comma and len(current_group) >= max(1, words_per_block - 2):
-                        cut = True
-                        
-                    if cut:
-                        grouped_blocks.append({
+                    if len(current_group) >= target_wpb or has_strong:
+                        new_blocks.append({
                             "start_ms": current_group[0]["start_ms"],
                             "end_ms": current_group[-1]["end_ms"],
-                            "text": wrap_text(" ".join(g["text"] for g in current_group))
+                            "text": wrap_text(" ".join(g["word"] for g in current_group))
                         })
                         current_group = []
-                        
                 if current_group:
-                    grouped_blocks.append({
+                    new_blocks.append({
                         "start_ms": current_group[0]["start_ms"],
                         "end_ms": current_group[-1]["end_ms"],
-                        "text": wrap_text(" ".join(g["text"] for g in current_group))
+                        "text": wrap_text(" ".join(g["word"] for g in current_group))
                     })
-                parsed_blocks = grouped_blocks
+                parsed_blocks = new_blocks
 
             # Ordenar por start_ms e corrigir sobreposições
             parsed_blocks.sort(key=lambda b: b["start_ms"])

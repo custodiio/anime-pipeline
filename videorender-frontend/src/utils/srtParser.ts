@@ -130,13 +130,13 @@ export function regroupSrtEntries(entries: SrtEntry[], wordsPerBlock: number): S
   // Limpa o último grupo
   pushCurrentGroup();
   
-  // Passo 2: Mesclar blocos com menos de 2 palavras (se sobrarem sozinhos) ao bloco anterior
+  // Passo 2: Mesclar blocos com menos de 2 palavras ao bloco anterior (apenas quando wordsPerBlock > 1)
   const finalResult: SrtEntry[] = [];
   for (let i = 0; i < result.length; i++) {
     const current = result[i];
     const wordCount = current.text.trim().split(/\s+/).length;
     
-    if (wordCount < 2 && finalResult.length > 0) {
+    if (wordsPerBlock > 1 && wordCount < 2 && finalResult.length > 0) {
       const prev = finalResult[finalResult.length - 1];
       const gap = current.startTime - prev.endTime;
       
