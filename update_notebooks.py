@@ -115,6 +115,7 @@ def update_notebook(path):
         func_str = """def build_ffmpeg_command(config, video_in, audio_in, ass_in, out_file, start_time=0):
     import os
     import subprocess
+    import base64
     
     video_dur = None
     try:
