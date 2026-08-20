@@ -1,4 +1,4 @@
-cell_start(1, "Celula 1")
+cell_start(1, "Setup Inicial e Dependencias")
 # @title 🚀 1. Setup Inicial: Kaggle + Google Drive OAuth + Whisper + Modelos v6
 # @markdown Configure TUDO aqui antes de rodar qualquer outra célula.
 
@@ -6,10 +6,10 @@ import os, sys, shutil, time, asyncio, json, nest_asyncio, subprocess, urllib.re
 import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
-# --- 1. INSTALAÇÃO DE DEPENDÊNCIAS ---
-print("📦 Instalando bibliotecas (pode demorar 2-3 min)...")
+# --- 1. INSTALAÇÃO DE DEPENDÊNCIAS OTIMIZADA PARA MONTAGEM ---
+print("📦 Instalando bibliotecas leves para montagem...")
 os.system("apt-get install -y ffmpeg > /dev/null 2>&1")
-os.system("pip install python-dotenv faster-whisper gradio_client google-genai edge-tts ffmpeg-python pydub openai nest_asyncio omnivoice torchaudio google-auth google-auth-httplib2 google-api-python-client stable-ts funasr modelscope demucs silero-vad onnxruntime pyannote.audio speechbrain scipy > /dev/null 2>&1")
+os.system("pip install -q python-dotenv faster-whisper stable-ts ffmpeg-python pydub google-auth google-auth-httplib2 google-api-python-client google-genai openai requests tqdm psycopg2-binary nest_asyncio scipy > /dev/null 2>&1")
 
 import torch
 import stable_whisper
@@ -27,30 +27,26 @@ nest_asyncio.apply()
 # ⚙️  PAINEL CENTRAL DE CONFIGURAÇÃO — Edite aqui antes de rodar
 # ─────────────────────────────────────────────────────────────────────────────
 
-
-
-# 🔊 AJUSTE DE VELOCIDADE DE ÁUDIO (Fábrica Cel 6)
+# 🔊 AJUSTE DE VELOCIDADE DE ÁUDIO
 TARGET_MIN_SPEED = 1.1
 TARGET_MAX_SPEED = 1.35
 MAX_AUDIO_RETRIES = 4
 MAX_TEXT_RETRIES  = 3
 
-# 🎙️ NARRADOR PADRÃO (usado para busca do áudio de clonagem no Drive)
-# O sistema busca arquivos na pasta CLONAGEM/ do Drive cujo nome se pareça com esse.
-# Ex: NOME_NARRADOR="Goku" vai achar "goku_dragon_ball.mp3" automaticamente.
-NOME_NARRADOR = "Alessandro"  # @param {type:"string"}
+# 🎙️ NARRADOR PADRÃO
+NOME_NARRADOR = "Alessandro"
 
-# 📦 TRADUÇÃO — TAMANHO DO BATCH (blocos por chamada ao modelo)
-# Se o anime foi identificado: usa BATCH_SIZE. Senão: usa 60 (mais conservador).
-BATCH_SIZE = 50  # @param {type:"integer"}
+# 📦 TRADUÇÃO — TAMANHO DO BATCH
+BATCH_SIZE = 50
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 🤖 CADEIAS DE MODELOS GEMINI (fallback automático por quota/erro)
-#    Adicione modelos extras separados por vírgula — serão tentados em ordem.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Identificação de anime — requer modelo com boa compreensão multilíngue
+# Identificação de anime
 MODELS_IDENTIFICACAO = [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
     "gemini-3.1-pro-preview",
     "gemini-3.1-flash-lite",
@@ -58,26 +54,29 @@ MODELS_IDENTIFICACAO = [
     "gemini-2.5-pro"
 ]
 
-# Tradução em batch — velocidade é importante, flash é suficiente
+# Tradução em batch
 MODELS_TRADUCAO = [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
     "gemini-3.1-pro-preview",
     "gemini-3.1-flash-lite",
-    "gemini-2.5-pro",
-    "gemini-3-flash-preview"
+    "gemini-3-flash-preview",
+    "gemini-2.5-pro"
 ]
 
-
-# Reescrita de texto da fábrica de áudio — contagem de caracteres
+# Reescrita de texto
 MODELS_REESCRITA = [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
     "gemini-3.1-flash-lite",
     "gemini-3-flash-preview"
 ]
 
-# Fallback para OpenAI caso TODOS os Gemini falhem
-OPENAI_FALLBACK_MODEL = "gpt-5.4"
-USE_OPENAI_FALLBACK   = True  # @param {type:"boolean"}
+# Fallback para OpenAI
+OPENAI_FALLBACK_MODEL = "gpt-4o-mini"
+USE_OPENAI_FALLBACK   = True
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 🔑 CHAVES DE API — Kaggle Secrets (com fallback para .env local)

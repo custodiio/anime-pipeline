@@ -253,7 +253,7 @@ def run_montagem():
             if not audio_file: continue
             try:
                 if 'stable_model' in globals() and stable_model is not None:
-                    result = stable_model.transcribe_stable(audio_file, language='pt', word_timestamps=True)
+                    result = stable_model.transcribe(audio_file, language='pt', word_timestamps=True)
                     time_offset = actual_starts_ms.get(b_idx, int((block['start'] - start_offset) * 1000)) / 1000.0
                     all_words = []
                     ratio = block.get('speed_factor', 1.0)
@@ -412,7 +412,7 @@ def run_montagem():
                 salvar_no_drive(intro_mp3_local, "KAGGLE/PIPELINE/OMNI/intro_audio.mp3")
                 try:
                     if 'stable_model' in globals() and stable_model is not None:
-                        intro_res = stable_model.transcribe_stable(intro_mp3_local, language='pt', word_timestamps=True)
+                        intro_res = stable_model.transcribe(intro_mp3_local, language='pt', word_timestamps=True)
                         intro_words = []
                         for seg in intro_res.segments:
                             for w in seg.words:

@@ -1,4 +1,4 @@
-cell_start(11, "Busca Audio Clonagem")
+cell_start(11, "Limpeza de Cache")
 # @title 🧹 8. Faxina Cirúrgica (Painel de Controle)
 # @markdown Selecione exatamente o que você deseja remover para liberar espaço ou refazer etapas.
 
@@ -98,5 +98,4 @@ if DELETE_AUDIO_CACHE:
 print("-" * 40)
 print("✨ Limpeza concluída conforme solicitado.")
 
-cell_end(11, "done", "Busca Audio Clonagem concluido")
-report_step("done", "Processamento Omni finalizado")
+cell_end(11, "done", "Limpeza de cache concluida")

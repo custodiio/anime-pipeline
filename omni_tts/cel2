@@ -33,11 +33,13 @@ BATCH_SIZE    = 50
 
 # Modelos Gemini (reescrita de texto)
 MODELS_REESCRITA = [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
     "gemini-3.1-flash-lite",
     "gemini-3-flash-preview"
 ]
-OPENAI_FALLBACK_MODEL = "gpt-5.4"
+OPENAI_FALLBACK_MODEL = "gpt-4o-mini"
 USE_OPENAI_FALLBACK   = True
 AZURE_ENABLED = True  # sobrescrito por PROJECT_OPTS abaixo
 
