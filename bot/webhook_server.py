@@ -666,6 +666,13 @@ class PipelineWebhookHandler(BaseHTTPRequestHandler):
 
                 if pid and step and status:
                     update_step(pid, step, status, msg)
+                    if step == "step_omni" and status == "main_done":
+                        update_step(pid, "step_omni_main", "done", msg)
+                    elif step == "step_omni_main" and status == "done":
+                        update_step(pid, "step_omni", "main_done", msg)
+                    elif step == "step_omni_assemble" and status == "done":
+                        update_step(pid, "step_omni", "done", msg)
+                    
                     controller.verificar_e_avancar(pid)
                     self._set_headers(200)
                     self.wfile.write(json.dumps({"ok": True}).encode())

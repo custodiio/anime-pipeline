@@ -11,6 +11,9 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import threading
 
@@ -40,7 +43,7 @@ class DriveManager:
         """Autentica com o Google Drive via OAuth."""
         try:
             creds = Credentials(
-                token=None,
+                None,
                 refresh_token=self.refresh_token,
                 token_uri="https://oauth2.googleapis.com/token",
                 client_id=self.client_id,
