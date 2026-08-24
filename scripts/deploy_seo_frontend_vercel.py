@@ -26,22 +26,11 @@ print("🚀 Deploy do SEO AnimeRecap Frontend na Vercel...")
 print(f"Diretório: {frontend_dir}")
 print("=" * 65)
 
-# 1. Build
-cmd_build = f'npx vercel build --prod --token "{token}" --yes'
-print("1. Executando vercel build --prod...")
-res_b = subprocess.run(cmd_build, cwd=str(frontend_dir), shell=True, capture_output=True, text=True)
-print("BUILD STDOUT:", res_b.stdout)
-if res_b.stderr:
-    print("BUILD STDERR:", res_b.stderr)
+# Deploy direto
+cmd_deploy = f'npx vercel --prod --token "{token}" --yes --name kuma-seo-frontend'
+print("Executando deploy na Vercel...")
+res = subprocess.run(cmd_deploy, cwd=str(frontend_dir), shell=True, capture_output=True, text=True)
+print("DEPLOY STDOUT:", res.stdout)
+print("DEPLOY STDERR:", res.stderr)
 
-# 2. Deploy prebuilt
-cmd_deploy = f'npx vercel deploy --prebuilt --prod --token "{token}" --yes'
-print("\n2. Executando deploy prebuilt na Vercel...")
-res_d = subprocess.run(cmd_deploy, cwd=str(frontend_dir), shell=True, capture_output=True, text=True)
-print("DEPLOY STDOUT:", res_d.stdout)
-if res_d.stderr:
-    print("DEPLOY STDERR:", res_d.stderr)
-
-print("\n" + "=" * 65)
-print("✅ Processo de Deploy finalizado!")
 print("=" * 65)
