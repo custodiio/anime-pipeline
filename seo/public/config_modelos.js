@@ -22,10 +22,13 @@ const AVAILABLE_MODELS = {
       "gpt-4.1"
     ],
     google: [
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-3.1-pro-preview",
       "gemini-3.1-flash-lite",
       "gemini-3-flash-preview",
-      "gemini-3.5-flash",
-      "gemini-3.1-pro-preview"
+      "gemini-2.5-pro"
     ],
     azure: [
       "gpt-5-mini"
@@ -35,10 +38,13 @@ const AVAILABLE_MODELS = {
   // 2. ANALISAR FRAME (Visão Computacional)
   vision: {
     google: [
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-3.1-pro-preview",
       "gemini-3.1-flash-lite",
       "gemini-3-flash-preview",
-      "gemini-3.5-flash",
-      "gemini-3.1-pro-preview"
+      "gemini-2.5-pro"
     ],
     openai: [
       "gpt-4.1",
@@ -62,10 +68,13 @@ const AVAILABLE_MODELS = {
       "gpt-5-mini"
     ],
     google: [
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-3.1-pro-preview",
       "gemini-3.1-flash-lite",
       "gemini-3-flash-preview",
-      "gemini-3.5-flash",
-      "gemini-3.1-pro-preview"
+      "gemini-2.5-pro"
     ],
     azure: [
       "gpt-5-mini"
