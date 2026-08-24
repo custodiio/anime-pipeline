@@ -382,7 +382,26 @@
             ⬇️ Baixar spec.json
           </button>
           
-          <div style="margin-top:24px; display: flex; gap: 16px; flex-wrap: wrap;">
+          <div style="margin-top:20px; display: flex; gap: 16px; align-items: center; background: rgba(255,255,255,0.03); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 13px; color: var(--text2); font-weight: 500;">📐 Resolução / Qualidade:</span>
+              <select id="quickImageQuality" class="settings-select" style="padding: 6px 12px; font-size: 13px; width: auto; background: var(--bg2); border-radius: 6px;">
+                <option value="1K" selected>1K (Padrão 1080p)</option>
+                <option value="2K">2K (High-Res 1440p)</option>
+                <option value="4K">4K (Ultra-HD 2160p)</option>
+                <option value="512px">512px (0.5K)</option>
+              </select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 13px; color: var(--text2); font-weight: 500;">🧠 Raciocínio (Thinking):</span>
+              <select id="quickThinkingLevel" class="settings-select" style="padding: 6px 12px; font-size: 13px; width: auto; background: var(--bg2); border-radius: 6px;">
+                <option value="high" selected>High (Máxima Fidelidade)</option>
+                <option value="minimal">Minimal (Rápido)</option>
+              </select>
+            </div>
+          </div>
+          
+          <div style="margin-top:16px; display: flex; gap: 16px; flex-wrap: wrap;">
             <button class="btn-primary btn-large" id="btnRenderThumbnail">
               <span class="btn-icon">✨</span>
               <span>Gerar Thumbnail com IA (16:9)</span>
@@ -552,12 +571,36 @@
       <label class="settings-label">4. Gerar Imagem Final da Thumbnail</label>
       <div class="settings-select-row">
         <select class="settings-select" id="selProv_image" onchange="updateModels('image')">
-          <option value="google">Google Imagen</option>
+          <option value="google">Google Gemini Image</option>
           <option value="openai">OpenAI DALL-E</option>
         </select>
         <select class="settings-select" id="selMod_image"></select>
       </div>
-      <div class="settings-hint">Original: Google (gemini-3-pro-image-preview) com fallback para dall-e-3.</div>
+      <div class="settings-hint">Gemini 3 Image / Nano Banana 2 (gemini-3.1-flash-image, gemini-3-pro-image) com fallback OpenAI.</div>
+    </div>
+
+    <div class="settings-group">
+      <label class="settings-label">Resolução Padrão da Imagem (Google Gemini)</label>
+      <div class="settings-select-row">
+        <select class="settings-select" id="cfg_image_quality">
+          <option value="1K" selected>1K (Padrão 1080p - Rápido & Econômico)</option>
+          <option value="2K">2K (Alta Resolução 1440p)</option>
+          <option value="4K">4K (Ultra-HD 2160p)</option>
+          <option value="512px">512px (Miniatura 0.5K)</option>
+        </select>
+      </div>
+      <div class="settings-hint">Configuração padrão de resolução para os modelos Google Gemini Image.</div>
+    </div>
+
+    <div class="settings-group">
+      <label class="settings-label">Nível de Pensamento (Thinking) da Imagem</label>
+      <div class="settings-select-row">
+        <select class="settings-select" id="cfg_thinking_level">
+          <option value="high" selected>High (Pensamento Profundo / Máxima Fidelidade Visual)</option>
+          <option value="minimal">Minimal (Geração Direta)</option>
+        </select>
+      </div>
+      <div class="settings-hint">High instrui o Gemini a raciocinar visualmente sobre cada elemento da cena antes de renderizar.</div>
     </div>
 
     <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 15px;">

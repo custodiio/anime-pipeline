@@ -109,12 +109,17 @@ function getOpenaiClient(req) {
   return openai;
 }
 
-function getGoogleGenAI(req) {
+function getGoogleApiKey(req) {
   const customKey = req && req.headers && req.headers["x-google-key"];
   if (customKey && customKey.trim() !== "") {
-    return new GoogleGenerativeAI(customKey);
+    return cleanEnv(customKey);
   }
-  return genAI;
+  return cleanEnv(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || "");
+}
+
+function getGoogleGenAI(req) {
+  const key = getGoogleApiKey(req);
+  return new GoogleGenerativeAI(key || "missing");
 }
 
 function getAzureClient(req) {
@@ -964,20 +969,121 @@ Retorne SOMENTE JSON válido com esta estrutura:
   }
 });
 
+// ─── Gerador de Imagem Nativo Google Gemini (Nano Banana / Gemini 3 Image) ─────
+async function generateGoogleImage(req, modelName, promptText, referenceFrames, isVertical, imageQuality = "1K", thinkingLevel = "high") {
+  const apiKey = getGoogleApiKey(req);
+  if (!apiKey) throw new Error("Chave da API do Google (GOOGLE_API_KEY ou GEMINI_API_KEY) não configurada.");
+
+  const aspect_ratio = isVertical ? "9:16" : "16:9";
+
+  // Normalização de nomes de modelos
+  let targetModel = modelName || "gemini-3.1-flash-image";
+  if (targetModel === "gemini-3-pro-image-preview") {
+    targetModel = "gemini-3-pro-image";
+  } else if (targetModel === "gemini-3.1-flash-image-preview") {
+    targetModel = "gemini-3.1-flash-image";
+  }
+
+  // Montar payload com inputs multimodais
+  const input = [{ type: "text", text: promptText }];
+  for (const f of referenceFrames) {
+    if (f.base64) {
+      input.push({
+        type: "image",
+        mime_type: "image/jpeg",
+        data: f.base64
+      });
+    }
+  }
+
+  const response_format = {
+    type: "image",
+    aspect_ratio: aspect_ratio
+  };
+  
+  if (targetModel === "gemini-3.1-flash-lite-image") {
+    response_format.image_size = "1K";
+  } else if (imageQuality) {
+    response_format.image_size = imageQuality; // "1K", "2K", "4K", "512px"
+  }
+
+  const generation_config = {
+    thinking_level: thinkingLevel || "high"
+  };
+
+  const payload = {
+    model: targetModel,
+    input: input,
+    response_format: response_format,
+    generation_config: generation_config
+  };
+
+  console.log(`   -> [Google Gemini Image] Modelo: ${targetModel} | Resolução: ${response_format.image_size || '1K'} | Pensamento (Thinking): ${generation_config.thinking_level} | Referências anexadas: ${input.length - 1}`);
+
+  // Método 1: Interactions API Oficial
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": apiKey,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      if (data.output_image && data.output_image.data) {
+        return Buffer.from(data.output_image.data, "base64");
+      }
+      if (data.steps && Array.isArray(data.steps)) {
+        for (const step of data.steps) {
+          if (step.type === "model_output" || step.type === "thought") {
+            for (const block of step.content || step.summary || []) {
+              if (block.type === "image" && block.data) {
+                return Buffer.from(block.data, "base64");
+              }
+            }
+          }
+        }
+      }
+    } else {
+      console.warn(`⚠️ Interactions API retornou status ${res.status}:`, data?.error?.message || data);
+      throw new Error(`Google API ${res.status}: ${data?.error?.message || JSON.stringify(data)}`);
+    }
+  } catch (apiErr) {
+    console.warn("⚠️ Interactions API falhou, tentando fallback via SDK generateContent...", apiErr.message);
+    
+    // Método 2: Fallback via SDK generateContent
+    const genAIClient = new GoogleGenerativeAI(apiKey);
+    const imgModel = genAIClient.getGenerativeModel({ model: targetModel });
+    const imageParts = referenceFrames.filter(f => f.base64).map(f => ({
+      inlineData: { data: f.base64, mimeType: "image/jpeg" }
+    }));
+    const result = await imgModel.generateContent([promptText, ...imageParts]);
+    const responsePart = result?.response?.candidates?.[0]?.content?.parts?.[0];
+    if (responsePart && responsePart.inlineData && responsePart.inlineData.data) {
+      return Buffer.from(responsePart.inlineData.data, "base64");
+    }
+
+    throw apiErr;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ROTA 6 — Gerar Thumbnail Final (IA)
 // ═══════════════════════════════════════════════════════════════════════════════
 app.post("/api/generate-thumbnail", authMiddleware, async (req, res) => {
   try {
-    const { spec, frames_selecionados } = req.body;
+    const { spec, frames_selecionados, imageQuality = "1K", thinkingLevel = "high" } = req.body;
     if (!spec) return res.status(400).json({ error: "spec é obrigatório." });
 
     console.log("📸 [API/generate-thumbnail] Recebido pedido para gerar capa.");
     console.log("   -> Spec template:", spec.template, "canvas:", spec.canvas);
-    console.log("   -> Frames selecionados recebidos:", JSON.stringify(frames_selecionados));
+    console.log("   -> Qualidade:", imageQuality, "| Pensamento:", thinkingLevel);
 
     // Lendo os frames como Base64 para enviar pra IA (Gemini) e Uploadable (OpenAI)
-    const imageParts = [];
+    const referenceFrames = [];
     const imagesForOpenAI = [];
     if (frames_selecionados && frames_selecionados.length > 0) {
       for (const f of frames_selecionados) {
@@ -986,8 +1092,10 @@ app.post("/api/generate-thumbnail", authMiddleware, async (req, res) => {
         console.log(`   -> Frame ${f.papel_id} | Path: ${p} | Existe no disco? ${exists}`);
         if (p && exists) {
           const b64 = fs.readFileSync(p).toString("base64");
-          imageParts.push({
-            inlineData: { data: b64, mimeType: "image/jpeg" },
+          referenceFrames.push({
+            papel_id: f.papel_id,
+            path: p,
+            base64: b64
           });
           
           try {
@@ -1001,7 +1109,7 @@ app.post("/api/generate-thumbnail", authMiddleware, async (req, res) => {
         }
       }
     }
-    console.log(`   -> Total de imageParts anexados (Gemini): ${imageParts.length}`);
+    console.log(`   -> Total de referenceFrames anexados (Gemini): ${referenceFrames.length}`);
     console.log(`   -> Total de imagesForOpenAI prontos (OpenAI): ${imagesForOpenAI.length}`);
 
     const promptText = `
@@ -1011,11 +1119,11 @@ ${JSON.stringify(spec, null, 2)}
 **ANÁLISE PRÉVIA DOS FRAMES (USE ISSO PARA SABER O QUE CORRIGIR):**
 ${JSON.stringify(frames_selecionados.map(f => ({
   papel: f.papel_id,
-  analise_vision: f.analise // ou o objeto que contiver os dados no seu frontend
+  analise_vision: f.analise
 })), null, 2)}
 
 Instruções:
-- Utilize os frames fornecidos como base criativa, mas seja muito inteligente na adaptação.
+- Utilize os frames fornecidos como base criativa, mantendo alta fidelidade e adaptação precisa.
 - COMPOSIÇÃO LIMPA E SEM EXCESSO DE INFORMAÇÃO: Mantenha a thumbnail limpa, com poucos elementos e bom espaço de respiro (negative space). Não preencha excessivamente a tela, evite imagens poluídas ou "cheias" de elementos dispersos.
 - FIDELIDADE DOS PERSONAGENS E DO TRAÇO: Mantenha fielmente as características visuais dos personagens (cores do cabelo, olhos, roupas, feições) e o traço/estilo artístico original do anime ou manhwa correspondente.
 - Poses e Expressões: Você pode modificar a pose, gestos ou a expressão facial dos personagens para encaixar melhor na composição da capa, mas faça isso mantendo as características e traços originais deles.
@@ -1028,14 +1136,18 @@ Instruções:
 - Sem marcas d'água.
 `;
 
-    const imgConfig = req.body.modelConfig || { provider: "google", model: "gemini-3-pro-image-preview" };
+    const imgConfig = req.body.modelConfig || { provider: "google", model: "gemini-3.1-flash-image" };
     
     let saved = [];
     
     const isVertical = spec.canvas && spec.canvas.height > spec.canvas.width;
     const dalleSize = isVertical ? "1024x1792" : "1792x1024";
 
-    // Tenta Google primeiro (se google estiver no config ou for default) ou OpenAI direto
+    const ensureOutputDir = () => {
+      if (!fs.existsSync("output")) fs.mkdirSync("output", { recursive: true });
+    };
+    ensureOutputDir();
+
     if (imgConfig.provider === "openai") {
       try {
         const modelName = imgConfig.model || "gpt-image-2";
@@ -1088,30 +1200,16 @@ Instruções:
         throw new Error("Falha ao gerar imagem com OpenAI: " + e.message);
       }
     } else {
-      // Flow padrão com fallback
-      const imgModelStr = imgConfig.model || "gemini-3-pro-image-preview";
-      const imgModel = getGoogleGenAI(req).getGenerativeModel({ model: imgModelStr });
-
-      const ensureOutputDir = () => {
-        if (!fs.existsSync("output")) fs.mkdirSync("output", { recursive: true });
-      };
-      ensureOutputDir();
-
+      // Flow padrão Google Gemini com Fallback OpenAI
+      const imgModelStr = imgConfig.model || "gemini-3.1-flash-image";
       try {
-        const result = await imgModel.generateContent([promptText, ...imageParts]);
-        const responsePart = result?.response?.candidates?.[0]?.content?.parts?.[0];
-
-        if (responsePart && responsePart.inlineData) {
-          const filename = `thumbnail_ai_${Date.now()}.png`;
-          const filepath = `output/${filename}`;
-          const base64Data = responsePart.inlineData.data;
-          fs.writeFileSync(filepath, Buffer.from(base64Data, "base64"));
-          saved.push({ url: `/output-img/${filename}`, path: filepath });
-        } else {
-          throw new Error("SDK não retornou bytes binários na resposta do generateContent");
-        }
+        const buffer = await generateGoogleImage(req, imgModelStr, promptText, referenceFrames, isVertical, imageQuality, thinkingLevel);
+        const filename = `thumbnail_ai_${Date.now()}.png`;
+        const filepath = `output/${filename}`;
+        fs.writeFileSync(filepath, buffer);
+        saved.push({ url: `/output-img/${filename}`, path: filepath });
       } catch (imgErr) {
-        console.warn("⚠️ Falha na geração com Imagen 3, iniciando Fallback com gpt-image-2 da OpenAI...", imgErr.message);
+        console.warn("⚠️ Falha na geração com Google Gemini, iniciando Fallback com gpt-image-2 da OpenAI...", imgErr.message);
         const fallbackPrompt = buildDallePrompt(spec);
         console.log("   -> [Fallback OpenAI] Prompt enviado:", fallbackPrompt);
 

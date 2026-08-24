@@ -261,6 +261,10 @@ def start_seo_service():
             env = os.environ.copy()
             env["PORT"] = "3333"
             env["SEO_PORT"] = "3333"
+            if env.get("GEMINI_API_KEY") and not env.get("GOOGLE_API_KEY"):
+                env["GOOGLE_API_KEY"] = env["GEMINI_API_KEY"]
+            if env.get("GOOGLE_API_KEY") and not env.get("GEMINI_API_KEY"):
+                env["GEMINI_API_KEY"] = env["GOOGLE_API_KEY"]
 
             proc = subprocess.Popen(
                 ["node", "server.js"],

@@ -14,11 +14,13 @@ const State = {
   
   // Auth e Settings
   token: localStorage.getItem('auth_token') || null,
+  imageQuality: localStorage.getItem('image_quality') || '1K',
+  thinkingLevel: localStorage.getItem('thinking_level') || 'high',
   models: JSON.parse(localStorage.getItem('ai_models')) || {
     text: { provider: 'deepseek', model: 'deepseek-chat' },
-    vision: { provider: 'google', model: 'gemini-3.1-pro-preview' },
+    vision: { provider: 'google', model: 'gemini-3.7-flash' },
     spec: { provider: 'deepseek', model: 'deepseek-chat' },
-    image: { provider: 'google', model: 'gemini-3-pro-image-preview' }
+    image: { provider: 'google', model: 'gemini-3.1-flash-image' }
   },
   apiKeys: JSON.parse(localStorage.getItem('ai_api_keys')) || {
     google: '',
@@ -385,6 +387,11 @@ function setupSettings() {
       document.getElementById(`selMod_${k}`).value = State.models[k].model;
     });
 
+    const cfgQ = document.getElementById('cfg_image_quality');
+    if (cfgQ) cfgQ.value = State.imageQuality || '1K';
+    const cfgT = document.getElementById('cfg_thinking_level');
+    if (cfgT) cfgT.value = State.thinkingLevel || 'high';
+
     // Preencher chaves alternativas
     document.getElementById('cfg_google_key').value = State.apiKeys?.google || '';
     document.getElementById('cfg_deepseek_key').value = State.apiKeys?.deepseek || '';
@@ -404,6 +411,22 @@ function setupSettings() {
       image: { provider: document.getElementById('selProv_image').value, model: document.getElementById('selMod_image').value }
     };
     localStorage.setItem('ai_models', JSON.stringify(State.models));
+
+    const cfgQ = document.getElementById('cfg_image_quality');
+    if (cfgQ) {
+      State.imageQuality = cfgQ.value;
+      localStorage.setItem('image_quality', State.imageQuality);
+      const quickQ = document.getElementById('quickImageQuality');
+      if (quickQ) quickQ.value = State.imageQuality;
+    }
+
+    const cfgT = document.getElementById('cfg_thinking_level');
+    if (cfgT) {
+      State.thinkingLevel = cfgT.value;
+      localStorage.setItem('thinking_level', State.thinkingLevel);
+      const quickT = document.getElementById('quickThinkingLevel');
+      if (quickT) quickT.value = State.thinkingLevel;
+    }
 
     // Salvar chaves alternativas
     State.apiKeys = {
@@ -708,6 +731,24 @@ function setupThumb() {
     State.videoPath = null;
     document.getElementById('btnExtrairFrames').disabled = true;
   });
+
+  const quickQ = document.getElementById('quickImageQuality');
+  if (quickQ) {
+    quickQ.value = State.imageQuality || '1K';
+    quickQ.addEventListener('change', () => {
+      State.imageQuality = quickQ.value;
+      localStorage.setItem('image_quality', State.imageQuality);
+    });
+  }
+
+  const quickT = document.getElementById('quickThinkingLevel');
+  if (quickT) {
+    quickT.value = State.thinkingLevel || 'high';
+    quickT.addEventListener('change', () => {
+      State.thinkingLevel = quickT.value;
+      localStorage.setItem('thinking_level', State.thinkingLevel);
+    });
+  }
 
   document.getElementById('btnExtrairFrames').addEventListener('click', extrairFrames);
   document.getElementById('btnConfirmarFrames').addEventListener('click', analisarFramesSelecionados);
@@ -1187,7 +1228,9 @@ async function gerarThumbnailFinalIA() {
       body: JSON.stringify({
         spec: State.specFinal,
         frames_selecionados: framesSelecionados,
-        modelConfig: State.models.image
+        modelConfig: State.models.image,
+        imageQuality: State.imageQuality || '1K',
+        thinkingLevel: State.thinkingLevel || 'high'
       })
     });
     
