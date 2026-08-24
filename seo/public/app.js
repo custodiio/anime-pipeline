@@ -122,6 +122,13 @@ async function initFirebase() {
     if (!res.ok) throw new Error("Não foi possível obter a configuração do Firebase.");
     const firebaseConfig = await res.json();
     
+    // Limpar aspas acidentais
+    for (const k in firebaseConfig) {
+      if (typeof firebaseConfig[k] === 'string') {
+        firebaseConfig[k] = firebaseConfig[k].trim().replace(/^["']|["']$/g, '');
+      }
+    }
+
     // Inicializar Firebase
     firebase.initializeApp(firebaseConfig);
     firebaseAuth = firebase.auth();

@@ -20,9 +20,18 @@ const { exec } = require("child_process");
 const admin = require("firebase-admin");
 const driveManager = require("./drive_manager");
 
-const firebaseProjectId = process.env.FIREBASE_PROJECT_ID;
-const firebaseClientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-let firebasePrivateKey = process.env.FIREBASE_PRIVATE_KEY;
+function cleanEnv(val, fallback = "") {
+  if (!val) return fallback;
+  let str = String(val).trim();
+  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+    str = str.slice(1, -1);
+  }
+  return str.trim();
+}
+
+const firebaseProjectId = cleanEnv(process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID, "aidramadub");
+const firebaseClientEmail = cleanEnv(process.env.FIREBASE_CLIENT_EMAIL);
+let firebasePrivateKey = cleanEnv(process.env.FIREBASE_PRIVATE_KEY);
 
 if (firebasePrivateKey) {
   firebasePrivateKey = firebasePrivateKey.replace(/\\n/g, '\n');
@@ -246,13 +255,13 @@ function extrairFrames(
 // ─── Autenticação Firebase ────────────────────────────────────────────────────
 app.get("/api/firebase-config", (req, res) => {
   res.json({
-    apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY,
-    authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "aidramadub",
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID,
-    measurementId: process.env.FIREBASE_MEASUREMENT_ID || process.env.VITE_FIREBASE_MEASUREMENT_ID
+    apiKey: cleanEnv(process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY),
+    authDomain: cleanEnv(process.env.FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN),
+    projectId: cleanEnv(process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID, "aidramadub"),
+    storageBucket: cleanEnv(process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET),
+    messagingSenderId: cleanEnv(process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
+    appId: cleanEnv(process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID),
+    measurementId: cleanEnv(process.env.FIREBASE_MEASUREMENT_ID || process.env.VITE_FIREBASE_MEASUREMENT_ID)
   });
 });
 
@@ -264,20 +273,23 @@ app.post("/api/firebase-login", async (req, res) => {
     // 1. Validar Token
     const decodedToken = await admin.auth().verifyIdToken(token);
     const uid = decodedToken.uid;
-    const email = decodedToken.email;
+    const email = decodedToken.email ? decodedToken.email.toLowerCase().trim() : "";
 
-    // 2. Verificar no Firestore se as credenciais de admin estão prontas
+    // 2. Verificar no Firestore
     if (!dbFirestore) {
-      // Se não estiver configurado o admin SDK privado (.env sem chaves de serviço),
-      // retornamos um aviso descritivo para o usuário configurar.
       return res.status(500).json({ error: "O Firebase Admin SDK não foi configurado corretamente no servidor (.env ausente de credenciais FIREBASE_CLIENT_EMAIL ou FIREBASE_PRIVATE_KEY)." });
     }
 
-    const userDoc = await dbFirestore.collection("users").doc(uid).get();
+    let userDoc = await dbFirestore.collection("users").doc(uid).get();
+    if (!userDoc.exists && email) {
+      const qSnap = await dbFirestore.collection("users").where("email", "==", email).limit(1).get();
+      if (!qSnap.empty) {
+        userDoc = qSnap.docs[0];
+      }
+    }
     
     // Se o usuário não existir no Firestore (ex: fez login com Google pela primeira vez)
     if (!userDoc.exists) {
-      // Criar documento do usuário pendente de aprovação
       const newUser = {
         uid: uid,
         name: decodedToken.name || email.split("@")[0],
@@ -291,7 +303,9 @@ app.post("/api/firebase-login", async (req, res) => {
     }
 
     const userData = userDoc.data();
-    if (!userData.approved) {
+    const isApproved = userData.approved === true || userData.approved === 1 || userData.approved === "true" || userData.approved === "1";
+    
+    if (!isApproved) {
       return res.json({ success: true, approved: false, message: "Sua conta está criada, mas pendente de aprovação manual pelo administrador." });
     }
 
@@ -312,12 +326,21 @@ async function authMiddleware(req, res, next) {
     req.user = decodedToken;
     
     if (dbFirestore) {
-      const userDoc = await dbFirestore.collection("users").doc(decodedToken.uid).get();
+      const email = decodedToken.email ? decodedToken.email.toLowerCase().trim() : "";
+      let userDoc = await dbFirestore.collection("users").doc(decodedToken.uid).get();
+      if (!userDoc.exists && email) {
+        const qSnap = await dbFirestore.collection("users").where("email", "==", email).limit(1).get();
+        if (!qSnap.empty) {
+          userDoc = qSnap.docs[0];
+        }
+      }
+
       if (!userDoc.exists) {
         return res.status(403).json({ error: "Conta criada, mas pendente de aprovação do administrador." });
       }
       const userData = userDoc.data();
-      if (!userData.approved) {
+      const isApproved = userData.approved === true || userData.approved === 1 || userData.approved === "true" || userData.approved === "1";
+      if (!isApproved) {
         return res.status(403).json({ error: "Conta pendente de aprovação. Aguarde a liberação do administrador." });
       }
     } else {
