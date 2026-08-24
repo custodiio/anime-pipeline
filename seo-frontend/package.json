@@ -1,0 +1,13 @@
+{
+  "name": "kuma-seo-frontend",
+  "version": "1.0.0",
+  "description": "Frontend do SEO AnimeRecap & Gerador de Thumbnails com IA",
+  "scripts": {
+    "dev": "vite",
+    "build": "echo 'Static build ready'",
+    "start": "serve ."
+  },
+  "keywords": ["seo", "anime", "youtube", "thumbnail", "ai"],
+  "author": "Kuma",
+  "license": "ISC"
+}

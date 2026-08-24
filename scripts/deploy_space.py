@@ -74,7 +74,8 @@ for idx, (folder_name, commit_msg) in enumerate(MODULES_FOLDERS, start=2):
             path_in_repo=folder_name,
             repo_id=repo_id,
             repo_type="space",
-            commit_message=commit_msg
+            commit_message=commit_msg,
+            ignore_patterns=["node_modules/*", "**/node_modules/*", "__pycache__/*", "**/__pycache__/*", "*.pyc", ".venv/*", "temp_uploads/*", "*.db", ".git/*"]
         )
     else:
         print(f"⚠️ {idx}. Pasta {folder_name}/ não encontrada. Pulando...")

@@ -30,7 +30,15 @@ if sys.platform == "win32":
 
 load_dotenv()
 
-# Configuração de Logging Geral
+# Compatibilidade com ZeroGPU do Hugging Face (evita erro 'No @spaces.GPU function detected')
+try:
+    import spaces
+    @spaces.GPU
+    def _gpu_warmup():
+        return "GPU Ready"
+    logger.info("[ZeroGPU] Suporte a @spaces.GPU inicializado com sucesso.")
+except Exception:
+    pass
 logging.basicConfig(
     format="%(asctime)s │ %(levelname)-7s │ %(name)s │ %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
@@ -236,8 +244,8 @@ def start_seo_service():
         SERVICE_STATUS["SEO Anime Recap Node.js (3333)"] = "⚠️ seo/server.js não encontrado"
         return
 
-    # Garante instalação das dependências Node.js caso ausentes no container
-    if not (seo_dir / "node_modules" / "dotenv").exists():
+    # Garante instalação das dependências Node.js caso ausentes ou incompletas no container
+    if not (seo_dir / "node_modules" / "express").exists() or not (seo_dir / "node_modules" / "merge-descriptors").exists():
         try:
             logger.info("[SEO] Instalando dependências Node.js (npm install)...")
             subprocess.run(["npm", "install", "--prefix", str(seo_dir)], check=True)
@@ -367,6 +375,44 @@ demo.app.add_middleware(
     allow_headers=["*"],
 )
 
+from starlette.routing import Route
+from starlette.responses import Response, JSONResponse
+from starlette.requests import Request
+import httpx
+
+async def seo_proxy_handler(request: Request):
+    """Encaminha requisições de /seo/* e /api/seo/* para o backend Node.js na porta 3333."""
+    req_path = request.url.path
+    if req_path.startswith("/seo"):
+        forward_path = req_path[4:] or "/"
+    elif req_path.startswith("/api/seo"):
+        forward_path = "/api" + req_path[8:]
+    else:
+        forward_path = req_path
+
+    target_url = f"http://127.0.0.1:3333{forward_path}"
+    headers = dict(request.headers)
+    headers.pop("host", None)
+
+    try:
+        body = await request.body()
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            resp = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                params=dict(request.query_params),
+                content=body
+            )
+            return Response(
+                content=resp.content,
+                status_code=resp.status_code,
+                headers=dict(resp.headers)
+            )
+    except Exception as e:
+        logger.error(f"[SEO PROXY] Erro ao repassar para porta 3333: {e}")
+        return JSONResponse({"error": f"Erro no proxy SEO: {str(e)}"}, status_code=500)
+
 def inject_api_routes(target_app):
     """Injeta as rotas da API no FastAPI do Gradio no topo da tabela de roteamento."""
     try:
@@ -374,6 +420,17 @@ def inject_api_routes(target_app):
         target_app.include_router(tiktok_app.router)
     except Exception:
         pass
+
+    # Rotas de proxy para o SEO Node.js
+    seo_routes = [
+        Route("/seo/{path:path}", seo_proxy_handler, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"]),
+        Route("/api/seo/{path:path}", seo_proxy_handler, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"]),
+        Route("/output-img/{path:path}", seo_proxy_handler, methods=["GET", "HEAD"]),
+        Route("/extracted/{path:path}", seo_proxy_handler, methods=["GET", "HEAD"])
+    ]
+    for sr in seo_routes:
+        if sr not in target_app.routes:
+            target_app.routes.insert(0, sr)
 
     # Injeta rotas no topo (ordem reversa para manter prioridade máxima)
     for route in reversed(scrapper_app.routes):
